@@ -1,7 +1,10 @@
 package com.hotak.noonchibot.core;
 
+import lombok.Getter;
+
 import java.time.Instant;
 
+@Getter
 public class TimeIterator extends PubSub {
     private volatile Clock clock;
     private volatile Instant currentTimestamp;
