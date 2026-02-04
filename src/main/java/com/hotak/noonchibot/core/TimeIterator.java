@@ -2,7 +2,7 @@ package com.hotak.noonchibot.core;
 
 import java.time.Instant;
 
-public class TimeIterator {
+public class TimeIterator extends PubSub {
     private Clock clock;
     private Instant currentTimestamp;
 
