@@ -40,7 +40,7 @@ public class RealtimeClock implements Clock {
      */
     @SuppressWarnings("BusyWait")
     @Override
-    public void runUntil(Instant endTime) {
+    public void run(Instant endTime) {
         long tickMillis = tickSize.toMillis();
         updateCurrentTimestamp();
         if (!started) {

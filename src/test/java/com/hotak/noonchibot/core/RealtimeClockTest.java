@@ -66,7 +66,7 @@ class RealtimeClockTest {
         var iterator = Mockito.spy(new TimeIterator());
         var clock = new RealtimeClock(List.of(), TICK_SIZE);
 
-        Thread thread = Thread.startVirtualThread(() -> clock.runUntil(Instant.now().plusMillis(200)));
+        Thread thread = Thread.startVirtualThread(() -> clock.run(Instant.now().plusMillis(200)));
         Thread.sleep(50);  // clock 시작 대기
         clock.addIterator(iterator);
         thread.join();
@@ -81,7 +81,7 @@ class RealtimeClockTest {
         var iterator = Mockito.spy(new TimeIterator());
         var clock = new RealtimeClock(List.of(iterator), TICK_SIZE);
 
-        Thread thread = Thread.startVirtualThread(() -> clock.runUntil(Instant.now().plusMillis(200)));
+        Thread thread = Thread.startVirtualThread(() -> clock.run(Instant.now().plusMillis(200)));
         Thread.sleep(50);  // clock 시작 대기
         clock.removeIterator(iterator);
         thread.interrupt();
@@ -102,39 +102,39 @@ class RealtimeClockTest {
     }
 
     @Test
-    @DisplayName("runUntil 호출시 등록된 모든 iterator의 onStart가 호출된다")
+    @DisplayName("run 호출시 등록된 모든 iterator의 onStart가 호출된다")
     @Timeout(1)
-    void runUntil_callsOnStartForAllIterators() {
+    void run_callsOnStartForAllIterators() {
         var iterator1 = Mockito.spy(new TimeIterator());
         var iterator2 = Mockito.spy(new TimeIterator());
         var clock = new RealtimeClock(List.of(iterator1, iterator2), TICK_SIZE);
 
-        clock.runUntil(Instant.now().plusMillis(10));
+        clock.run(Instant.now().plusMillis(10));
 
         verify(iterator1, times(1)).onStart(any(), any());
         verify(iterator2, times(1)).onStart(any(), any());
     }
 
     @Test
-    @DisplayName("runUntil 호출시 틱마다 onTick이 호출된다")
+    @DisplayName("run 호출시 틱마다 onTick이 호출된다")
     @Timeout(1)
-    void runUntil_callsOnTickPerTick() {
+    void run_callsOnTickPerTick() {
         var iterator = Mockito.spy(new TimeIterator());
         var clock = new RealtimeClock(List.of(iterator), TICK_SIZE);
 
-        clock.runUntil(Instant.now().plusMillis(250));
+        clock.run(Instant.now().plusMillis(250));
 
         verify(iterator, Mockito.atLeast(2)).onTick(any());
     }
 
     @Test
-    @DisplayName("runUntil 종료시 onStop이 호출된다")
+    @DisplayName("run 종료시 onStop이 호출된다")
     @Timeout(1)
-    void runUntil_whenEnds_callsOnStop() {
+    void run_whenEnds_callsOnStop() {
         var iterator = Mockito.spy(new TimeIterator());
         var clock = new RealtimeClock(List.of(iterator), TICK_SIZE);
 
-        clock.runUntil(Instant.now().plusMillis(10));
+        clock.run(Instant.now().plusMillis(10));
 
         verify(iterator, times(1)).onStop();
     }
@@ -142,11 +142,11 @@ class RealtimeClockTest {
     @Test
     @DisplayName("interrupt 발생시 onStop 호출 후 종료한다")
     @Timeout(1)
-    void runUntil_whenInterrupted_callsOnStopAndTerminates() throws InterruptedException {
+    void run_whenInterrupted_callsOnStopAndTerminates() throws InterruptedException {
         var iterator = Mockito.spy(new TimeIterator());
         var clock = new RealtimeClock(List.of(iterator), TICK_SIZE);
 
-        Thread thread = Thread.startVirtualThread(() -> clock.runUntil(Instant.now().plusSeconds(100)));
+        Thread thread = Thread.startVirtualThread(() -> clock.run(Instant.now().plusSeconds(100)));
         Thread.sleep(50);
         thread.interrupt();
         thread.join();
@@ -157,12 +157,12 @@ class RealtimeClockTest {
     @Test
     @DisplayName("onTick에서 예외 발생해도 루프는 계속 실행된다")
     @Timeout(1)
-    void runUntil_whenOnTickThrows_continuesLoop() {
+    void run_whenOnTickThrows_continuesLoop() {
         var iterator = Mockito.spy(new TimeIterator());
         var clock = new RealtimeClock(List.of(iterator), TICK_SIZE);
         doThrow(new RuntimeException("test exception")).when(iterator).onTick(any(Instant.class));
 
-        clock.runUntil(Instant.now().plusMillis(250));
+        clock.run(Instant.now().plusMillis(250));
 
         verify(iterator, Mockito.atLeast(2)).onTick(any());
     }
