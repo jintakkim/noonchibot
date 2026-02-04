@@ -3,8 +3,8 @@ package com.hotak.noonchibot.core;
 import java.time.Instant;
 
 public class TimeIterator extends PubSub {
-    private Clock clock;
-    private Instant currentTimestamp;
+    private volatile Clock clock;
+    private volatile Instant currentTimestamp;
 
     public void onStart(Clock clock, Instant timestamp) {
         this.clock = clock;
