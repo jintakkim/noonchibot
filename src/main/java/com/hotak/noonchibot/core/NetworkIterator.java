@@ -10,6 +10,8 @@ import java.time.Instant;
 @RequiredArgsConstructor
 @Slf4j
 public abstract class NetworkIterator extends TimeIterator {
+    private static final Duration DEFAULT_CHECK_NETWORK_INTERVAL = Duration.ofSeconds(10);
+    private static final Duration DEFAULT_NETWORK_ERROR_WAIT_TIME = Duration.ofMinutes(1);
 
     public enum NetworkStatus {STOPPED, NOT_CONNECTED, CONNECTED}
 
@@ -38,6 +40,11 @@ public abstract class NetworkIterator extends TimeIterator {
      * warning: 구현시 네트워크 타임아웃을 설정해야한다.
      */
     protected abstract void stopNetwork();
+
+    public NetworkIterator() {
+        this.checkNetworkInterval = DEFAULT_CHECK_NETWORK_INTERVAL;
+        this.networkErrorWaitTime = DEFAULT_NETWORK_ERROR_WAIT_TIME;
+    }
 
     private void checkNetworkLoop() {
         while (!Thread.currentThread().isInterrupted()) {
