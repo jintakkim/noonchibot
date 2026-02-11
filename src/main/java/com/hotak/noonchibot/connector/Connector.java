@@ -24,7 +24,7 @@ public interface Connector {
     <T> void unsubscribe(Class<T> eventType, EventListener<T> listener);
     boolean isReady();
 
-    BigDecimal quantizeOrderAmount(String tradingPair, BigDecimal amount);
+
     //todo: amount 적절하게 quantize되는지 체크
     BigDecimal getOrderPrice(String tradingPair, boolean isBuy, BigDecimal amount);
 
@@ -74,4 +74,34 @@ public interface Connector {
      * @return 자산별 잔고 변화량 (양수: 증가, 음수: 감소)
      */
     Map<String, BigDecimal> getOrderFilledBalances();
+
+
+    /**
+     * 가격 최소 단위 (tick size)
+     */
+    BigDecimal getOrderPriceQuantum(String tradingPair, BigDecimal amount);
+
+    /**
+     * 수량 최소 단위 (lot size)
+     */
+    BigDecimal getOrderSizeQuantum(String tradingPair, BigDecimal amount);
+
+    /**
+     * 거래소 규칙에 맞게 주문 가격을 양자화(quantize)한다.
+     * 예시: price=100.123, quantum=0.01 → 100.12
+     *
+     * @param tradingPair 거래쌍
+     * @param price 원래 가격
+     * @return 양자화된 가격
+     */
+    BigDecimal quantizeOrderPrice(String tradingPair, BigDecimal price);
+
+    /**
+     * 거래소 규칙에 맞게 주문 수량을 양자화(quantize)한다.
+     *
+     * @param tradingPair 거래쌍
+     * @param amount 원래 수량
+     * @return 양자화된 수량
+     */
+    BigDecimal quantizeOrderAmount(String tradingPair, BigDecimal amount);
 }
