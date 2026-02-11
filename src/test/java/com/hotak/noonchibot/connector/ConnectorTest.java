@@ -21,6 +21,9 @@ public abstract class ConnectorTest {
     abstract EventLogger getEventLogger(Connector connector);
     abstract void setAvailableBalance(Connector connector, String tradingPair, BigDecimal amount);
     abstract void addInFlightOrder(Connector connector, InFlightOrder order);
+    abstract void setOrderPriceQuantum(Connector connector, String tradingPair, BigDecimal quantum);
+    abstract void setOrderSizeQuantum(Connector connector, String tradingPair, BigDecimal quantum);
+
 
     InFlightOrder createInFlightOrder(String orderId, String tradingPair, TradeType tradeType,  BigDecimal amount, BigDecimal price, Instant creationTimestamp) {
         return new InFlightOrder(orderId, tradingPair, OrderType.LIMIT, tradeType, amount, price, creationTimestamp);
@@ -252,4 +255,90 @@ public abstract class ConnectorTest {
         }
     }
 
+    @Nested
+    @DisplayName("quantizeOrderPrice / quantizeOrderAmount")
+    class QuantizeTest {
+        @Test
+        @DisplayName("가격 양자화 - 내림 적용")
+        void quantizePrice() {
+            Connector connector = getConnector(null);
+            // tick size = 0.01
+            setOrderPriceQuantum(connector, "BTC-USDT", new BigDecimal("0.01"));
+            BigDecimal result = connector.quantizeOrderPrice("BTC-USDT", new BigDecimal("50123.456"));
+            assertThat(result).isEqualByComparingTo("50123.45");
+        }
+
+        @Test
+        @DisplayName("가격 양자화 - 정확히 나누어 떨어지는 경우")
+        void quantizePriceExact() {
+            Connector connector = getConnector(null);
+            setOrderPriceQuantum(connector, "BTC-USDT", new BigDecimal("0.01"));
+            BigDecimal result = connector.quantizeOrderPrice("BTC-USDT", new BigDecimal("50123.45"));
+            assertThat(result).isEqualByComparingTo("50123.45");
+        }
+
+        @Test
+        @DisplayName("가격 양자화 - 큰 tick size")
+        void quantizePriceLargeTick() {
+            Connector connector = getConnector(null);
+            // tick size = 10
+            setOrderPriceQuantum(connector, "BTC-USDT", new BigDecimal("10"));
+            BigDecimal result = connector.quantizeOrderPrice("BTC-USDT", new BigDecimal("50123.456"));
+            assertThat(result).isEqualByComparingTo("50120");
+        }
+
+        @Test
+        @DisplayName("가격 양자화 - null 입력")
+        void quantizePriceNull() {
+            Connector connector = getConnector(null);
+            BigDecimal result = connector.quantizeOrderPrice("BTC-USDT", null);
+            assertThat(result).isNull();
+        }
+
+        @Test
+        @DisplayName("수량 양자화 - 내림 적용")
+        void quantizeAmount() {
+            Connector connector = getConnector(null);
+            // lot size = 0.0001
+            setOrderSizeQuantum(connector, "BTC-USDT", new BigDecimal("0.0001"));
+            BigDecimal result = connector.quantizeOrderAmount("BTC-USDT", new BigDecimal("1.23456789"));
+            assertThat(result).isEqualByComparingTo("1.2345");
+        }
+
+        @Test
+        @DisplayName("수량 양자화 - 정확히 나누어 떨어지는 경우")
+        void quantizeAmountExact() {
+            Connector connector = getConnector(null);
+            setOrderSizeQuantum(connector, "BTC-USDT", new BigDecimal("0.0001"));
+            BigDecimal result = connector.quantizeOrderAmount("BTC-USDT", new BigDecimal("1.2345"));
+            assertThat(result).isEqualByComparingTo("1.2345");
+        }
+
+        @Test
+        @DisplayName("수량 양자화 - 큰 lot size")
+        void quantizeAmountLargeLot() {
+            Connector connector = getConnector(null);
+            // lot size = 0.1
+            setOrderSizeQuantum(connector, "BTC-USDT", new BigDecimal("0.1"));
+            BigDecimal result = connector.quantizeOrderAmount("BTC-USDT", new BigDecimal("1.2345"));
+            assertThat(result).isEqualByComparingTo("1.2");
+        }
+
+        @Test
+        @DisplayName("수량 양자화 - null 입력")
+        void quantizeAmountNull() {
+            Connector connector = getConnector(null);
+            BigDecimal result = connector.quantizeOrderAmount("BTC-USDT", null);
+            assertThat(result).isNull();
+        }
+
+        @Test
+        @DisplayName("수량이 lot size보다 작은 경우 0 반환")
+        void quantizeAmountSmallerThanLot() {
+            Connector connector = getConnector(null);
+            setOrderSizeQuantum(connector, "BTC-USDT", new BigDecimal("0.01"));
+            BigDecimal result = connector.quantizeOrderAmount("BTC-USDT", new BigDecimal("0.005"));
+            assertThat(result).isEqualByComparingTo("0");
+        }
+    }
 }

@@ -173,5 +173,31 @@ public abstract class AbstractConnector extends NetworkIterator implements Conne
     private Map<String, BigDecimal> getBalanceLimit(String market) {
         return balanceLimit.getOrDefault(market, new HashMap<>());
     }
+
+
+    @Override
+    public abstract BigDecimal getOrderPriceQuantum(String tradingPair, BigDecimal price);
+
+    @Override
+    public abstract BigDecimal getOrderSizeQuantum(String tradingPair, BigDecimal amount);
+
+    @Override
+    public BigDecimal quantizeOrderPrice(String tradingPair, BigDecimal price) {
+        if (price == null) {
+            return null;
+        }
+        BigDecimal priceQuantum = getOrderPriceQuantum(tradingPair, price);
+        // (price // quantum) * quantum
+        return price.divideToIntegralValue(priceQuantum).multiply(priceQuantum);
+    }
+
+    @Override
+    public BigDecimal quantizeOrderAmount(String tradingPair, BigDecimal amount) {
+        if (amount == null) {
+            return null;
+        }
+        BigDecimal sizeQuantum = getOrderSizeQuantum(tradingPair, amount);
+        return amount.divideToIntegralValue(sizeQuantum).multiply(sizeQuantum);
+    }
 }
 
