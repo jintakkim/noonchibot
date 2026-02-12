@@ -123,4 +123,16 @@ public class OrderBookTrackerMetrics {
     public void recordTradeProcessed(double latency) {
         this.totalTradesProcessed++;
     }
+
+    public double getTrackerStartTime() {
+        return trackerStartTime;
+    }
+
+    public long getTotalDiffsProcessed() {
+        return totalDiffsProcessed;
+    }
+
+    public long getTotalTradesProcessed() {
+        return totalTradesProcessed;
+    }
 }

@@ -16,7 +16,7 @@ public class OrderBookPairMetrics {
     private long tradesRejected = 0;
 
     // 타임스탬프
-    private double lastDiffTimestamp = 0.0; //마지막으로 들어온 데이터의 타임스탬프
+    private double lastDiffTimestamp = 0.0; //마지막으로 들어온ㅋ 데이터의 타임스탬프
     private double lastSnapshotTimestamp = 0.0;
     private double lastTradeTimestamp = 0.0;
     private double trackingStartTime = 0.0;
