@@ -1,15 +1,22 @@
 package com.hotak.noonchibot.core.orderbook;
 
-import com.hotak.noonchibot.core.datatype.OrderBookMessage;
-
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 
 public interface OrderBookTrackerDataSource {
     OrderBook getNewOrderBook(String pair);
 
-    void listenForOrderBookDiffs(BlockingQueue<com.hotak.noonchibot.core.datatype.OrderBookMessage> output);
+    Map<String, BigDecimal> getLastTradedPrices(List<String> pairs, String domain);
 
-    void listenForOrderBookSnapshots(BlockingQueue<com.hotak.noonchibot.core.datatype.OrderBookMessage> output);
+    void listenForOrderBookDiffs(BlockingQueue<OrderBookMessage> output);
+
+    void listenForOrderBookSnapshots(BlockingQueue<OrderBookMessage> output);
 
     void listenForTrades(BlockingQueue<OrderBookMessage> output);
+
+    boolean subscribeToTradingPair(String pair);
+
+    boolean unsubscribeFromTradingPair(String pair);
 }
