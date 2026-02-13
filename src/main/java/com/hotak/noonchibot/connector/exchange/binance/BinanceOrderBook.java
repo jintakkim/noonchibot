@@ -1,9 +1,7 @@
 package com.hotak.noonchibot.connector.exchange.binance;
 
-import com.hotak.noonchibot.core.datatype.OrderBookMessageType;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.orderbook.OrderBook;
-import com.hotak.noonchibot.core.datatype.OrderBookMessage;
 
 import java.util.HashMap;
 import java.util.Map;

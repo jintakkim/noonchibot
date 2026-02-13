@@ -108,4 +108,25 @@ public interface OrderBook {
      * @return Quote 금액 (resultVolume에 담김)
      */
     OrderBookQueryResult getQuoteVolumeForPrice(boolean isBuy, BigDecimal price);
+
+    /**
+     * 실시간 체결(Trade) 이벤트 적용
+     * 이 메서드가 호출될 때 내부적으로 '마지막 체결 시간'이 기록되어야 한다.
+     */
+    void applyTrade(BigDecimal price, BigDecimal amount, String tradeId, double timestamp);
+
+    /**
+     * 외부(REST)에서 가져온 마지막 가격을 강제로 설정
+     */
+    void setLastTradePrice(BigDecimal price);
+
+    /**
+     * 마지막으로 Trade가 적용된 시간을 반환
+     */
+    double getLastAppliedTradeTime();
+
+    /**
+     * 마지막으로 REST API를 통해 가격을 업데이트한 시간을 반환
+     */
+    double getLastTradePriceRestUpdatedTime();
 }
