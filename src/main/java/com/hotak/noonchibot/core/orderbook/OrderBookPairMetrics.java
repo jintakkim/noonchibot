@@ -104,6 +104,10 @@ public class OrderBookPairMetrics {
         // this.snapshotProcessingLatency.update(latency);
     }
 
+    public void incrementTotalDiffsRejected() {
+        this.diffsRejected++;
+    }
+
     //테스트용 게터 & 세터
     public String getTradingPair() { return tradingPair; }
     public long getDiffsProcessed() { return diffsProcessed; }
