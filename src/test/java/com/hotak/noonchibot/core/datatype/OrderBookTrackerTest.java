@@ -1,127 +1,59 @@
 package com.hotak.noonchibot.core.datatype;
 
-import com.hotak.noonchibot.core.datatype.OrderBookMessage;
-import com.hotak.noonchibot.core.datatype.OrderBookMessageType;
 import com.hotak.noonchibot.core.orderbook.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
-import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.List;
+import java.time.Instant;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
 
-import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
-class OrderBookTrackerTest {
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.concurrent.LinkedBlockingQueue;
+
+@ExtendWith(MockitoExtension.class)
+public class OrderBookTrackerTest {
+
+    @Mock
+    private OrderBookTrackerDataSource dataSource;
 
     private OrderBookTracker tracker;
-    private OrderBookTrackerDataSource dataSource;
-    private final String tradingPair = "BTC-USDT";
+    private List<String> tradingPairs;
+
+    private Map<String, OrderBook> orderBooks;
+    private Map<String, BlockingQueue<OrderBookMessage>> trackingQueues;
+    private Map<String, Deque<OrderBookMessage>> savedMessageQueues;
+    private BlockingQueue<OrderBookMessage> diffStream;
+    private BlockingQueue<OrderBookMessage> snapshotStream;
+    private BlockingQueue<OrderBookMessage> tradeStream;
 
     @BeforeEach
-    void setUp() {
-        // 1. 데이터 소스 Mock 생성
-        dataSource = Mockito.mock(OrderBookTrackerDataSource.class);
+    void setUp() throws Exception {
+        tradingPairs = new ArrayList<>(List.of("BTC-USDT", "ETH-USDT"));
+        tracker = new OrderBookTracker(dataSource, tradingPairs, "test-domain");
 
-        // 2. 초기화 시 반환할 실제 오더북 객체 설정 (로직 확인을 위해 Mock이 아닌 실제 객체 사용 권장)
-        OrderBook realOrderBook = new OrderBook(tradingPair) {
-            @Override
-            public List<OrderBookEntry> getBidEntries() {
-                return List.of();
-            }
+        orderBooks = getPrivateField(tracker, "orderBooks");
+        trackingQueues = getPrivateField(tracker, "trackingQueues");
+        diffStream = getPrivateField(tracker, "diffStream");
+        snapshotStream = getPrivateField(tracker, "snapshotStream");
+        tradeStream = getPrivateField(tracker, "tradeStream");
 
-            @Override
-            public List<OrderBookEntry> getAskEntries() {
-                return List.of();
-            }
-
-            @Override
-            public Long getSnapshotId() {
-                return 0L;
-            }
-
-            @Override
-            public Long getLastDiffId() {
-                return 0L;
-            }
-
-            @Override
-            public BigDecimal getBestBid() {
-                return null;
-            }
-
-            @Override
-            public BigDecimal getBestAsk() {
-                return null;
-            }
-
-            @Override
-            public BigDecimal getLastTradePrice() {
-                return null;
-            }
-
-            @Override
-            public void applySnapshot(List<OrderBookEntry> bids, List<OrderBookEntry> asks, long updateId) {
-
-            }
-
-            @Override
-            public void applyDiffs(List<OrderBookEntry> bids, List<OrderBookEntry> asks, long updateId) {
-
-            }
-
-            @Override
-            public BigDecimal getBestPrice(boolean isBuy) {
-                return null;
-            }
-
-            @Override
-            public void restoreFromSnapshotAndDiffs(com.hotak.noonchibot.core.orderbook.OrderBookMessage.SnapshotMessage snapshot, List<com.hotak.noonchibot.core.orderbook.OrderBookMessage.DiffMessage> diffs) {
-
-            }
-
-            @Override
-            public OrderBookQueryResult getImpactPriceForBaseVolume(boolean isBuy, BigDecimal volume) {
-                return null;
-            }
-
-            @Override
-            public OrderBookQueryResult getVWAPForVolume(boolean isBuy, BigDecimal volume) {
-                return null;
-            }
-
-            @Override
-            public OrderBookQueryResult getImpactPriceForQuoteVolume(boolean isBuy, BigDecimal quoteVolume) {
-                return null;
-            }
-
-            @Override
-            public OrderBookQueryResult getQuoteVolumeForBaseVolume(boolean isBuy, BigDecimal baseVolume) {
-                return null;
-            }
-
-            @Override
-            public OrderBookQueryResult getVolumeForPrice(boolean isBuy, BigDecimal price) {
-                return null;
-            }
-
-            @Override
-            public OrderBookQueryResult getQuoteVolumeForPrice(boolean isBuy, BigDecimal price) {
-                return null;
-            }
-        };
-        when(dataSource.getNewOrderBook(anyString())).thenReturn(realOrderBook);
-
-        // 3. 트래커 인스턴스 생성
-        tracker = new OrderBookTracker(dataSource, List.of(tradingPair));
+        for (String pair : tradingPairs) {
+            OrderBook mockBook = mock(OrderBook.class);
+            orderBooks.put(pair, mockBook);
+            trackingQueues.put(pair, new LinkedBlockingQueue<>());
+        }
     }
 
     @AfterEach
@@ -129,104 +61,199 @@ class OrderBookTrackerTest {
         tracker.stop();
     }
 
+    @SuppressWarnings("unchecked")
+    private <T> T getPrivateField(Object object, String fieldName) throws Exception {
+        Field field = object.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return (T) field.get(object);
+    }
+
+    private OrderBookMessage createMockMsg(OrderBookMessage.Type type, String pair, long updateId) {
+        OrderBookMessage msg = new OrderBookMessage(type, pair, updateId);
+        return msg;
+    }
+
     @Test
-    @DisplayName("트래커가 시작되면 각 페어에 대한 오더북이 초기화되고 스레드 태스크가 생성되어야 한다")
-    void testInitialization() {
+    @DisplayName("트래커에 Metrics 속성이 존재한다.")
+    void testMetricsPropertyExists() {
+        OrderBookTrackerMetrics metrics = assertInstanceOf(OrderBookTrackerMetrics.class, tracker.getMetrics());
+    }
+
+    @Test
+    @DisplayName("start() 호출 시 트래커 시작 시간이 초기화된다.")
+    void testStartSetsTrackerStartTime() throws Exception {
+        assertEquals(0.0, tracker.getMetrics().getTrackerStartTime());
+
+        // DataSource 모킹
+        when(dataSource.getNewOrderBook(anyString())).thenReturn(mock(OrderBook.class));
+
         tracker.start();
 
-        // 초기화 루프가 돌 때까지 잠시 대기
-        await().atMost(2, TimeUnit.SECONDS).until(() -> {
-            try {
-                return getOrderBook(tradingPair) != null;
-            } catch (Exception e) {
-                return false;
-            }
-        });
-
-        assertNotNull(tracker.getMetrics());
         assertTrue(tracker.getMetrics().getTrackerStartTime() > 0);
-        verify(dataSource, times(1)).getNewOrderBook(tradingPair);
     }
 
     @Test
-    @DisplayName("Diff 메시지가 diffStream에 들어오면 라우터를 거쳐 오더북에 반영되어야 한다")
-    void testDiffMessageProcessing() throws Exception {
+    @DisplayName("Diff 라우터가 메트릭을 정상적으로 업데이트한다.")
+    void testDiffRouterUpdatesMetrics() throws Exception {
+        OrderBook mockBook = orderBooks.get("BTC-USDT");
+        when(mockBook.getSnapshotId()).thenReturn(100L);
+
         tracker.start();
 
-        // 초기화 대기
-        await().atMost(2, TimeUnit.SECONDS).until(() -> tracker.getMetrics().getOrCreatePairMetrics(tradingPair) != null);
+        // Diff 메시지 주입
+        OrderBookMessage msg = createMockMsg(OrderBookMessageType.DIFF, "BTC-USDT", 150L);
+        diffStream.put(msg);
 
-        // 1. 테스트용 Diff 메시지 생성
-        OrderBookMessage diffMsg = new OrderBookMessage(
-                OrderBookMessageType.DIFF,
-                new HashMap<>(),
-                System.currentTimeMillis() / 1000.0
-        );
+        // 비동기 처리 대기
+        Thread.sleep(200);
 
-        // ⭐ 수정: 메서드 대입(=)이 아니라 Setter()를 사용해야 합니다.
-        diffMsg.setTradingPair(tradingPair);
-        diffMsg.setUpdateId(1000L);
-        diffMsg.setBids(List.of(new double[]{50000.0, 1.0}));
-
-        // 2. 내부 diffStream 큐에 메시지 강제 주입
-        injectToQueue("diffStream", diffMsg);
-
-        // 3. ⭐ 수정: 람다 식은 반드시 boolean(true/false)을 반환해야 합니다 (>= 1 추가)
-        await().atMost(3, TimeUnit.SECONDS).until(() -> tracker.getMetrics().getTotalDiffsProcessed() >= 1);
-
-        OrderBook book = getOrderBook(tradingPair);
-        assertEquals(50000.0, book.getBestBid(), "오더북에 매수 호가가 반영되어야 함");
+        assertEquals(1, tracker.getMetrics().getTotalDiffsProcessed());
+        assertNotNull(tracker.getMetrics().getOrCreatePairMetrics("BTC-USDT"));
     }
 
     @Test
-    @DisplayName("오더북 Snapshot ID보다 낮은 Update ID를 가진 Diff는 거절(Reject)되어야 한다")
-    void testDiffRejectionLogic() throws Exception {
+    @DisplayName("Diff 라우터가 스냅샷보다 오래된 diff 메시지를 무시한다.")
+    void testDiffRouterTracksRejectedMessages() throws Exception {
+        when(orderBooks.get("BTC-USDT").getSnapshotId()).thenReturn(200L);
+
         tracker.start();
-        await().atMost(2, TimeUnit.SECONDS).until(() -> getOrderBook(tradingPair) != null);
 
-        // 1. ⭐ OrderBook 클래스에 getSnapshotId/setSnapshotId가 없다면 필드명을 확인하세요.
-        // 보통 Hummingbot 기반이면 snapshotUid 또는 lastUpdateId일 수 있습니다.
-        OrderBook book = getOrderBook(tradingPair);
-        // 만약 setSnapshotId가 없다면 오더북 클래스를 확인하여 적절한 Setter를 쓰세요.
-        book.setSnapshotId(2000L);
+        // 낮은 UID를 가진 diff 메시지 주입
+        OrderBookMessage msg = createMockMsg(OrderBookMessageType.DIFF, "BTC-USDT", 150L);
+        diffStream.put(msg);
 
-        // 2. 낮은 ID(1500)를 가진 Diff 메시지 투입
-        OrderBookMessage oldMsg = new OrderBookMessage(
-                OrderBookMessageType.DIFF,
-                new HashMap<>(),
-                System.currentTimeMillis() / 1000.0
-        );
-        // ⭐ 필드 직접 접근이 아니라 Setter 사용
-        oldMsg.setTradingPair(tradingPair);
-        oldMsg.setUpdateId(1500L);
+        Thread.sleep(200);
 
-        injectToQueue("diffStream", oldMsg);
-
-        // 3. 검증: boolean 반환하도록 수정
-        await().atMost(3, TimeUnit.SECONDS).until(() -> tracker.getMetrics().getTotalDiffsRejected() >= 1);
-        assertEquals(1, tracker.getMetrics().getOrCreatePairMetrics(tradingPair).getDiffsRejected());
+        assertEquals(1, tracker.getMetrics().getTotalDiffsRejected());
     }
 
     @Test
-    @DisplayName("Trade 메시지가 들어오면 tradeStream 라우터를 통해 오더북의 applyTrade가 호출되어야 한다")
-    void testTradeMessageProcessing() throws Exception {
+    @DisplayName("등록되지 않은 페어의 diff 메시지가 들어오면 임시 큐에 저장한다.")
+    void testDiffRouterTracksQueuedMessages() throws Exception {
         tracker.start();
-        await().atMost(2, TimeUnit.SECONDS).until(() -> getOrderBook(tradingPair) != null);
 
-        OrderBookMessage tradeMsg = new OrderBookMessage(
-                OrderBookMessageType.TRADE,
-                new HashMap<>(),
-                System.currentTimeMillis() / 1000.0
-        );
-        tradeMsg.setTradingPair(tradingPair);
-        // Trade 메시지는 보통 content 맵 안에 price와 amount를 넣거나 별도 필드가 있습니다.
-        // 클래스 구조에 맞게 수정하세요.
-        tradeMsg.setPrice(50500.0);
-        tradeMsg.setAmount(0.5);
+        String unknownPair = "SOL-USDT";
 
-        injectToQueue("tradeStream", tradeMsg);
+        // 등록되지 않은 페어의 diff 메시지 주입
+        OrderBookMessage msg = createMockMsg(OrderBookMessageType.DIFF, unknownPair, 150L);
+        diffStream.put(msg);
 
-        await().atMost(3, TimeUnit.SECONDS).until(() -> tracker.getMetrics().getTotalTradesProcessed() >= 1);
+        Thread.sleep(200);
 
-        assertEquals(50500.0, getOrderBook(tradingPair).getLastTradePrice());
+        assertEquals(1, tracker.getMetrics().getTotalDiffsQueued());
+
+        assertTrue(savedMessageQueues.containsKey(unknownPair));
+        assertEquals(1, savedMessageQueues.get(unknownPair).size());
+
+        OrderBookMessage savedMsg = savedMessageQueues.get(unknownPair).peek();
+        assertEquals(unknownPair, savedMsg.getTradingPair());
     }
+
+    @Test
+    @DisplayName("Snapshot 라우터가 메트릭을 정상적으로 업데이트한다.")
+    void testSnapshotRouterUpdatesMetrics() throws Exception {
+        tracker.start();
+
+        OrderBookMessage msg = createMockMsg(OrderBookMessageType.SNAPSHOT, "BTC-USDT", 100L);
+        snapshotStream.put(msg);
+
+        Thread.sleep(200);
+
+        assertEquals(1, tracker.getMetrics().getTotalSnapshotsProcessed());
+    }
+
+    @Test
+    @DisplayName("Trade 라우터가 메트릭을 정상적으로 업데이트하고 메시지를 처리한다.")
+    void testTradeRouterUpdatesMetrics() throws Exception {
+        tracker.start();
+
+        String pair = "BTC-USDT";
+        OrderBook mockBook = orderBooks.get(pair);
+
+        OrderBookMessage msg = createMockMsg(OrderBookMessageType.TRADE, pair, 150L);
+        tradeStream.put(msg);
+
+        Thread.sleep(200);
+
+        assertEquals(1, tracker.getMetrics().getTotalTradesProcessed());
+
+        assertEquals(1, tracker.getMetrics().getOrCreatePairMetrics(pair).getTradesProcessed(), "페어별 Trade 처리 메트릭이 증가해야 합니다.");
+
+        verify(mockBook, times(1)).applyTrade(msg);
+    }
+
+    @Test
+    @DisplayName("등록되지 않은 페어의 Trade 메시지가 들어오면 Reject 된다.")
+    void testTradeRouterTracksRejectedTrades() throws Exception {
+        tracker.start();
+
+        String unknownPair = "UNKNOWN-PAIR";
+
+        OrderBookMessage msg = createMockMsg(OrderBookMessageType.TRADE, unknownPair, 150L);
+        tradeStream.put(msg);
+
+        Thread.sleep(200);
+
+        assertEquals(1, tracker.getMetrics().getTotalTradesRejected(), "Rejected 메트릭이 증가해야 합니다.");
+    }
+
+    @Test
+    @DisplayName("트레이딩 페어가 정상적으로 추가된다.")
+    void testAddTradingPairSuccessful() throws Exception {
+        when(dataSource.getNewOrderBook(anyString())).thenReturn(mock(OrderBook.class));
+        when(dataSource.subscribeToTradingPair(anyString())).thenReturn(true);
+
+        tracker.start();
+        tracker.waitReady();
+
+        String newPair = "SOL-USDT";
+        boolean result = tracker.addTradingPair(newPair);
+
+        assertTrue(result);
+        assertTrue(orderBooks.containsKey(newPair));
+        verify(dataSource).subscribeToTradingPair(newPair);
+    }
+
+    @Test
+    @DisplayName("이미 트래킹 중인 페어 추가 시 False가 반환된다.")
+    void testAddTradingPairAlreadyTracked() throws Exception {
+        tracker.start();
+        tracker.waitReady();
+
+        boolean result = tracker.addTradingPair("BTC-USDT");
+
+        assertFalse(result);
+        verify(dataSource, never()).getNewOrderBook("BTC-USDT");
+    }
+
+    @Test
+    @DisplayName("트레이딩 페어 삭제 시 데이터 및 메트릭이 삭제된다.")
+    void testRemoveTradingPairSuccessful() throws Exception {
+        when(dataSource.unsubscribeFromTradingPair(anyString())).thenReturn(true);
+
+        tracker.start();
+        tracker.waitReady();
+
+        tracker.getMetrics().getOrCreatePairMetrics("BTC-USDT");
+
+        boolean result = tracker.removeTradingPair("BTC-USDT");
+
+        assertTrue(result);
+        assertFalse(orderBooks.containsKey("BTC-USDT"));
+    }
+
+    @Test
+    @DisplayName("구독 실패 시 페어 추가가 정상적으로 실패 처리된다.")
+    void testAddTradingPairSubscriptionFails() throws Exception {
+        when(dataSource.getNewOrderBook(anyString())).thenReturn(mock(OrderBook.class));
+        when(dataSource.subscribeToTradingPair("SOL-USDT")).thenReturn(false);
+
+        tracker.start();
+        tracker.waitReady();
+
+        boolean result = tracker.addTradingPair("SOL-USDT");
+
+        assertFalse(result);
+        assertFalse(orderBooks.containsKey("SOL-USDT"));
+    }
+}
