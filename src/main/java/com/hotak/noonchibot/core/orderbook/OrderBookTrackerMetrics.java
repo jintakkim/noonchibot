@@ -2,11 +2,15 @@ package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.core.datatype.LatencyStats;
 import com.hotak.noonchibot.core.utils.TimeUtils;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Getter
+@Setter
 public class OrderBookTrackerMetrics {
     private long totalDiffsProcessed = 0;
     private long totalDiffsRejected = 0;
@@ -24,8 +28,8 @@ public class OrderBookTrackerMetrics {
 
     private final Map<String, OrderBookPairMetrics> perPairMetrics = new ConcurrentHashMap<>();
 
-    public OrderBookTrackerMetrics(double startTime) {
-        this.trackerStartTime = startTime;
+    public OrderBookTrackerMetrics() {
+        this.trackerStartTime = 0.0;
     }
 
     public OrderBookPairMetrics getOrCreatePairMetrics(String tradingPair) {
@@ -88,12 +92,6 @@ public class OrderBookTrackerMetrics {
         return map;
     }
 
-    public void setTrackerStartTime(double trackerStartTime) {
-        this.trackerStartTime = trackerStartTime;
-    }
-
-    // OrderBookTrackerMetrics.java 내부에 추가할 코드
-
     public void incrementTotalDiffsQueued() {
         this.totalDiffsQueued++;
     }
@@ -110,11 +108,7 @@ public class OrderBookTrackerMetrics {
         this.totalTradesRejected++;
     }
 
-    // Latency와 카운트를 동시에 처리하는 편의 메서드
-    public void recordDiffProcessed(double latency) {
-        this.totalDiffsProcessed++;
-        // 필요시 레이턴시 기록 로직 추가
-    }
+    public void recordDiffProcessed(double latency) { this.totalDiffsProcessed++; }
 
     public void recordSnapshotProcessed(double latency) {
         this.totalSnapshotsProcessed++;
@@ -122,17 +116,5 @@ public class OrderBookTrackerMetrics {
 
     public void recordTradeProcessed(double latency) {
         this.totalTradesProcessed++;
-    }
-
-    public double getTrackerStartTime() {
-        return trackerStartTime;
-    }
-
-    public long getTotalDiffsProcessed() {
-        return totalDiffsProcessed;
-    }
-
-    public long getTotalTradesProcessed() {
-        return totalTradesProcessed;
     }
 }
