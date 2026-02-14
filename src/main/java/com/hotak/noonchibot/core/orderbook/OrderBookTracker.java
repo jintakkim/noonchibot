@@ -1,16 +1,15 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Logger;
 
+@Slf4j
 public class OrderBookTracker {
-    private static final Logger logger = Logger.getLogger(OrderBookTracker.class.getName());
-    private static final int PAST_DIFF_WINDOW_SIZE = 32;
-
     private final String domain;
     private final OrderBookTrackerDataSource dataSource;
     private final List<String> tradingPairs = new CopyOnWriteArrayList<>();
@@ -41,7 +40,7 @@ public class OrderBookTracker {
         if (isRunning.get()) stop();
         isRunning.set(true);
 
-        logger.info("Starting OrderBookTracker...");
+        log.info("OrderBookTracker 시작 중...");
         metrics.setTrackerStartTime(Instant.now().toEpochMilli() / 1000.0);
 
         executor = Executors.newCachedThreadPool();
@@ -61,7 +60,7 @@ public class OrderBookTracker {
         if (executor != null) {
             executor.shutdownNow();
         }
-        logger.info("OrderBookTracker stopped.");
+        log.info("OrderBookTracker가 정지되었습니다.");
     }
 
     public void waitReady() {
@@ -69,14 +68,14 @@ public class OrderBookTracker {
             initializedLatch.await();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            logger.warning("오더북 준비 대기 중 인터럽트 발생");
+            log.warn("OrderBook 준비 대기 중 인터럽트가 발생했습니다.");
         }
     }
 
     private void updateLastTradePricesLoop() {
         this.waitReady();
 
-        logger.info("Starting last trade price update loop.");
+        log.info("LastTradePrices 업데아트 루프 시작 중..");
 
         while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
             try {
@@ -113,7 +112,7 @@ public class OrderBookTracker {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                logger.severe("Unexpected error while fetching last trade price: " + e.getMessage());
+                log.error("최근 거래가를 가져오는 중 예상치 못한 오류 발생: {}", e.getMessage(), e);
                 try {
                     Thread.sleep(30000);
                 } catch (InterruptedException ie) {
@@ -126,18 +125,18 @@ public class OrderBookTracker {
 
     public boolean addTradingPair(String pair) {
         if (orderBooks.containsKey(pair)) {
-            logger.warning("해당 페어는 이미 트래킹 중입니다.");
+            log.warn("해당 페어는 이미 트래킹 중입니다.");
             return false;
         }
 
         waitReady();
 
         try {
-            logger.info("오더북 트래커에" + pair + "추가 중...");
+            log.info("오더북 트래커에 {} 페어 추가 중...", pair);
 
             boolean subscribeSuccess = dataSource.subscribeToTradingPair(pair);
             if (!subscribeSuccess) {
-                logger.severe("페어 연결에 실패했습니다.");
+                log.error("페어 연결에 실패했습니다.");
                 return false;
             }
 
@@ -152,11 +151,11 @@ public class OrderBookTracker {
             Future<?> task = executor.submit(() -> trackSingleBook(pair));
             trackingTasks.put(pair, task);
 
-            logger.info("Successfully added trading pair " + pair);
+            log.info("페어 연결에 성공했습니다.");
             return true;
 
         } catch (Exception e) {
-            logger.severe("Error adding trading pair " + pair + ": " + e.getMessage());
+            log.error("트레이딩 페어 {} 추가 중 오류 발생: {}", pair, e.getMessage(), e);
             removeTradingPair(pair);
             return false;
         }
@@ -164,12 +163,12 @@ public class OrderBookTracker {
 
     public boolean removeTradingPair(String pair) {
         if (!orderBooks.containsKey(pair)) {
-            logger.warning("해당 페어는 트래킹 중이 아닙니다.");
+            log.warn("해당 페어는 트래킹 중이 아닙니다.");
             return false;
         }
 
         try {
-            logger.info("오더북 트래커에" + pair + "삭제 중...");
+            log.info("오더북 트래커에서 {} 삭제 중...", pair);
 
             Future<?> task = trackingTasks.remove(pair);
             if (task != null) {
@@ -178,7 +177,7 @@ public class OrderBookTracker {
 
             boolean unsubscribeSuccess = dataSource.unsubscribeFromTradingPair(pair);
             if (!unsubscribeSuccess) {
-                logger.warning("Failed to unsubscribe from " + pair);
+                log.warn("페어 삭제에 실패했습니다.");
             }
 
             orderBooks.remove(pair);
@@ -189,11 +188,11 @@ public class OrderBookTracker {
 
             metrics.removePairMetrics(pair);
 
-            logger.info("Successfully removed trading pair " + pair);
+            log.info("페어 삭제에 성공했습니다.");
             return true;
 
         } catch (Exception e) {
-            logger.severe("Error removing trading pair " + pair + ": " + e.getMessage());
+            log.error("트레이딩 페어 {} 삭제 중 오류 발생: {}", pair, e.getMessage(), e);
             return false;
         }
     }
@@ -203,7 +202,7 @@ public class OrderBookTracker {
             try {
                 OrderBookMessage msg = diffStream.take();
                 long start = System.nanoTime();
-                String pair = msg.
+//                String pair = msg.
 
                 if (!trackingQueues.containsKey(pair)) {
                     metrics.incrementTotalDiffsQueued();
@@ -293,14 +292,14 @@ public class OrderBookTracker {
                     case DIFF -> book.applyDiffs(msg);
                     case SNAPSHOT -> book.restoreFromSnapshotAndDiffs(msg);
                     case TRADE -> book.applyTrade(msg);
-                    default -> logger.warning("Unknown message type received for " + pair + ": " + msg.getType());
+                    default -> log.warn("{}에 대해 알 수 없는 메시지 유형이 수신되었습니다: {}", pair, msg.getType());
                 }
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                logger.severe("Error tracking order book for " + pair + ": " + e.getMessage());
+                log.error("{} 오더북 트래킹 중 오류가 발생했습니다: {}", pair, e.getMessage(), e);
             }
         }
     }
@@ -315,10 +314,10 @@ public class OrderBookTracker {
                 Future<?> task = executor.submit(() -> trackSingleBook(pair));
                 trackingTasks.put(pair, task);
 
-                logger.info("Initialized order book for " + pair);
+                log.info("{} 오더북 초기화 완료", pair);
                 Thread.sleep(100);
             } catch (Exception e) {
-                logger.severe("Error initializing " + pair + ": " + e.getMessage());
+                log.error("{} 초기화 중 오류가 발생했습니다: {}", pair, e.getMessage(), e);
             }
         }
         initializedLatch.countDown();
