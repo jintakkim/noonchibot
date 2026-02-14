@@ -1,7 +1,6 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.core.datatype.LatencyStats;
-import com.hotak.noonchibot.core.utils.TimeUtils;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -34,7 +33,7 @@ public class OrderBookTrackerMetrics {
 
     public OrderBookPairMetrics getOrCreatePairMetrics(String tradingPair) {
         return perPairMetrics.computeIfAbsent(tradingPair, pair ->
-                new OrderBookPairMetrics(pair, TimeUtils.getCurrentSeconds())
+                new OrderBookPairMetrics(pair, System.nanoTime() / 1_000_000_000.0)
         );
     }
 
@@ -67,7 +66,7 @@ public class OrderBookTrackerMetrics {
     }
 
     public synchronized Map<String, Object> toMap() {
-        double currentTime = TimeUtils.getCurrentSeconds();
+        double currentTime = System.nanoTime() / 1_000_000_000.0;
         Map<String, Object> map = new HashMap<>();
 
         map.put("total_diffs_processed", totalDiffsProcessed);
