@@ -6,7 +6,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 public class OrderBookTracker {
@@ -14,7 +13,7 @@ public class OrderBookTracker {
     private final OrderBookTrackerDataSource dataSource;
     private final List<String> tradingPairs = new CopyOnWriteArrayList<>();
 
-    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    private volatile Boolean isRunning = false;
     private final CountDownLatch initializedLatch = new CountDownLatch(1);
     private ExecutorService executor;
 
@@ -37,8 +36,8 @@ public class OrderBookTracker {
     }
 
     public void start() {
-        if (isRunning.get()) stop();
-        isRunning.set(true);
+        if (isRunning) stop();
+        isRunning = true;
 
         log.info("OrderBookTracker 시작 중...");
         metrics.setTrackerStartTime(Instant.now().toEpochMilli() / 1000.0);
@@ -57,7 +56,7 @@ public class OrderBookTracker {
     }
 
     public void stop() {
-        isRunning.set(false);
+        isRunning = false;
         if (executor != null) {
             executor.shutdownNow();
         }
@@ -78,7 +77,7 @@ public class OrderBookTracker {
 
         log.info("LastTradePrices 업데아트 루프 시작 중..");
 
-        while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
+        while (isRunning && !Thread.currentThread().isInterrupted()) {
             try {
                 double now = Instant.now().toEpochMilli() / 1000.0;
                 List<String> outdatedPairs = new ArrayList<>();
@@ -199,7 +198,7 @@ public class OrderBookTracker {
     }
 
     private void orderBookDiffRouter() {
-        while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
+        while (isRunning && !Thread.currentThread().isInterrupted()) {
             try {
                 OrderBookMessage msg = diffStream.take();
                 long start = System.nanoTime();
@@ -233,7 +232,7 @@ public class OrderBookTracker {
     }
 
     private void orderBookSnapshotRouter() {
-        while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
+        while (isRunning && !Thread.currentThread().isInterrupted()) {
             try {
                 OrderBookMessage msg = snapshotStream.take();
                 long start = System.nanoTime();
@@ -257,7 +256,7 @@ public class OrderBookTracker {
     }
 
     private void orderBookTradeRouter() {
-        while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
+        while (isRunning && !Thread.currentThread().isInterrupted()) {
             try {
                 OrderBookMessage msg = tradeStream.take();
                 double start = System.nanoTime();
@@ -284,7 +283,7 @@ public class OrderBookTracker {
         BlockingQueue<OrderBookMessage> queue = trackingQueues.get(pair);
         OrderBook book = orderBooks.get(pair);
 
-        while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
+        while (isRunning && !Thread.currentThread().isInterrupted()) {
             try {
                 Deque<OrderBookMessage> saved = savedMessageQueues.get(pair);
                 OrderBookMessage msg = (saved != null && !saved.isEmpty()) ? saved.pollFirst() : queue.take();
