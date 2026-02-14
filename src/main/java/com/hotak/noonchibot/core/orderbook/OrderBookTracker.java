@@ -43,8 +43,9 @@ public class OrderBookTracker {
         log.info("OrderBookTracker 시작 중...");
         metrics.setTrackerStartTime(Instant.now().toEpochMilli() / 1000.0);
 
-        executor = Executors.newCachedThreadPool();
-        executor.submit(this::initOrderBooks);
+        executor = Executors.newVirtualThreadPerTaskExecutor();
+
+        initOrderBooks();
 
         executor.submit(this::orderBookDiffRouter);
         executor.submit(this::orderBookSnapshotRouter);
