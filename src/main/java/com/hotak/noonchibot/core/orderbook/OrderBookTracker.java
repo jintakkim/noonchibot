@@ -1,16 +1,24 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import com.hotak.noonchibot.core.RetryableTrigger;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.TaskScheduler;
 
+import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 
 @Slf4j
 public class OrderBookTracker {
+    private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(1);
+    private static final Duration ERROR_RETRY_INTERVAL = Duration.ofSeconds(30);
+
     private final String domain;
     private final OrderBookTrackerDataSource dataSource;
     private final Set<String> tradingPairs = new CopyOnWriteArraySet<>();
+    private final TaskScheduler scheduler;
 
     private volatile Boolean isRunning = false;
     private final CountDownLatch initializedLatch = new CountDownLatch(1);
@@ -28,6 +36,7 @@ public class OrderBookTracker {
         this.domain = domain;
         this.dataSource = dataSource;
         this.tradingPairs.addAll(pairs);
+        this.taskScheduler = taskScheduler;
     }
 
     public void start() {
@@ -44,6 +53,18 @@ public class OrderBookTracker {
         dataSource.listenForOrderBookDiffs(this::onDiffReceived);
         dataSource.listenForOrderBookSnapshots(this::onSnapshotReceived);
         dataSource.listenForTrades(this::onTradeReceived);
+
+        RetryableTrigger priceUpdateTrigger = new RetryableTrigger(PRICE_CHECK_INTERVAL, ERROR_RETRY_INTERVAL);
+        scheduledTasks.add(scheduler.schedule(() -> {
+            if (!isRunning) return;
+            try {
+                updateLastTradePrices();
+                priceUpdateTrigger.recordSuccess();
+            } catch (Exception e) {
+                log.error("최근 거래가 업데이트 중 에러 발생 (30초 후 재시도): {}", e.getMessage());
+                priceUpdateTrigger.recordFailure();
+            }
+        }, priceUpdateTrigger));
     }
 
     public void stop() {
@@ -281,4 +302,26 @@ public class OrderBookTracker {
         }
     }
 
+    private void updateLastTradePrices() {
+        if (initializedLatch.getCount() > 0) return;
+
+        double now = Instant.now().toEpochMilli() / 1000.0;
+        List<String> outdatedPairs = new ArrayList<>();
+
+        for (OrderBook book : orderBooks.values()) {
+            if (book.getLastAppliedTradeTime() < now - 180.0 &&
+                    book.getLastTradePriceUpdatedTime() < now - 5.0) {
+                outdatedPairs.add(book.getTradingPair());
+            }
+        }
+
+        if (!outdatedPairs.isEmpty()) {
+            Map<String, BigDecimal> lastPrices = dataSource.getLastTradedPrices(outdatedPairs, domain);
+
+            lastPrices.forEach((pair, price) -> {
+                OrderBook book = orderBooks.get(pair);
+                if (book != null) book.setLastTradePrice(price);
+            });
+        }
+    }
 }
