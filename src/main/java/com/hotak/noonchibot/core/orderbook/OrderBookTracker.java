@@ -15,7 +15,12 @@ public class OrderBookTracker {
 
     private volatile Boolean isRunning = false;
     private final CountDownLatch initializedLatch = new CountDownLatch(1);
+
     private ExecutorService executor;
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofPlatform().name("ob-tracker-scheduler").factory()
+    );
+    private ScheduledFuture<?> priceUpdateTask;
 
     private final Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
     private final Map<String, BlockingQueue<OrderBookMessage>> trackingQueues = new ConcurrentHashMap<>();
@@ -30,9 +35,9 @@ public class OrderBookTracker {
     private final OrderBookTrackerMetrics metrics = new OrderBookTrackerMetrics();
 
     public OrderBookTracker(OrderBookTrackerDataSource dataSource, List<String> pairs, String domain) {
+        this.domain = domain;
         this.dataSource = dataSource;
         this.tradingPairs.addAll(pairs);
-        this.domain = domain;
     }
 
     public void start() {
@@ -44,7 +49,7 @@ public class OrderBookTracker {
 
         executor = Executors.newVirtualThreadPerTaskExecutor();
 
-        initOrderBooks();
+        this.initOrderBooks();
 
         executor.submit(this::orderBookDiffRouter);
         executor.submit(this::orderBookSnapshotRouter);
@@ -58,7 +63,7 @@ public class OrderBookTracker {
     public void stop() {
         isRunning = false;
         if (executor != null) {
-            executor.shutdownNow();
+            executor.shutdown();
         }
         log.info("OrderBookTracker가 정지되었습니다.");
     }
@@ -72,7 +77,7 @@ public class OrderBookTracker {
         }
     }
 
-    private void updateLastTradePricesLoop() {
+    private void updateLastTradePrices() {
         this.waitReady();
 
         log.info("LastTradePrices 업데아트 루프 시작 중..");
@@ -87,7 +92,7 @@ public class OrderBookTracker {
                     OrderBook book = entry.getValue();
 
                     if (book.getLastAppliedTradeTime() < now - 180.0 &&
-                            book.getLastTradePriceRestUpdatedTime() < now - 5.0) { // 이름수정, 시간 부등호 비교 금지
+                            book.getLastTradePriceUpdatedTime() < now - 5.0) { // 이름수정, 시간 부등호 비교 금지
                         outdatedPairs.add(pair);
                     }
                 }
