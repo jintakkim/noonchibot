@@ -4,9 +4,12 @@ import com.hotak.noonchibot.core.datatype.LatencyStats;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Getter
 @Setter
@@ -19,7 +22,7 @@ public class OrderBookTrackerMetrics {
     private long totalTradesProcessed = 0;
     private long totalTradesRejected = 0;
 
-    private double trackerStartTime = 0.0;
+    private Instant trackerStartTime;
 
     private final LatencyStats diffProcessingLatency = new LatencyStats();
     private final LatencyStats snapshotProcessingLatency = new LatencyStats();
@@ -28,12 +31,12 @@ public class OrderBookTrackerMetrics {
     private final Map<String, OrderBookPairMetrics> perPairMetrics = new ConcurrentHashMap<>();
 
     public OrderBookTrackerMetrics() {
-        this.trackerStartTime = 0.0;
+        this.trackerStartTime = Instant.now();
     }
 
     public OrderBookPairMetrics getOrCreatePairMetrics(String tradingPair) {
         return perPairMetrics.computeIfAbsent(tradingPair, pair ->
-                new OrderBookPairMetrics(pair, System.nanoTime() / 1_000_000_000.0)
+                new OrderBookPairMetrics(pair, Instant.now())
         );
     }
 
@@ -41,8 +44,9 @@ public class OrderBookTrackerMetrics {
         perPairMetrics.remove(tradingPair);
     }
 
-    public Map<String, Double> getMessagesPerMinute(double currentTime) {
-        double elapsedMinutes = (trackerStartTime > 0) ? (currentTime - trackerStartTime) / 60.0 : 0;
+    public Map<String, Double> getMessagesPerMinute(Instant currentTime) {
+        Duration duration = Duration.between(trackerStartTime, currentTime);
+        double elapsedMinutes = duration.toNanos() / (double) TimeUnit.MINUTES.toNanos(1);
 
         Map<String, Double> rates = new HashMap<>();
         if (elapsedMinutes <= 0) {
@@ -53,67 +57,31 @@ public class OrderBookTrackerMetrics {
             return rates;
         }
 
-        double diffsPerMin = totalDiffsProcessed / elapsedMinutes;
-        double snapshotsPerMin = totalSnapshotsProcessed / elapsedMinutes;
-        double tradesPerMin = totalTradesProcessed / elapsedMinutes;
-
-        rates.put("diffs", diffsPerMin);
-        rates.put("snapshots", snapshotsPerMin);
-        rates.put("trades", tradesPerMin);
-        rates.put("total", diffsPerMin + snapshotsPerMin + tradesPerMin);
+        rates.put("diffs", totalDiffsProcessed / elapsedMinutes);
+        rates.put("snapshots", totalSnapshotsProcessed / elapsedMinutes);
+        rates.put("trades", totalTradesProcessed / elapsedMinutes);
+        rates.put("total", (totalDiffsProcessed + totalSnapshotsProcessed + totalTradesProcessed) / elapsedMinutes);
 
         return rates;
     }
 
-    public synchronized Map<String, Object> toMap() {
-        double currentTime = System.nanoTime() / 1_000_000_000.0;
-        Map<String, Object> map = new HashMap<>();
-
-        map.put("total_diffs_processed", totalDiffsProcessed);
-        map.put("total_diffs_rejected", totalDiffsRejected);
-        map.put("total_diffs_queued", totalDiffsQueued);
-        map.put("total_snapshots_processed", totalSnapshotsProcessed);
-        map.put("total_trades_processed", totalTradesProcessed);
-
-        map.put("uptime_seconds", (trackerStartTime > 0) ? (currentTime - trackerStartTime) : 0);
-        map.put("messages_per_minute", getMessagesPerMinute(currentTime));
-
-        map.put("diff_latency", diffProcessingLatency.toMap());
-        map.put("snapshot_latency", snapshotProcessingLatency.toMap());
-        map.put("trade_latency", tradeProcessingLatency.toMap());
-
-        Map<String, Map<String, Object>> perPairData = new HashMap<>();
-        for (Map.Entry<String, OrderBookPairMetrics> entry : perPairMetrics.entrySet()) {
-            perPairData.put(entry.getKey(), entry.getValue().toMap(currentTime));
-        }
-        map.put("per_pair_metrics", perPairData);
-
-        return map;
+    public synchronized void recordDiffProcessed(Duration latency) {
+        this.totalDiffsProcessed++;
+        this.diffProcessingLatency.record(latency);
     }
 
-    public void incrementTotalDiffsQueued() {
-        this.totalDiffsQueued++;
-    }
-
-    public void incrementTotalDiffsRejected() {
-        this.totalDiffsRejected++;
-    }
-
-    public void incrementTotalSnapshotsRejected() {
-        this.totalSnapshotsRejected++;
-    }
-
-    public void incrementTotalTradesRejected() {
-        this.totalTradesRejected++;
-    }
-
-    public void recordDiffProcessed(double latency) { this.totalDiffsProcessed++; }
-
-    public void recordSnapshotProcessed(double latency) {
+    public synchronized void recordSnapshotProcessed(Duration latency) {
         this.totalSnapshotsProcessed++;
+        this.snapshotProcessingLatency.record(latency);
     }
 
-    public void recordTradeProcessed(double latency) {
+    public synchronized void recordTradeProcessed(Duration latency) {
         this.totalTradesProcessed++;
+        this.tradeProcessingLatency.record(latency);
     }
+
+    public void incrementTotalDiffsQueued() { this.totalDiffsQueued++; }
+    public void incrementTotalDiffsRejected() { this.totalDiffsRejected++; }
+    public void incrementTotalSnapshotsRejected() { this.totalSnapshotsRejected++; }
+    public void incrementTotalTradesRejected() { this.totalTradesRejected++; }
 }
