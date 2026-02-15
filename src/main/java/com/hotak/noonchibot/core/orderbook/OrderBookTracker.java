@@ -2,7 +2,6 @@ package com.hotak.noonchibot.core.orderbook;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -11,26 +10,17 @@ import java.util.concurrent.*;
 public class OrderBookTracker {
     private final String domain;
     private final OrderBookTrackerDataSource dataSource;
-    private final List<String> tradingPairs = new CopyOnWriteArrayList<>();
+    private final Set<String> tradingPairs = new CopyOnWriteArraySet<>();
 
     private volatile Boolean isRunning = false;
     private final CountDownLatch initializedLatch = new CountDownLatch(1);
 
-    private ExecutorService executor;
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().name("ob-tracker-scheduler").factory()
-    );
-    private ScheduledFuture<?> priceUpdateTask;
+    private ExecutorService generalExecutor;
+    private final Map<String, ExecutorService> pairExecutors = new ConcurrentHashMap<>();
 
     private final Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
-    private final Map<String, BlockingQueue<OrderBookMessage>> trackingQueues = new ConcurrentHashMap<>();
-    private final Map<String, Future<?>> trackingTasks = new ConcurrentHashMap<>();
     private final Map<String, Deque<OrderBookMessage>> savedMessageQueues = new ConcurrentHashMap<>();
     private final Map<String, Deque<OrderBookMessage>> pastDiffsWindows = new ConcurrentHashMap<>();
-
-    private final BlockingQueue<OrderBookMessage> diffStream = new LinkedBlockingQueue<>();
-    private final BlockingQueue<OrderBookMessage> snapshotStream = new LinkedBlockingQueue<>();
-    private final BlockingQueue<OrderBookMessage> tradeStream = new LinkedBlockingQueue<>();
 
     private final OrderBookTrackerMetrics metrics = new OrderBookTrackerMetrics();
 
@@ -47,24 +37,25 @@ public class OrderBookTracker {
         log.info("OrderBookTracker 시작 중...");
         metrics.setTrackerStartTime(Instant.now().toEpochMilli() / 1000.0);
 
-        executor = Executors.newVirtualThreadPerTaskExecutor();
+        generalExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-        this.initOrderBooks();
+        initOrderBooks();
 
-        executor.submit(this::orderBookDiffRouter);
-        executor.submit(this::orderBookSnapshotRouter);
-        executor.submit(this::orderBookTradeRouter);
-
-        dataSource.listenForOrderBookDiffs(diffStream);
-        dataSource.listenForOrderBookSnapshots(snapshotStream);
-        dataSource.listenForTrades(tradeStream);
+        dataSource.listenForOrderBookDiffs(this::onDiffReceived);
+        dataSource.listenForOrderBookSnapshots(this::onSnapshotReceived);
+        dataSource.listenForTrades(this::onTradeReceived);
     }
 
     public void stop() {
         isRunning = false;
-        if (executor != null) {
-            executor.shutdown();
+
+        pairExecutors.values().forEach(ExecutorService::shutdown);
+        pairExecutors.clear();
+
+        if (generalExecutor != null) {
+            generalExecutor.shutdown();
         }
+
         log.info("OrderBookTracker가 정지되었습니다.");
     }
 
@@ -77,54 +68,141 @@ public class OrderBookTracker {
         }
     }
 
-    private void updateLastTradePrices() {
-        this.waitReady();
+    private void onDiffReceived(OrderBookMessage msg) {
+        if (!isRunning) return;
 
-        log.info("LastTradePrices 업데아트 루프 시작 중..");
+        long start = System.nanoTime();
+        String pair = msg.getTradingPair();
 
-        while (isRunning && !Thread.currentThread().isInterrupted()) {
-            try {
-                double now = Instant.now().toEpochMilli() / 1000.0;
-                List<String> outdatedPairs = new ArrayList<>();
+        // 아직 트래킹 전인 pair는 Queue에 임시 저장
+        if (!pairExecutors.containsKey(pair)) {
+            metrics.incrementTotalDiffsQueued();
+            savedMessageQueues
+                    .computeIfAbsent(pair, k -> new ConcurrentLinkedDeque<>())
+                    .add(msg);
+            return;
+        }
 
-                for (Map.Entry<String, OrderBook> entry : orderBooks.entrySet()) {
-                    String pair = entry.getKey();
-                    OrderBook book = entry.getValue();
+        OrderBook book = orderBooks.get(pair);
+        OrderBookPairMetrics pairMetrics = metrics.getOrCreatePairMetrics(pair);
 
-                    if (book.getLastAppliedTradeTime() < now - 180.0 &&
-                            book.getLastTradePriceUpdatedTime() < now - 5.0) { // 이름수정, 시간 부등호 비교 금지
-                        outdatedPairs.add(pair);
-                    }
-                }
+        // 최신 id가 아닌 diff 메시지는 reject
+        if (book.getSnapshotId() > msg.getUpdateId()) {
+            metrics.incrementTotalDiffsRejected();
+            pairMetrics.incrementTotalDiffsRejected();
+            return;
+        }
 
-                if (!outdatedPairs.isEmpty()) {
-                    Map<String, BigDecimal> lastPrices = dataSource.getLastTradedPrices(outdatedPairs, domain);
+        // pair 전용 executor에 처리 위임 → pair 내 순서 보장
+        submitToPair(pair, () -> {
+            book.applyDiffs(msg);
+        });
 
-                    for (Map.Entry<String, BigDecimal> priceEntry : lastPrices.entrySet()) {
-                        String pair = priceEntry.getKey();
-                        BigDecimal lastPrice = priceEntry.getValue();
+        double latency = (System.nanoTime() - start) / 1_000_000.0;
+        metrics.recordDiffProcessed(latency);
+        pairMetrics.recordDiffProcessed(latency, start);
+    }
 
-                        OrderBook book = orderBooks.get(pair);
-                        if (book != null) {
-                            book.setLastTradePrice(lastPrice);
-                        }
-                    }
-                } else {
-                    Thread.sleep(1000); //task
-                }
+    private void onSnapshotReceived(OrderBookMessage msg) {
+        if (!isRunning) return;
 
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                log.error("최근 거래가를 가져오는 중 예상치 못한 오류 발생: {}", e.getMessage(), e);
+        long start = System.nanoTime();
+        String pair = msg.getTradingPair();
+
+        // 현재 트래킹 중이 아닌 페어를 받을 시 reject
+        if (!pairExecutors.containsKey(pair)) {
+            metrics.incrementTotalSnapshotsRejected();
+            return;
+        }
+
+        submitToPair(pair, () -> {
+            OrderBook book = orderBooks.get(pair);
+            book.restoreFromSnapshotAndDiffs(msg);
+        });
+
+        double latency = (System.nanoTime() - start) / 1_000_000.0;
+        metrics.recordSnapshotProcessed(latency);
+        metrics.getOrCreatePairMetrics(pair).recordSnapshotProcessed(latency, start);
+    }
+
+    //Binance에는 diff와 trade를 동일시하나, 타 거래소를 위해 메소드를 남겨두었다
+    private void onTradeReceived(OrderBookMessage msg) {
+        if (!isRunning) return;
+
+        double start = System.nanoTime();
+        String pair = msg.getTradingPair();
+
+        if (!orderBooks.containsKey(pair)) {
+            metrics.incrementTotalTradesRejected();
+            return;
+        }
+
+        submitToPair(pair, () -> {
+            orderBooks.get(pair).applyTrade(msg);
+        });
+
+        double latency = (System.nanoTime() - start) / 1_000_000.0;
+        metrics.recordTradeProcessed(latency);
+        metrics.getOrCreatePairMetrics(pair).recordTradeProcessed(latency, start);
+    }
+
+    private void submitToPair(String pair, Runnable task) {
+        ExecutorService pairExec = pairExecutors.get(pair);
+        if (pairExec != null && !pairExec.isShutdown()) {
+            pairExec.submit(() -> {
                 try {
-                    Thread.sleep(30000);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
+                    task.run();
+                } catch (Exception e) {
+                    log.error("{} 오더북 처리 중 오류가 발생했습니다: {}", pair, e.getMessage(), e);
                 }
+            });
+        }
+    }
+
+    private ExecutorService createPairExecutor(String pair) {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "orderbook-" + pair);
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    private void initOrderBooks() {
+        for (String pair : tradingPairs) {
+            try {
+                OrderBook book = dataSource.getNewOrderBook(pair);
+                orderBooks.put(pair, book);
+
+                ExecutorService pairExec = createPairExecutor(pair);
+                pairExecutors.put(pair, pairExec);
+
+                // 임시 저장된 메시지 flush
+                drainSavedMessages(pair);
+
+                log.info("{} 오더북 초기화 완료", pair);
+                Thread.sleep(100);
+            } catch (Exception e) {
+                log.error("{} 초기화 중 오류가 발생했습니다: {}", pair, e.getMessage(), e);
             }
+        }
+        initializedLatch.countDown();
+    }
+
+    private void drainSavedMessages(String pair) {
+        Deque<OrderBookMessage> saved = savedMessageQueues.remove(pair);
+        if (saved == null) return;
+
+        OrderBookMessage msg;
+        while ((msg = saved.pollFirst()) != null) {
+            final OrderBookMessage m = msg;
+            submitToPair(pair, () -> {
+                switch (m.getType()) {
+                    case DIFF -> orderBooks.get(pair).applyDiffs(m);
+                    case SNAPSHOT -> orderBooks.get(pair).restoreFromSnapshotAndDiffs(m);
+                    case TRADE -> orderBooks.get(pair).applyTrade(m);
+                    default -> log.warn("{}에 대해 알 수 없는 메시지 유형: {}", pair, m.getType());
+                }
+            });
         }
     }
 
@@ -152,9 +230,10 @@ public class OrderBookTracker {
             OrderBook book = dataSource.getNewOrderBook(pair);
             orderBooks.put(pair, book);
 
-            trackingQueues.put(pair, new LinkedBlockingQueue<>());
-            Future<?> task = executor.submit(() -> trackSingleBook(pair));
-            trackingTasks.put(pair, task);
+            ExecutorService pairExec = createPairExecutor(pair);
+            pairExecutors.put(pair, pairExec);
+
+            drainSavedMessages(pair);
 
             log.info("페어 연결에 성공했습니다.");
             return true;
@@ -175,9 +254,10 @@ public class OrderBookTracker {
         try {
             log.info("오더북 트래커에서 {} 삭제 중...", pair);
 
-            Future<?> task = trackingTasks.remove(pair);
-            if (task != null) {
-                task.cancel(true);
+            // pair 전용 executor 종료
+            ExecutorService pairExec = pairExecutors.remove(pair);
+            if (pairExec != null) {
+                pairExec.shutdownNow();
             }
 
             boolean unsubscribeSuccess = dataSource.unsubscribeFromTradingPair(pair);
@@ -186,7 +266,6 @@ public class OrderBookTracker {
             }
 
             orderBooks.remove(pair);
-            trackingQueues.remove(pair);
             pastDiffsWindows.remove(pair);
             savedMessageQueues.remove(pair);
             tradingPairs.remove(pair);
@@ -202,133 +281,4 @@ public class OrderBookTracker {
         }
     }
 
-    private void orderBookDiffRouter() {
-        while (isRunning && !Thread.currentThread().isInterrupted()) {
-            try {
-                OrderBookMessage msg = diffStream.take();
-                long start = System.nanoTime();
-//                String pair = msg.
-
-                if (!trackingQueues.containsKey(pair)) {
-                    metrics.incrementTotalDiffsQueued();
-                    savedMessageQueues.computeIfAbsent(pair, k -> new ConcurrentLinkedDeque<>()).add(msg);
-                    continue;
-                }
-
-                OrderBook book = orderBooks.get(pair);
-                OrderBookPairMetrics pairMetrics = metrics.getOrCreatePairMetrics(pair);
-
-                if (book.getSnapshotId() > msg.getUpdateId()) {
-                    metrics.incrementTotalDiffsRejected();
-                    pairMetrics.incrementTotalDiffsRejected();
-                    continue;
-                }
-
-                trackingQueues.get(pair).put(msg);
-
-                double latency = (System.nanoTime() - start) / 1_000_000.0;
-                metrics.recordDiffProcessed(latency);
-                pairMetrics.recordDiffProcessed(latency, start);
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    private void orderBookSnapshotRouter() {
-        while (isRunning && !Thread.currentThread().isInterrupted()) {
-            try {
-                OrderBookMessage msg = snapshotStream.take();
-                long start = System.nanoTime();
-                String pair = msg.getTradingPair();
-
-                if (!trackingQueues.containsKey(pair)) {
-                    metrics.incrementTotalSnapshotsRejected();
-                    continue;
-                }
-
-                trackingQueues.get(pair).put(msg);
-
-                double latency = (System.nanoTime() - start) / 1_000_000.0;
-                metrics.recordSnapshotProcessed(latency);
-                metrics.getOrCreatePairMetrics(pair).recordSnapshotProcessed(latency, start);
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    private void orderBookTradeRouter() {
-        while (isRunning && !Thread.currentThread().isInterrupted()) {
-            try {
-                OrderBookMessage msg = tradeStream.take();
-                double start = System.nanoTime();
-                String pair = msg.getTradingPair();
-
-                if (!orderBooks.containsKey(pair)) {
-                    metrics.incrementTotalTradesRejected();
-                    continue;
-                }
-
-                orderBooks.get(pair).applyTrade(msg);
-
-                double latency = (System.nanoTime() - start) / 1_000_000.0;
-                metrics.recordTradeProcessed(latency);
-                metrics.getOrCreatePairMetrics(pair).recordTradeProcessed(latency, start);
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    private void trackSingleBook(String pair) {
-        BlockingQueue<OrderBookMessage> queue = trackingQueues.get(pair);
-        OrderBook book = orderBooks.get(pair);
-
-        while (isRunning && !Thread.currentThread().isInterrupted()) {
-            try {
-                Deque<OrderBookMessage> saved = savedMessageQueues.get(pair);
-                OrderBookMessage msg = (saved != null && !saved.isEmpty()) ? saved.pollFirst() : queue.take();
-
-                switch (msg.type) {
-                    case DIFF -> book.applyDiffs(msg);
-                    case SNAPSHOT -> book.restoreFromSnapshotAndDiffs(msg);
-                    case TRADE -> book.applyTrade(msg);
-                    default -> log.warn("{}에 대해 알 수 없는 메시지 유형이 수신되었습니다: {}", pair, msg.getType());
-                }
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                log.error("{} 오더북 트래킹 중 오류가 발생했습니다: {}", pair, e.getMessage(), e);
-            }
-        }
-    }
-
-    private void initOrderBooks() {
-        for (String pair : tradingPairs) {
-            try {
-                OrderBook book = dataSource.getNewOrderBook(pair);
-                orderBooks.put(pair, book);
-                trackingQueues.put(pair, new LinkedBlockingQueue<>());
-
-                Future<?> task = executor.submit(() -> trackSingleBook(pair));
-                trackingTasks.put(pair, task);
-
-                log.info("{} 오더북 초기화 완료", pair);
-                Thread.sleep(100);
-            } catch (Exception e) {
-                log.error("{} 초기화 중 오류가 발생했습니다: {}", pair, e.getMessage(), e);
-            }
-        }
-        initializedLatch.countDown();
-    }
-
-    public OrderBookTrackerMetrics getMetrics() {
-        return metrics;
-    }
 }
