@@ -2,6 +2,7 @@ package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.core.RetryableTrigger;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.math.BigDecimal;
@@ -17,14 +18,14 @@ public class OrderBookTracker {
 
     private final String domain;
     private final OrderBookTrackerDataSource dataSource;
-    private final Set<String> tradingPairs = new CopyOnWriteArraySet<>();
+    private final Set<String> tradingPairs = new ConcurrentHashMap<>().newKeySet();
     private final TaskScheduler scheduler;
 
     private volatile Boolean isRunning = false;
     private final CountDownLatch initializedLatch = new CountDownLatch(1);
 
-    private ExecutorService generalExecutor;
-    private final Map<String, ExecutorService> pairExecutors = new ConcurrentHashMap<>();
+    private TaskExecutor generalExecutor;
+    private final Map<String, TaskExecutor> pairExecutor = new ConcurrentHashMap<>();
 
     private final Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
     private final Map<String, Deque<OrderBookMessage>> savedMessageQueues = new ConcurrentHashMap<>();
@@ -50,9 +51,9 @@ public class OrderBookTracker {
 
         initOrderBooks();
 
-        dataSource.listenForOrderBookDiffs(this::onDiffReceived);
-        dataSource.listenForOrderBookSnapshots(this::onSnapshotReceived);
-        dataSource.listenForTrades(this::onTradeReceived);
+        dataSource.processOrderBookDiffs(this::onDiffReceived);
+        dataSource.processOrderBookSnapshots(this::onSnapshotReceived);
+        dataSource.processTrades(this::onTradeReceived);
 
         RetryableTrigger priceUpdateTrigger = new RetryableTrigger(PRICE_CHECK_INTERVAL, ERROR_RETRY_INTERVAL);
         scheduledTasks.add(scheduler.schedule(() -> {
@@ -61,7 +62,7 @@ public class OrderBookTracker {
                 updateLastTradePrices();
                 priceUpdateTrigger.recordSuccess();
             } catch (Exception e) {
-                log.error("최근 거래가 업데이트 중 에러 발생 (30초 후 재시도): {}", e.getMessage());
+                log.error("최근 거래 가격 업데이트 중 에러 발생 ({}초 후 재시도): {}", ERROR_RETRY_INTERVAL.toSeconds(), e.getMessage());
                 priceUpdateTrigger.recordFailure();
             }
         }, priceUpdateTrigger));
@@ -70,8 +71,8 @@ public class OrderBookTracker {
     public void stop() {
         isRunning = false;
 
-        pairExecutors.values().forEach(ExecutorService::shutdown);
-        pairExecutors.clear();
+        pairExecutor.values().forEach(ExecutorService::shutdown);
+        pairExecutor.clear();
 
         if (generalExecutor != null) {
             generalExecutor.shutdown();
@@ -92,11 +93,14 @@ public class OrderBookTracker {
     private void onDiffReceived(OrderBookMessage msg) {
         if (!isRunning) return;
 
-        long start = System.nanoTime();
+        Instant start = Instant.now();
         String pair = msg.getTradingPair();
 
+        OrderBook book = orderBooks.get(pair);
+        OrderBookPairMetrics pairMetrics = metrics.getOrCreatePairMetrics(pair);
+
         // 아직 트래킹 전인 pair는 Queue에 임시 저장
-        if (!pairExecutors.containsKey(pair)) {
+        if (!pairExecutor.containsKey(pair)) {
             metrics.incrementTotalDiffsQueued();
             savedMessageQueues
                     .computeIfAbsent(pair, k -> new ConcurrentLinkedDeque<>())
@@ -104,22 +108,21 @@ public class OrderBookTracker {
             return;
         }
 
-        OrderBook book = orderBooks.get(pair);
-        OrderBookPairMetrics pairMetrics = metrics.getOrCreatePairMetrics(pair);
-
         // 최신 id가 아닌 diff 메시지는 reject
         if (book.getSnapshotId() > msg.getUpdateId()) {
             metrics.incrementTotalDiffsRejected();
-            pairMetrics.incrementTotalDiffsRejected();
+            pairMetrics.incrementDiffsRejected();
             return;
         }
 
         // pair 전용 executor에 처리 위임 → pair 내 순서 보장
         submitToPair(pair, () -> {
-            book.applyDiffs(msg);
+            book.applyDiffs(msg.getBids(), msg.getAsks(), msg.getUpdateId());
         });
 
-        double latency = (System.nanoTime() - start) / 1_000_000.0;
+        Instant now = Instant.now();
+        Duration latency = Duration.between(start, now);
+
         metrics.recordDiffProcessed(latency);
         pairMetrics.recordDiffProcessed(latency, start);
     }
@@ -127,48 +130,56 @@ public class OrderBookTracker {
     private void onSnapshotReceived(OrderBookMessage msg) {
         if (!isRunning) return;
 
-        long start = System.nanoTime();
+        Instant start = Instant.now();
         String pair = msg.getTradingPair();
 
+        OrderBook book = orderBooks.get(pair);
+
         // 현재 트래킹 중이 아닌 페어를 받을 시 reject
-        if (!pairExecutors.containsKey(pair)) {
+        if (!pairExecutor.containsKey(pair)) {
             metrics.incrementTotalSnapshotsRejected();
             return;
         }
 
         submitToPair(pair, () -> {
-            OrderBook book = orderBooks.get(pair);
-            book.restoreFromSnapshotAndDiffs(msg);
+            book.restoreFromSnapshotAndDiffs(msg.getBids(), msg.getAsks());;
         });
 
-        double latency = (System.nanoTime() - start) / 1_000_000.0;
+        Instant now = Instant.now();
+        Duration latency = Duration.between(start, now);
+
         metrics.recordSnapshotProcessed(latency);
         metrics.getOrCreatePairMetrics(pair).recordSnapshotProcessed(latency, start);
     }
 
-    //Binance에는 diff와 trade를 동일시하나, 타 거래소를 위해 메소드를 남겨두었다
     private void onTradeReceived(OrderBookMessage msg) {
         if (!isRunning) return;
 
-        double start = System.nanoTime();
+        Instant start = Instant.now();
         String pair = msg.getTradingPair();
 
-        if (!orderBooks.containsKey(pair)) {
+        OrderBook book = orderBooks.get(pair);
+        OrderBookPairMetrics pairMetrics = metrics.getOrCreatePairMetrics(pair);
+
+        if (!pairExecutor.containsKey(pair)) {
             metrics.incrementTotalTradesRejected();
+            pairMetrics.incrementTradesRejected();
             return;
         }
 
         submitToPair(pair, () -> {
-            orderBooks.get(pair).applyTrade(msg);
+            book.applyTrade(msg.getBids(), msg.getAsks(), msg.getUpdateId());
         });
 
-        double latency = (System.nanoTime() - start) / 1_000_000.0;
+        Instant now = Instant.now();
+        Duration latency = Duration.between(start, now);
+
         metrics.recordTradeProcessed(latency);
         metrics.getOrCreatePairMetrics(pair).recordTradeProcessed(latency, start);
     }
 
     private void submitToPair(String pair, Runnable task) {
-        ExecutorService pairExec = pairExecutors.get(pair);
+        ExecutorService pairExec = pairExecutor.get(pair);
         if (pairExec != null && !pairExec.isShutdown()) {
             pairExec.submit(() -> {
                 try {
@@ -180,14 +191,6 @@ public class OrderBookTracker {
         }
     }
 
-    private ExecutorService createPairExecutor(String pair) {
-        return Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "orderbook-" + pair);
-            t.setDaemon(true);
-            return t;
-        });
-    }
-
     private void initOrderBooks() {
         for (String pair : tradingPairs) {
             try {
@@ -195,7 +198,7 @@ public class OrderBookTracker {
                 orderBooks.put(pair, book);
 
                 ExecutorService pairExec = createPairExecutor(pair);
-                pairExecutors.put(pair, pairExec);
+                pairExecutor.put(pair, pairExec);
 
                 // 임시 저장된 메시지 flush
                 drainSavedMessages(pair);
@@ -252,7 +255,7 @@ public class OrderBookTracker {
             orderBooks.put(pair, book);
 
             ExecutorService pairExec = createPairExecutor(pair);
-            pairExecutors.put(pair, pairExec);
+            pairExecutor.put(pair, pairExec);
 
             drainSavedMessages(pair);
 
@@ -276,7 +279,7 @@ public class OrderBookTracker {
             log.info("오더북 트래커에서 {} 삭제 중...", pair);
 
             // pair 전용 executor 종료
-            ExecutorService pairExec = pairExecutors.remove(pair);
+            ExecutorService pairExec = pairExecutor.remove(pair);
             if (pairExec != null) {
                 pairExec.shutdownNow();
             }
