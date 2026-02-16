@@ -111,10 +111,9 @@ public class OrderBookTracker {
             return;
         }
 
-        // pair 전용 executor에 처리 위임 → pair 내 순서 보장
-        submitToPair(pair, () -> {
-            book.applyDiffs(msg.getBids(), msg.getAsks(), msg.getUpdateId());
-        });
+        // pair 전용 executor에 처리 위임 → pair 내 순서 보장 / 동기 실행
+        book.applyDiffs(msg.getBids(), msg.getAsks(), msg.getUpdateId());
+
 
         Instant now = Instant.now();
         Duration latency = Duration.between(start, now);
@@ -137,9 +136,7 @@ public class OrderBookTracker {
             return;
         }
 
-        submitToPair(pair, () -> {
-            book.restoreFromSnapshotAndDiffs(msg.getBids(), msg.getAsks());;
-        });
+        book.restoreFromSnapshotAndDiffs(msg.getBids(), msg.getAsks());;
 
         Instant now = Instant.now();
         Duration latency = Duration.between(start, now);
@@ -163,9 +160,7 @@ public class OrderBookTracker {
             return;
         }
 
-        submitToPair(pair, () -> {
-            book.applyTrade(msg.getBids(), msg.getAsks(), msg.getUpdateId());
-        });
+        book.applyTrade(msg.getBids(), msg.getAsks(), msg.getUpdateId());
 
         Instant now = Instant.now();
         Duration latency = Duration.between(start, now);
