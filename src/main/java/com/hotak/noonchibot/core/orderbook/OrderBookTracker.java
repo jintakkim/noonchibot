@@ -19,7 +19,7 @@ public class OrderBookTracker {
     private final String domain;
     private final OrderBookTrackerDataSource dataSource;
     private final Set<String> tradingPairs = new ConcurrentHashMap<>().newKeySet();
-    private final TaskScheduler scheduler;
+
 
     private volatile Boolean isRunning = false;
     private final CountDownLatch initializedLatch = new CountDownLatch(1);
@@ -45,7 +45,7 @@ public class OrderBookTracker {
         isRunning = true;
 
         log.info("OrderBookTracker 시작 중...");
-        metrics.setTrackerStartTime(Instant.now().toEpochMilli() / 1000.0);
+        metrics.setTrackerStartTime(Instant.now());
 
         generalExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -73,10 +73,6 @@ public class OrderBookTracker {
 
         pairExecutor.values().forEach(ExecutorService::shutdown);
         pairExecutor.clear();
-
-        if (generalExecutor != null) {
-            generalExecutor.shutdown();
-        }
 
         log.info("OrderBookTracker가 정지되었습니다.");
     }
