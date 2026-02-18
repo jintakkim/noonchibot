@@ -1,7 +1,10 @@
 package com.hotak.noonchibot.connector;
 
-import com.hotak.noonchibot.connector.auth.Authenticator;
+import com.hotak.noonchibot.core.datatype.TradeType;
+import com.hotak.noonchibot.core.order.OrderType;
+import com.hotak.noonchibot.core.trade.fee.TradeFee;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public interface ExchangeConnector extends Connector {
@@ -9,4 +12,5 @@ public interface ExchangeConnector extends Connector {
     List<String> getAllTradingPairs();
     String getExchangeSymbol(String tradingPair);
     String getTradingPair(String symbol);
+    TradeFee getFee(String baseCurrency, String quoteCurrency, OrderType orderType, TradeType tradeType, BigDecimal amount, BigDecimal price, boolean isMaker);
 }
