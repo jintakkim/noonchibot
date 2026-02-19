@@ -6,32 +6,27 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class OrderBookTrackerMetricsTest {
-
     private OrderBookTrackerMetrics metrics;
 
     @BeforeEach
     void setUp() {
-        // 시작 시간을 0으로 초기화 (계산 편의를 위해)
-        metrics = new OrderBookTrackerMetrics(0.0);
+        metrics = new OrderBookTrackerMetrics();
     }
 
     @Test
-    @DisplayName("초기화 시 toMap을 통해 기본값들을 확인한다")
+    @DisplayName("초기화 시 기본값들이 올바르게 설정되어야 한다")
     void testInitialization() {
-        Map<String, Object> result = metrics.toMap();
-
-        assertEquals(0L, result.get("total_diffs_processed"));
-        assertEquals(0L, result.get("total_snapshots_processed"));
-        assertEquals(0L, result.get("total_trades_processed"));
-
-        Map<?, ?> perPair = (Map<?, ?>) result.get("per_pair_metrics");
-        assertTrue(perPair.isEmpty());
+        assertEquals(0, metrics.getTotalDiffsProcessed());
+        assertEquals(0, metrics.getTotalSnapshotsProcessed());
+        assertEquals(0, metrics.getTotalTradesProcessed());
+        assertTrue(metrics.getPerPairMetrics().isEmpty());
     }
 
     @Test
@@ -41,8 +36,6 @@ class OrderBookTrackerMetricsTest {
         assertNotNull(pair1);
 
         OrderBookPairMetrics pair2 = metrics.getOrCreatePairMetrics("BTC-USDT");
-
-        // 객체 동일성 확인 (Python의 assertIs)
         assertSame(pair1, pair2);
     }
 
@@ -54,38 +47,54 @@ class OrderBookTrackerMetricsTest {
 
         metrics.removePairMetrics("BTC-USDT");
 
-        Map<String, Object> result = metrics.toMap();
-        Map<?, ?> perPair = (Map<?, ?>) result.get("per_pair_metrics");
-
-        assertEquals(1, perPair.size());
-        assertFalse(perPair.containsKey("BTC-USDT"));
-        assertTrue(perPair.containsKey("ETH-USDT"));
+        assertFalse(metrics.getPerPairMetrics().containsKey("BTC-USDT"));
+        assertTrue(metrics.getPerPairMetrics().containsKey("ETH-USDT"));
+        assertEquals(1, metrics.getPerPairMetrics().size());
     }
 
     @Test
-    @DisplayName("Reflection을 사용해 강제로 값을 넣고 분당 처리율을 계산한다")
-    void testMessagesPerMinuteGlobal() throws Exception {
-        // 파이썬의 metrics.total_diffs_processed = 600 시뮬레이션
-        setPrivateField(metrics, "trackerStartTime", 100.0);
-        setPrivateField(metrics, "totalDiffsProcessed", 600L);
-        setPrivateField(metrics, "totalSnapshotsProcessed", 6L);
-        setPrivateField(metrics, "totalTradesProcessed", 300L);
+    @DisplayName("분당 처리율 계산이 정확해야 한다")
+    void testMessagesPerMinute() {
+        Instant start = Instant.now();
+        metrics.setTrackerStartTime(start);
 
-        // 60초 경과 시점 (160.0)
-        Map<String, Double> rates = metrics.getMessagesPerMinute(160.0);
+        for (int i = 0; i < 60; i++) {
+            metrics.recordDiffProcessed(Duration.ofMillis(1));
+        }
 
-        assertEquals(600.0, rates.get("diffs"));
-        assertEquals(6.0, rates.get("snapshots"));
-        assertEquals(300.0, rates.get("trades"));
-        assertEquals(906.0, rates.get("total"));
+        Instant now = start.plusSeconds(60);
+        Map<String, Double> rates = metrics.getMessagesPerMinute(now);
+
+        assertEquals(60.0, rates.get("diffs"), 0.01);
+        assertEquals(0.0, rates.get("snapshots"), 0.01);
+        assertEquals(0.0, rates.get("trades"), 0.01);
+        assertEquals(60.0, rates.get("total"), 0.01);
     }
 
-    /**
-     * 자바의 private 필드에 강제로 값을 넣는 헬퍼 메서드 (Reflection)
-     */
-    private void setPrivateField(Object object, String fieldName, Object value) throws Exception {
-        Field field = object.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true); // private 무시
-        field.set(object, value);
+    @Test
+    @DisplayName("경과 시간이 0일 때 분당 처리율은 0을 반환해야 한다")
+    void testMessagesPerMinuteZeroElapsed() {
+        Instant now = Instant.now();
+        metrics.setTrackerStartTime(now);
+
+        Map<String, Double> rates = metrics.getMessagesPerMinute(now);
+
+        assertEquals(0.0, rates.get("diffs"));
+        assertEquals(0.0, rates.get("total"));
+    }
+
+    @Test
+    @DisplayName("increment 메서드들이 정상적으로 동작해야 한다")
+    void testIncrements() {
+        metrics.incrementTotalDiffsQueued();
+        metrics.incrementTotalDiffsQueued();
+        metrics.incrementTotalDiffsRejected();
+        metrics.incrementTotalSnapshotsRejected();
+        metrics.incrementTotalTradesRejected();
+
+        assertEquals(2, metrics.getTotalDiffsQueued());
+        assertEquals(1, metrics.getTotalDiffsRejected());
+        assertEquals(1, metrics.getTotalSnapshotsRejected());
+        assertEquals(1, metrics.getTotalTradesRejected());
     }
 }
