@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public interface OrderBook extends ReadOnlyOrderBook {
@@ -18,6 +19,13 @@ public interface OrderBook extends ReadOnlyOrderBook {
      * @param updateId 업데이트 ID
      */
     void applyDiffs(List<OrderBookEntry> bids, List<OrderBookEntry> asks, long updateId);
+
+    /**
+     * 실시간 체결(Trade) 이벤트 적용
+     */
+    void applyTrade(OrderBookMessage.TradeMessage message);
+
+    void setLastTradePrice(BigDecimal lastTradePrice);
 
     /**
      * 스냅샷과 과거 Diff 데이터를 사용하여 오더북을 복구

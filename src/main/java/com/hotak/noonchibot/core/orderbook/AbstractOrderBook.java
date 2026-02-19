@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.core.PubSub;
+import com.hotak.noonchibot.core.event.OrderBookTradeEvent;
 import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
@@ -93,6 +94,17 @@ public class AbstractOrderBook extends PubSub implements OrderBook {
             }
             refreshBestPrices();
         });
+    }
+
+    @Override
+    public void applyTrade(OrderBookMessage.TradeMessage message) {
+        this.lastTradePrice = message.getPrice();
+        triggerEvent(new OrderBookTradeEvent(message.getTradingPair(), message.getPrice(), message.getAmount(), message.getTradeId(), message.getTimestamp()));
+    }
+
+    @Override
+    public void setLastTradePrice(BigDecimal lastTradePrice) {
+        this.lastTradePrice = lastTradePrice;
     }
 
     private void updateBook(Map<BigDecimal, OrderBookEntry> book, OrderBookEntry entry) {
