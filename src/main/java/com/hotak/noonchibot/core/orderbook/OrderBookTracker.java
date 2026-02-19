@@ -30,9 +30,9 @@ public class OrderBookTracker {
     private final List<ScheduledFuture<?>> scheduledTasks = new CopyOnWriteArrayList<>();
     private final List<Future<?>> streamTasks = new ArrayList<>();
 
-    private final BlockingQueue<OrderBookMessage> diffQueue;
-    private final BlockingQueue<OrderBookMessage> snapshotQueue;
-    private final BlockingQueue<OrderBookMessage> tradeQueue;
+    private final BlockingQueue<OrderBookMessage.DiffMessage> diffQueue;
+    private final BlockingQueue<OrderBookMessage.SnapshotMessage> snapshotQueue;
+    private final BlockingQueue<OrderBookMessage.TradeMessage> tradeQueue;
 
     private final Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
     private final Map<String, Deque<OrderBookMessage>> savedMessageQueues = new ConcurrentHashMap<>();
@@ -41,9 +41,9 @@ public class OrderBookTracker {
 
     public OrderBookTracker(OrderBookTrackerDataSource dataSource, List<String> pairs, String domain,
                             TaskScheduler scheduler, AsyncTaskExecutor executor,
-                            BlockingQueue<OrderBookMessage> diffQueue,
-                            BlockingQueue<OrderBookMessage> snapshotQueue,
-                            BlockingQueue<OrderBookMessage> tradeQueue) {
+                            BlockingQueue<OrderBookMessage.DiffMessage> diffQueue,
+                            BlockingQueue<OrderBookMessage.SnapshotMessage> snapshotQueue,
+                            BlockingQueue<OrderBookMessage.TradeMessage> tradeQueue) {
         this.domain = domain;
         this.dataSource = dataSource;
         this.tradingPairs.addAll(pairs);
@@ -127,15 +127,12 @@ public class OrderBookTracker {
         }
     }
 
-    private void processDiffStream(BlockingQueue<OrderBookMessage> diffStream) {
+    private void processDiffStream(BlockingQueue<OrderBookMessage.DiffMessage> diffStream) {
         while (isRunning && !Thread.currentThread().isInterrupted()) {
             try {
-                OrderBookMessage msg = diffStream.take();
+                OrderBookMessage.DiffMessage msg = diffStream.take();
                 String pair = msg.getTradingPair();
                 Instant start = Instant.now();
-
-                OrderBook book = orderBooks.get(pair);
-                OrderBookPairMetrics pairMetrics = metrics.getOrCreatePairMetrics(pair);
 
                 // 아직 트래킹 전인 pair는 Queue에 임시 저장
                 if (!orderBooks.containsKey(pair)) {
@@ -145,6 +142,9 @@ public class OrderBookTracker {
                             .add(msg);
                     continue;
                 }
+
+                OrderBook book = orderBooks.get(pair);
+                OrderBookPairMetrics pairMetrics = metrics.getOrCreatePairMetrics(pair);
 
                 // 최신 id가 아닌 diff 메시지는 reject
                 if (book.getSnapshotId() > msg.getUpdateId()) {
@@ -167,10 +167,10 @@ public class OrderBookTracker {
         }
     }
 
-    private void processSnapshotStream(BlockingQueue<OrderBookMessage> snapshotStream) {
+    private void processSnapshotStream(BlockingQueue<OrderBookMessage.SnapshotMessage> snapshotStream) {
         while (isRunning && !Thread.currentThread().isInterrupted()) {
             try {
-                OrderBookMessage msg = snapshotStream.take();
+                OrderBookMessage.SnapshotMessage msg = snapshotStream.take();
                 String pair = msg.getTradingPair();
                 Instant start = Instant.now();
 
@@ -183,7 +183,7 @@ public class OrderBookTracker {
                     return;
                 }
 
-                book.restoreFromSnapshotAndDiffs(msg.getBids(), msg.getAsks());
+                book.restoreFromSnapshotAndDiffs(msg, Collections.emptyList());
 
                 Instant now = Instant.now();
                 Duration latency = Duration.between(start, now);
@@ -196,10 +196,10 @@ public class OrderBookTracker {
         }
     }
 
-    private void processTradeStream(BlockingQueue<OrderBookMessage> tradeStream) {
+    private void processTradeStream(BlockingQueue<OrderBookMessage.TradeMessage> tradeStream) {
         while (isRunning && !Thread.currentThread().isInterrupted()) {
             try {
-                OrderBookMessage msg = tradeStream.take();
+                OrderBookMessage.TradeMessage msg = tradeStream.take();
                 String pair = msg.getTradingPair();
                 Instant start = Instant.now();
 
@@ -212,8 +212,7 @@ public class OrderBookTracker {
                     return;
                 }
 
-                /// Trade 메시지 구현 필요
-                /// book.applyTrade(msg.getPrice(), msg.getAmount(), msg.getTradeId(), msg.getTimestamp());
+                book.applyTrade(msg);
 
                 Instant now = Instant.now();
                 Duration latency = Duration.between(start, now);
@@ -251,9 +250,18 @@ public class OrderBookTracker {
         OrderBookMessage msg;
         while ((msg = saved.pollFirst()) != null) {
             switch (msg.getType()) {
-                case DIFF -> book.applyDiffs(msg.getBids(), msg.getAsks(), msg.getUpdateId());
-                case SNAPSHOT -> book.restoreFromSnapshotAndDiffs(msg.getBids(), msg.getAsks());
-                /// case TRADE -> book.applyTrade(msg.getPrice(), msg.getAmount(), msg.getTradeId(), msg.getTimestamp());
+                case DIFF -> {
+                    OrderBookMessage.DiffMessage diffMsg = (OrderBookMessage.DiffMessage) msg;
+                    book.applyDiffs(diffMsg.getBids(), diffMsg.getAsks(), diffMsg.getUpdateId());
+                }
+                case SNAPSHOT -> {
+                    OrderBookMessage.SnapshotMessage snapshotMsg = (OrderBookMessage.SnapshotMessage) msg;
+                    book.restoreFromSnapshotAndDiffs(snapshotMsg, Collections.emptyList());
+                }
+                case TRADE -> {
+                    OrderBookMessage.TradeMessage tradeMsg = (OrderBookMessage.TradeMessage) msg;
+                    book.applyTrade(tradeMsg);
+                }
                 default -> log.warn("{}에 대해 알 수 없는 메시지 유형: {}", pair, msg.getType());
             }
         }
@@ -312,7 +320,7 @@ public class OrderBookTracker {
             OrderBook book = entry.getValue();
 
             if (Duration.between(book.getLastAppliedTradeTime(), now).compareTo(TRADE_STALE_THRESHOLD) > 0 &&
-                    Duration.between(book.getLastTradePriceUpdatedTime(), now).compareTo(PRICE_UPDATE_THRESHOLD) > 0) {
+                    Duration.between(book.getLastAppliedTradeTime(), now).compareTo(PRICE_UPDATE_THRESHOLD) > 0) {
                 outdatedPairs.add(pair); // Map의 Key인 pair를 추가
             }
         }
