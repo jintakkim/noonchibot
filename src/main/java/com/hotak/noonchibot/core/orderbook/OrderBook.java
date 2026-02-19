@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 public interface OrderBook extends ReadOnlyOrderBook {
@@ -101,17 +102,7 @@ public interface OrderBook extends ReadOnlyOrderBook {
     void applyTrade(BigDecimal price, BigDecimal amount, String tradeId, double timestamp);
 
     /**
-     * 외부(REST)에서 가져온 마지막 가격을 강제로 설정
-     */
-    void setLastTradePrice(BigDecimal price);
-
-    /**
      * 마지막으로 Trade가 적용된 시간을 반환
      */
-    double getLastAppliedTradeTime();
-
-    /**
-     * 마지막으로 REST API를 통해 가격을 업데이트한 시간을 반환
-     */
-    double getLastTradePriceRestUpdatedTime();
+    Instant getLastAppliedTradeTime();
 }
