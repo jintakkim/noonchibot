@@ -3,6 +3,7 @@ package com.hotak.noonchibot.core.orderbook;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
@@ -19,6 +20,7 @@ public class OrderBookMessage {
     }
     private final Type type;
     private final Instant timestamp;
+    private final String tradingPair;
 
     @Getter
     public static class DiffMessage extends OrderBookMessage {
@@ -26,8 +28,8 @@ public class OrderBookMessage {
         private final List<OrderBookEntry> bids;
         private final List<OrderBookEntry> asks;
 
-        public DiffMessage(Instant timestamp, long updateId, List<OrderBookEntry> bids, List<OrderBookEntry> asks) {
-            super(Type.DIFF, timestamp);
+        public DiffMessage(Instant timestamp, String tradingPair, long updateId, List<OrderBookEntry> bids, List<OrderBookEntry> asks) {
+            super(Type.DIFF, timestamp, tradingPair);
             this.updateId = updateId;
             this.bids = bids;
             this.asks = asks;
@@ -40,11 +42,25 @@ public class OrderBookMessage {
         private final List<OrderBookEntry> bids;
         private final List<OrderBookEntry> asks;
 
-        public SnapshotMessage(Instant timestamp, long updateId, List<OrderBookEntry> bids, List<OrderBookEntry> asks) {
-            super(Type.SNAPSHOT, timestamp);
+        public SnapshotMessage(Instant timestamp, String tradingPair, long updateId, List<OrderBookEntry> bids, List<OrderBookEntry> asks) {
+            super(Type.SNAPSHOT, timestamp, tradingPair);
             this.updateId = updateId;
             this.bids = bids;
             this.asks = asks;
+        }
+    }
+
+    @Getter
+    public static class TradeMessage extends OrderBookMessage {
+        private final long tradeId;
+        private final BigDecimal price;
+        private final BigDecimal amount;
+
+        public TradeMessage(Instant timestamp, String tradingPair, long updateId, BigDecimal price, BigDecimal amount) {
+            super(Type.TRADE, timestamp, tradingPair);
+            this.tradeId = updateId;
+            this.price = price;
+            this.amount = amount;
         }
     }
 }

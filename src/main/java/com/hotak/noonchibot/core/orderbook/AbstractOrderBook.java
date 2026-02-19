@@ -1,29 +1,39 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.core.PubSub;
+import com.hotak.noonchibot.core.event.OrderBookTradeEvent;
+import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 
+@RequiredArgsConstructor
 public class AbstractOrderBook extends PubSub implements OrderBook {
-    private Long lastDiffUid;
-    private Long snapshotUid;
-    private boolean dex;
+    private volatile Long lastDiffUid;
+    private volatile Long snapshotUid;
+    private final boolean dex;
     private final NavigableMap<BigDecimal, OrderBookEntry> bidBook = new TreeMap<>(Comparator.reverseOrder());
     private final NavigableMap<BigDecimal, OrderBookEntry> askBook = new TreeMap<>();
-    private BigDecimal bestBid;
-    private BigDecimal bestAsk;
-    private BigDecimal lastTradePrice;
+    private volatile BigDecimal bestBid;
+    private volatile BigDecimal bestAsk;
+    private volatile BigDecimal lastTradePrice;
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final Lock readLock = lock.readLock();
+    private final Lock writeLock = lock.writeLock();
 
     @Override
     public List<OrderBookEntry> getBidEntries() {
-        return List.copyOf(bidBook.values());
+        return withReadLock(() -> List.copyOf(bidBook.values()));
     }
 
     @Override
     public List<OrderBookEntry> getAskEntries() {
-        return List.copyOf(askBook.values());
+        return withReadLock(() -> List.copyOf(askBook.values()));
     }
 
     @Override
@@ -53,34 +63,48 @@ public class AbstractOrderBook extends PubSub implements OrderBook {
 
     @Override
     public void applySnapshot(List<OrderBookEntry> bids, List<OrderBookEntry> asks, long updateId) {
-        this.bidBook.clear();
-        this.askBook.clear();
+        withWriteLock(() -> {
+            this.bidBook.clear();
+            this.askBook.clear();
 
-        for (OrderBookEntry bid : bids) {
-            this.bidBook.put(bid.price(), bid);
-        }
-        for (OrderBookEntry ask : asks) {
-            this.askBook.put(ask.price(), ask);
-        }
-
-        // DEX 모드일 경우 겹치는 구간 정리
-        if (this.dex) {
-            truncateOverlapEntries(this.bidBook, this.askBook);
-        }
-        refreshBestPrices();
-        this.snapshotUid = updateId;
+            for (OrderBookEntry bid : bids) {
+                this.bidBook.put(bid.price(), bid);
+            }
+            for (OrderBookEntry ask : asks) {
+                this.askBook.put(ask.price(), ask);
+            }
+            // DEX 모드일 경우 겹치는 구간 정리
+            if (this.dex) {
+                truncateOverlapEntries(this.bidBook, this.askBook);
+            }
+            refreshBestPrices();
+            this.snapshotUid = updateId;
+        });
     }
 
     @Override
     public void applyDiffs(List<OrderBookEntry> bids, List<OrderBookEntry> asks, long updateId) {
-        this.lastDiffUid = updateId;
-        for (OrderBookEntry entry : bids) {
-            updateBook(bidBook, entry);
-        }
-        for (OrderBookEntry entry : asks) {
-            updateBook(askBook, entry);
-        }
-        refreshBestPrices();
+        withWriteLock(() -> {
+            this.lastDiffUid = updateId;
+            for (OrderBookEntry entry : bids) {
+                updateBook(bidBook, entry);
+            }
+            for (OrderBookEntry entry : asks) {
+                updateBook(askBook, entry);
+            }
+            refreshBestPrices();
+        });
+    }
+
+    @Override
+    public void applyTrade(OrderBookMessage.TradeMessage message) {
+        this.lastTradePrice = message.getPrice();
+        triggerEvent(new OrderBookTradeEvent(message.getTradingPair(), message.getPrice(), message.getAmount(), message.getTradeId(), message.getTimestamp()));
+    }
+
+    @Override
+    public void setLastTradePrice(BigDecimal lastTradePrice) {
+        this.lastTradePrice = lastTradePrice;
     }
 
     private void updateBook(Map<BigDecimal, OrderBookEntry> book, OrderBookEntry entry) {
@@ -153,160 +177,176 @@ public class AbstractOrderBook extends PubSub implements OrderBook {
 
     @Override
     public void restoreFromSnapshotAndDiffs(OrderBookMessage.SnapshotMessage snapshot, List<OrderBookMessage.DiffMessage> diffs) {
-        this.applySnapshot(snapshot.getBids(), snapshot.getAsks(), snapshot.getUpdateId());
-        // (스냅샷 시점 이후의 데이터만 재적용)
-        diffs.stream()
-                .filter(diff -> diff.getUpdateId() > snapshot.getUpdateId())
-                .forEach(diff -> this.applyDiffs(diff.getBids(), diff.getAsks(), diff.getUpdateId()));
+        withWriteLock(() -> {
+            this.applySnapshot(snapshot.getBids(), snapshot.getAsks(), snapshot.getUpdateId());
+            // (스냅샷 시점 이후의 데이터만 재적용)
+            diffs.stream()
+                    .filter(diff -> diff.getUpdateId() > snapshot.getUpdateId())
+                    .forEach(diff -> this.applyDiffs(diff.getBids(), diff.getAsks(), diff.getUpdateId()));
+        });
     }
 
     @Override
     public BigDecimal getBestPrice(boolean isBuy) {
-        if (isBuy) {
-            if (askBook.isEmpty()) return null;
-            return bestAsk;
-        } else {
-            if (bidBook.isEmpty()) return null;
-            return bestBid;
-        }
+        return isBuy ? bestAsk : bestBid;
     }
 
     @Override
     public OrderBookQueryResult getImpactPriceForBaseVolume(boolean isBuy, BigDecimal volume) {
-        List<OrderBookEntry> entries = isBuy ? getAskEntries() : getBidEntries();
-        BigDecimal bestPrice = isBuy ? bestAsk : bestBid;
+        return withReadLock(() -> {
+            NavigableMap<BigDecimal, OrderBookEntry> book = isBuy ? askBook : bidBook;
+            BigDecimal bestPrice = isBuy ? bestAsk : bestBid;
 
-        BigDecimal cumulativeVolume = BigDecimal.ZERO;
+            BigDecimal cumulativeVolume = BigDecimal.ZERO;
 
-        for (OrderBookEntry entry : entries) {
-            cumulativeVolume = cumulativeVolume.add(entry.amount());
-            if (cumulativeVolume.compareTo(volume) >= 0) {
-                return new OrderBookQueryResult(bestPrice, volume, entry.price(), volume
-                );
+            for (OrderBookEntry entry : book.values()) {
+                cumulativeVolume = cumulativeVolume.add(entry.amount());
+                if (cumulativeVolume.compareTo(volume) >= 0) {
+                    return new OrderBookQueryResult(bestPrice, volume, entry.price(), volume);
+                }
             }
-        }
-        // 호가 부족
-        BigDecimal lastPrice = entries.isEmpty() ? null : entries.getLast().price();
-        return new OrderBookQueryResult(bestPrice, volume, lastPrice, cumulativeVolume);
+            BigDecimal lastPrice = book.isEmpty() ? null : book.lastEntry().getValue().price();
+            return new OrderBookQueryResult(bestPrice, volume, lastPrice, cumulativeVolume);
+        });
     }
 
     @Override
     public OrderBookQueryResult getVWAPForVolume(boolean isBuy, BigDecimal volume) {
-        List<OrderBookEntry> entries = isBuy ? getAskEntries() : getBidEntries();
-        BigDecimal bestPrice = isBuy ? bestAsk : bestBid;
+        return withReadLock(() -> {
+            NavigableMap<BigDecimal, OrderBookEntry> book = isBuy ? askBook : bidBook;
+            BigDecimal bestPrice = isBuy ? bestAsk : bestBid;
 
-        BigDecimal totalCost = BigDecimal.ZERO;
-        BigDecimal totalVolume = BigDecimal.ZERO;
-        BigDecimal resultVwap = null;
+            BigDecimal totalCost = BigDecimal.ZERO;
+            BigDecimal totalVolume = BigDecimal.ZERO;
+            BigDecimal resultVwap = null;
 
-        for (OrderBookEntry entry : entries) {
-            BigDecimal remainingVolume = volume.subtract(totalVolume);
+            for (OrderBookEntry entry : book.values()) {
+                BigDecimal remainingVolume = volume.subtract(totalVolume);
 
-            if (entry.amount().compareTo(remainingVolume) >= 0) {
-                // 이 레벨에서 수량 충족
-                totalCost = totalCost.add(remainingVolume.multiply(entry.price()));
-                totalVolume = volume;
-                resultVwap = totalCost.divide(totalVolume, MathContext.DECIMAL128);
+                if (entry.amount().compareTo(remainingVolume) >= 0) {
+                    totalCost = totalCost.add(remainingVolume.multiply(entry.price()));
+                    totalVolume = volume;
+                    resultVwap = totalCost.divide(totalVolume, MathContext.DECIMAL128);
 
-                return new OrderBookQueryResult(
-                        bestPrice,
-                        volume,
-                        resultVwap,
-                        totalVolume
-                );
+                    return new OrderBookQueryResult(bestPrice, volume, resultVwap, totalVolume);
+                }
+                totalCost = totalCost.add(entry.amount().multiply(entry.price()));
+                totalVolume = totalVolume.add(entry.amount());
             }
-            // 전량 사용
-            totalCost = totalCost.add(entry.amount().multiply(entry.price()));
-            totalVolume = totalVolume.add(entry.amount());
-        }
 
-        // 호가 부족
-        if (totalVolume.compareTo(BigDecimal.ZERO) > 0) {
-            resultVwap = totalCost.divide(totalVolume, MathContext.DECIMAL128);
-        }
-        return new OrderBookQueryResult(bestPrice, volume, resultVwap, totalVolume);
+            if (totalVolume.compareTo(BigDecimal.ZERO) > 0) {
+                resultVwap = totalCost.divide(totalVolume, MathContext.DECIMAL128);
+            }
+            return new OrderBookQueryResult(bestPrice, volume, resultVwap, totalVolume);
+        });
     }
 
     @Override
     public OrderBookQueryResult getImpactPriceForQuoteVolume(boolean isBuy, BigDecimal quoteVolume) {
-        List<OrderBookEntry> entries = isBuy ? getAskEntries() : getBidEntries();
-        BigDecimal bestPrice = isBuy ? bestAsk : bestBid;
+        return withReadLock(() -> {
+            NavigableMap<BigDecimal, OrderBookEntry> book = isBuy ? askBook : bidBook;
+            BigDecimal bestPrice = isBuy ? bestAsk : bestBid;
 
-        BigDecimal cumulativeQuote = BigDecimal.ZERO;
+            BigDecimal cumulativeQuote = BigDecimal.ZERO;
 
-        for (OrderBookEntry entry : entries) {
-            BigDecimal levelQuote = entry.amount().multiply(entry.price());
-            cumulativeQuote = cumulativeQuote.add(levelQuote);
+            for (OrderBookEntry entry : book.values()) {
+                BigDecimal levelQuote = entry.amount().multiply(entry.price());
+                cumulativeQuote = cumulativeQuote.add(levelQuote);
 
-            if (cumulativeQuote.compareTo(quoteVolume) >= 0) {
-                return new OrderBookQueryResult(bestPrice, quoteVolume, entry.price(), quoteVolume);
+                if (cumulativeQuote.compareTo(quoteVolume) >= 0) {
+                    return new OrderBookQueryResult(bestPrice, quoteVolume, entry.price(), quoteVolume);
+                }
             }
-        }
-        // 호가 부족
-        return new OrderBookQueryResult(bestPrice, quoteVolume, entries.isEmpty() ? null : entries.getLast().price(), cumulativeQuote);
+            // 호가 부족
+            BigDecimal lastPrice = book.isEmpty() ? null : book.lastEntry().getValue().price();
+            return new OrderBookQueryResult(bestPrice, quoteVolume, lastPrice, cumulativeQuote);
+        });
     }
 
     @Override
     public OrderBookQueryResult getQuoteVolumeForBaseVolume(boolean isBuy, BigDecimal baseAmount) {
-        List<OrderBookEntry> entries = isBuy ? getAskEntries() : getBidEntries();
+        return withReadLock(() -> {
+            NavigableMap<BigDecimal, OrderBookEntry> book = isBuy ? askBook : bidBook;
 
-        BigDecimal cumulativeBase = BigDecimal.ZERO;
-        BigDecimal cumulativeQuote = BigDecimal.ZERO;
+            BigDecimal cumulativeBase = BigDecimal.ZERO;
+            BigDecimal cumulativeQuote = BigDecimal.ZERO;
 
-        for (OrderBookEntry entry : entries) {
-            BigDecimal remaining = baseAmount.subtract(cumulativeBase);
-            BigDecimal fillAmount = entry.amount().min(remaining);
+            for (OrderBookEntry entry : book.values()) {
+                BigDecimal remaining = baseAmount.subtract(cumulativeBase);
+                BigDecimal fillAmount = entry.amount().min(remaining);
 
-            cumulativeBase = cumulativeBase.add(fillAmount);
-            cumulativeQuote = cumulativeQuote.add(fillAmount.multiply(entry.price()));
+                cumulativeBase = cumulativeBase.add(fillAmount);
+                cumulativeQuote = cumulativeQuote.add(fillAmount.multiply(entry.price()));
 
-            if (cumulativeBase.compareTo(baseAmount) >= 0) {
-                return new OrderBookQueryResult(null, baseAmount, null, cumulativeQuote);
+                if (cumulativeBase.compareTo(baseAmount) >= 0) {
+                    return new OrderBookQueryResult(null, baseAmount, null, cumulativeQuote);
+                }
             }
-        }
-        // 호가 부족
-        return new OrderBookQueryResult(null, baseAmount, null, cumulativeQuote);
+            return new OrderBookQueryResult(null, baseAmount, null, cumulativeQuote);
+        });
     }
 
     @Override
     public OrderBookQueryResult getVolumeForPrice(boolean isBuy, BigDecimal price) {
-        List<OrderBookEntry> entries = isBuy ? getAskEntries() : getBidEntries();
+        return withReadLock(() -> {
+            NavigableMap<BigDecimal, OrderBookEntry> book = isBuy ? askBook : bidBook;
 
-        BigDecimal cumulativeVolume = BigDecimal.ZERO;
-        BigDecimal resultPrice = null;
+            BigDecimal cumulativeVolume = BigDecimal.ZERO;
+            BigDecimal resultPrice = null;
 
-        for (OrderBookEntry entry : entries) {
-            boolean outOfRange = isBuy
-                    ? entry.price().compareTo(price) > 0   // 매수: 가격 초과하면 중단
-                    : entry.price().compareTo(price) < 0;  // 매도: 가격 미만이면 중단
+            for (OrderBookEntry entry : book.values()) {
+                boolean outOfRange = isBuy
+                        ? entry.price().compareTo(price) > 0
+                        : entry.price().compareTo(price) < 0;
 
-            if (outOfRange) {
-                break;
+                if (outOfRange) {
+                    break;
+                }
+                cumulativeVolume = cumulativeVolume.add(entry.amount());
+                resultPrice = entry.price();
             }
-            cumulativeVolume = cumulativeVolume.add(entry.amount());
-            resultPrice = entry.price();
-        }
-        return new OrderBookQueryResult(price, null, resultPrice, cumulativeVolume);
+            return new OrderBookQueryResult(price, null, resultPrice, cumulativeVolume);
+        });
     }
 
     @Override
     public OrderBookQueryResult getQuoteVolumeForPrice(boolean isBuy, BigDecimal price) {
-        List<OrderBookEntry> entries = isBuy ? getAskEntries() : getBidEntries();
+        return withReadLock(() -> {
+            NavigableMap<BigDecimal, OrderBookEntry> book = isBuy ? askBook : bidBook;
 
-        BigDecimal cumulativeQuote = BigDecimal.ZERO;
-        BigDecimal resultPrice = null;
+            BigDecimal cumulativeQuote = BigDecimal.ZERO;
+            BigDecimal resultPrice = null;
 
-        for (OrderBookEntry entry : entries) {
-            boolean outOfRange = isBuy
-                    ? entry.price().compareTo(price) > 0
-                    : entry.price().compareTo(price) < 0;
+            for (OrderBookEntry entry : book.values()) {
+                boolean outOfRange = isBuy
+                        ? entry.price().compareTo(price) > 0
+                        : entry.price().compareTo(price) < 0;
 
-            if (outOfRange) {
-                break;
+                if (outOfRange) {
+                    break;
+                }
+                cumulativeQuote = cumulativeQuote.add(entry.amount().multiply(entry.price()));
+                resultPrice = entry.price();
             }
-            cumulativeQuote = cumulativeQuote.add(entry.amount().multiply(entry.price()));
-            resultPrice = entry.price();
+            return new OrderBookQueryResult(price, null, resultPrice, cumulativeQuote);
+        });
+    }
+
+    private <T> T withReadLock(Supplier<T> action) {
+        readLock.lock();
+        try {
+            return action.get();
+        } finally {
+            readLock.unlock();
         }
-        return new OrderBookQueryResult(price, null, resultPrice, cumulativeQuote);
+    }
+
+    private void withWriteLock(Runnable action) {
+        writeLock.lock();
+        try {
+            action.run();
+        } finally {
+            writeLock.unlock();
+        }
     }
 }

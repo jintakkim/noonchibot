@@ -5,11 +5,11 @@ import java.util.function.Consumer;
 public interface OrderBookTrackerDataSource {
     OrderBook getNewOrderBook(String pair);
 
-    void processOrderBookDiffs(Consumer<OrderBookMessage> callback);
+    void listenToOrderBookDiffs(Consumer<OrderBookMessage> callback);
 
-    void processOrderBookSnapshots(Consumer<OrderBookMessage> callback);
+    void listenToOrderBookSnapshots(Consumer<OrderBookMessage> callback);
 
-    void processTrades(Consumer<OrderBookMessage> callback);
+    void listenToTrades(Consumer<OrderBookMessage> callback);
 
     boolean subscribeToTradingPair(String pair);
 

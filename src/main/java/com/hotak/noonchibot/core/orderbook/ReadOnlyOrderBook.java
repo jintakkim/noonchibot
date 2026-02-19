@@ -3,36 +3,28 @@ package com.hotak.noonchibot.core.orderbook;
 import java.math.BigDecimal;
 import java.util.List;
 
-public interface OrderBook extends ReadOnlyOrderBook {
+public interface ReadOnlyOrderBook {
     /**
-     * 스냅샷 적용
-     * @param bids 전체 매수 주문 목록
-     * @param asks 전체 매도 주문 목록
-     * @param updateId 업데이트 ID
+     * @return 가격 기준 내림차순 정렬된 entries 반환(best price 부터 반환)
      */
-    void applySnapshot(List<OrderBookEntry> bids, List<OrderBookEntry> asks, long updateId);
+    List<OrderBookEntry> getBidEntries();
+    /**
+     * @return 가격 기준 오름차순 정렬된 entries 반환(best price 부터 반환)
+     */
+    List<OrderBookEntry> getAskEntries();
+    Long getSnapshotId();
+    Long getLastDiffId();
+    BigDecimal getBestBid();
+    BigDecimal getBestAsk();
+    BigDecimal getLastTradePrice();
 
     /**
-     * 변경분 적용
-     * @param bids 변경된 매수 주문 목록
-     * @param asks 변경된 매도 주문 목록
-     * @param updateId 업데이트 ID
+     * 주문 체결 시 적용될 최우선 가격을 반환한다.
+     *
+     * @param isBuy true: 매수 시 체결가(best ask), false: 매도 시 체결가(best bid)
+     * @return 최우선 호가, 호가가 없다면 null을 리턴
      */
-    void applyDiffs(List<OrderBookEntry> bids, List<OrderBookEntry> asks, long updateId);
-
-    /**
-     * 실시간 체결(Trade) 이벤트 적용
-     */
-    void applyTrade(OrderBookMessage.TradeMessage message);
-
-    void setLastTradePrice(BigDecimal lastTradePrice);
-
-    /**
-     * 스냅샷과 과거 Diff 데이터를 사용하여 오더북을 복구
-     * @param snapshot 스냅샷 메시지
-     * @param diffs 버퍼에 저장해둔 최근 Diff 메시지 리스트
-     */
-    void restoreFromSnapshotAndDiffs(OrderBookMessage.SnapshotMessage snapshot, List<OrderBookMessage.DiffMessage> diffs);
+    BigDecimal getBestPrice(boolean isBuy);
 
     /**
      * 지정된 기초자산 수량을 체결하기 위해 도달해야 하는 가격을 반환한다.
@@ -93,25 +85,4 @@ public interface OrderBook extends ReadOnlyOrderBook {
      * @return Quote 금액 (resultVolume에 담김)
      */
     OrderBookQueryResult getQuoteVolumeForPrice(boolean isBuy, BigDecimal price);
-
-    /**
-     * 실시간 체결(Trade) 이벤트 적용
-     * 이 메서드가 호출될 때 내부적으로 '마지막 체결 시간'이 기록되어야 한다.
-     */
-    void applyTrade(BigDecimal price, BigDecimal amount, String tradeId, double timestamp);
-
-    /**
-     * 외부(REST)에서 가져온 마지막 가격을 강제로 설정
-     */
-    void setLastTradePrice(BigDecimal price);
-
-    /**
-     * 마지막으로 Trade가 적용된 시간을 반환
-     */
-    double getLastAppliedTradeTime();
-
-    /**
-     * 마지막으로 REST API를 통해 가격을 업데이트한 시간을 반환
-     */
-    double getLastTradePriceRestUpdatedTime();
 }
