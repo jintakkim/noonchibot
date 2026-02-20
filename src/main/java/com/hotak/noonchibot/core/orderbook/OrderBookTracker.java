@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.core.RetryableTrigger;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
@@ -12,11 +13,14 @@ import java.util.*;
 import java.util.concurrent.*;
 
 @Slf4j
+@Getter
 public class OrderBookTracker {
     private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(1);
     private static final Duration ERROR_RETRY_INTERVAL = Duration.ofSeconds(30);
     private static final Duration TRADE_STALE_THRESHOLD = Duration.ofSeconds(180);
     private static final Duration PRICE_UPDATE_THRESHOLD = Duration.ofSeconds(5);
+
+    private final Map<String, Deque<OrderBookMessage.DiffMessage>> pastDiffsWindows = new ConcurrentHashMap<>();
 
     private final String domain;
     private final OrderBookTrackerDataSource dataSource;
@@ -146,6 +150,8 @@ public class OrderBookTracker {
                 OrderBook book = orderBooks.get(pair);
                 OrderBookPairMetrics pairMetrics = metrics.getOrCreatePairMetrics(pair);
 
+                pastDiffsWindows.computeIfAbsent(pair, k -> new ConcurrentLinkedDeque<>()).add(msg);
+
                 // 최신 id가 아닌 diff 메시지는 reject
                 if (book.getSnapshotId() > msg.getUpdateId()) {
                     metrics.incrementTotalDiffsRejected();
@@ -183,7 +189,10 @@ public class OrderBookTracker {
                     return;
                 }
 
-                book.restoreFromSnapshotAndDiffs(msg, Collections.emptyList());
+                List<OrderBookMessage.DiffMessage> pastDiffs = new ArrayList<>(
+                        pastDiffsWindows.getOrDefault(pair, new ConcurrentLinkedDeque<>())
+                );
+                book.restoreFromSnapshotAndDiffs(msg, pastDiffs);
 
                 Instant now = Instant.now();
                 Duration latency = Duration.between(start, now);
@@ -319,10 +328,10 @@ public class OrderBookTracker {
             String pair = entry.getKey();
             OrderBook book = entry.getValue();
 
-            if (Duration.between(book.getLastAppliedTradeTime(), now).compareTo(TRADE_STALE_THRESHOLD) > 0 &&
-                    Duration.between(book.getLastAppliedTradeTime(), now).compareTo(PRICE_UPDATE_THRESHOLD) > 0) {
-                outdatedPairs.add(pair); // Map의 Key인 pair를 추가
-            }
+//            if (Duration.between(book.getLastAppliedTradeTime(), now).compareTo(TRADE_STALE_THRESHOLD) > 0 &&
+//                    Duration.between(book.getLastAppliedTradeTime(), now).compareTo(PRICE_UPDATE_THRESHOLD) > 0) {
+//                outdatedPairs.add(pair); // Map의 Key인 pair를 추가
+//            }
         }
 
         if (!outdatedPairs.isEmpty()) {
@@ -334,4 +343,14 @@ public class OrderBookTracker {
             });
         }
     }
+
+    public Map<String, ReadOnlyOrderBook> getReadOnlyOrderBooks() {
+        return new HashMap<>(orderBooks);
+    }
+
+    public boolean isReady() {
+        return initializedLatch.getCount() == 0;
+    }
+
+
 }
