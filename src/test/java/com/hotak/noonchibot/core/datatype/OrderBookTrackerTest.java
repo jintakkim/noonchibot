@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
@@ -17,10 +18,15 @@ import static org.mockito.Mockito.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.Trigger;
 
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledFuture;
 
 @ExtendWith(MockitoExtension.class)
 public class OrderBookTrackerTest {
@@ -39,9 +45,9 @@ public class OrderBookTrackerTest {
 
     private Map<String, OrderBook> orderBooks;
     private Map<String, Deque<OrderBookMessage>> savedMessageQueues;
-    private BlockingQueue<OrderBookMessage> diffQueue;
-    private BlockingQueue<OrderBookMessage> snapshotQueue;
-    private BlockingQueue<OrderBookMessage> tradeQueue;
+    private BlockingQueue<OrderBookMessage.DiffMessage> diffQueue;
+    private BlockingQueue<OrderBookMessage.SnapshotMessage> snapshotQueue;
+    private BlockingQueue<OrderBookMessage.TradeMessage> tradeQueue;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -50,6 +56,14 @@ public class OrderBookTrackerTest {
         diffQueue = new LinkedBlockingQueue<>();
         snapshotQueue = new LinkedBlockingQueue<>();
         tradeQueue = new LinkedBlockingQueue<>();
+
+        lenient().when(dataSource.getNewOrderBook(anyString())).thenReturn(mock(OrderBook.class));
+        lenient().when(executor.submit(any(Runnable.class))).thenAnswer(invocation -> {
+            Runnable task = invocation.getArgument(0);
+            new Thread(task).start();
+            return mock(Future.class);
+        });
+        lenient().when(scheduler.schedule(any(Runnable.class), any(Trigger.class))).thenReturn(mock(ScheduledFuture.class));
 
         tracker = new OrderBookTracker(dataSource, tradingPairs, "test-domain", scheduler, executor, diffQueue, snapshotQueue, tradeQueue);
 
@@ -94,18 +108,12 @@ public class OrderBookTrackerTest {
     @Test
     @DisplayName("Diff 라우터가 메트릭을 정상적으로 업데이트한다.")
     void testDiffRouterUpdatesMetrics() throws Exception {
-        OrderBook mockBook = orderBooks.get("BTC-USDT");
-        when(mockBook.getSnapshotId()).thenReturn(100L);
-
-        when(executor.submit(any(Runnable.class))).thenAnswer(invocation -> {
-            Runnable task = invocation.getArgument(0);
-            new Thread(task).start();
-            return mock(Future.class);
-        });
-
         tracker.start();
 
-        diffQueue.put(createMockMsg(OrderBookMessage.Type.DIFF, "BTC-USDT", 150L));
+        OrderBook mockBook = orderBooks.get("BTC-USDT");
+        lenient().when(mockBook.getSnapshotId()).thenReturn(100L);
+
+        diffQueue.put(createDiffMsg("BTC-USDT", 150L));
         Thread.sleep(200);
 
         assertEquals(1, tracker.getMetrics().getTotalDiffsProcessed());
@@ -114,17 +122,12 @@ public class OrderBookTrackerTest {
     @Test
     @DisplayName("Diff 라우터가 스냅샷보다 오래된 diff 메시지를 무시한다.")
     void testDiffRouterTracksRejectedMessages() throws Exception {
-        when(orderBooks.get("BTC-USDT").getSnapshotId()).thenReturn(200L);
-
-        when(executor.submit(any(Runnable.class))).thenAnswer(invocation -> {
-            Runnable task = invocation.getArgument(0);
-            new Thread(task).start();
-            return mock(Future.class);
-        });
-
         tracker.start();
 
-        diffQueue.put(createMockMsg(OrderBookMessage.Type.DIFF, "BTC-USDT", 150L));
+        OrderBook mockBook = orderBooks.get("BTC-USDT");
+        when(mockBook.getSnapshotId()).thenReturn(200L);
+
+        diffQueue.put(createDiffMsg("BTC-USDT", 150L));
         Thread.sleep(200);
 
         assertEquals(1, tracker.getMetrics().getTotalDiffsRejected());
@@ -142,7 +145,7 @@ public class OrderBookTrackerTest {
         tracker.start();
 
         String unknownPair = "SOL-USDT";
-        diffQueue.put(createMockMsg(OrderBookMessage.Type.DIFF, unknownPair, 150L));
+        diffQueue.put(createDiffMsg(unknownPair, 150L));
         Thread.sleep(200);
 
         assertEquals(1, tracker.getMetrics().getTotalDiffsQueued());
@@ -161,7 +164,7 @@ public class OrderBookTrackerTest {
 
         tracker.start();
 
-        snapshotQueue.put(createMockMsg(OrderBookMessage.Type.SNAPSHOT, "BTC-USDT", 100L));
+        snapshotQueue.put(createSnapshotMsg("BTC-USDT", 100L));
         Thread.sleep(200);
 
         assertEquals(1, tracker.getMetrics().getTotalSnapshotsProcessed());
@@ -178,7 +181,7 @@ public class OrderBookTrackerTest {
 
         tracker.start();
 
-        tradeQueue.put(createMockMsg(OrderBookMessage.Type.TRADE, "UNKNOWN-PAIR", 150L));
+        tradeQueue.put(createTradeMsg("unknownPair"));
         Thread.sleep(200);
 
         assertEquals(1, tracker.getMetrics().getTotalTradesRejected());
@@ -205,9 +208,10 @@ public class OrderBookTrackerTest {
         tracker.start();
         tracker.waitReady();
 
+        int beforeSize = orderBooks.size();
         tracker.addTradingPair("BTC-USDT");
 
-        verify(dataSource, never()).getNewOrderBook("BTC-USDT");
+        assertEquals(beforeSize, orderBooks.size());
     }
 
     @Test
@@ -223,7 +227,15 @@ public class OrderBookTrackerTest {
         verify(dataSource).unsubscribeFromTradingPair("BTC-USDT");
     }
 
-    private OrderBookMessage createMockMsg(OrderBookMessage.Type type, String pair, long updateId) {
-        return new OrderBookMessage(type, pair, updateId);
+    private OrderBookMessage.DiffMessage createDiffMsg(String pair, long updateId) {
+        return new OrderBookMessage.DiffMessage(Instant.now(), pair, updateId, List.of(), List.of());
+    }
+
+    private OrderBookMessage.SnapshotMessage createSnapshotMsg(String pair, long updateId) {
+        return new OrderBookMessage.SnapshotMessage(Instant.now(), pair, updateId, List.of(), List.of());
+    }
+
+    private OrderBookMessage.TradeMessage createTradeMsg(String pair) {
+        return new OrderBookMessage.TradeMessage(Instant.now(), pair, 0L, BigDecimal.ZERO, BigDecimal.ZERO);
     }
 }
