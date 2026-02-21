@@ -56,9 +56,9 @@ public class OrderBookMessage {
         private final BigDecimal price;
         private final BigDecimal amount;
 
-        public TradeMessage(Instant timestamp, String tradingPair, long updateId, BigDecimal price, BigDecimal amount) {
+        public TradeMessage(Instant timestamp, String tradingPair, long tradeId, BigDecimal price, BigDecimal amount) {
             super(Type.TRADE, timestamp, tradingPair);
-            this.tradeId = updateId;
+            this.tradeId = tradeId;
             this.price = price;
             this.amount = amount;
         }
