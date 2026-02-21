@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
@@ -164,7 +165,7 @@ public abstract class AbstractOrderBook extends PubSub implements OrderBook {
                 bidBook.pollFirstEntry(); // 매수 삭제
                 // 매도 잔량 차감
                 BigDecimal remainAsk = askAmount.subtract(bidAmount);
-                OrderBookEntry updatedAsk = new OrderBookEntry(bestAsk.updateId(), remainAsk, bestAskPrice);
+                OrderBookEntry updatedAsk = new OrderBookEntry(bestAsk.updateId(), bestAskPrice, remainAsk);
                 askBook.put(bestAskPrice, updatedAsk);
             }
             else {
@@ -172,7 +173,7 @@ public abstract class AbstractOrderBook extends PubSub implements OrderBook {
                 askBook.pollFirstEntry(); // 매도 삭제
                 // 매수 잔량 차감
                 BigDecimal remainBid = bidAmount.subtract(askAmount);
-                OrderBookEntry updatedBid = new OrderBookEntry(bestBid.updateId(), remainBid, bestBidPrice);
+                OrderBookEntry updatedBid = new OrderBookEntry(bestBid.updateId(), bestBidPrice, remainBid);
                 bidBook.put(bestBidPrice, updatedBid);
             }
         }
