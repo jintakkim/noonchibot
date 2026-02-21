@@ -20,13 +20,13 @@ public abstract class AbstractOrderBookTest {
     @DisplayName("빈 오더북에 스냅샷 적용")
     void applySnapshotToEmptyBook() {
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("99")),
-                new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("98"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20")),
+                new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("30"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("102"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("15"))
         );
         OrderBook orderBook = createOrderBook(false);
 
@@ -44,14 +44,14 @@ public abstract class AbstractOrderBookTest {
         OrderBook orderBook = createOrderBook(false);
         // 기존 데이터 적용
         orderBook.applySnapshot(
-                List.of(new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("50"))),
-                List.of(new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("60"))),
+                List.of(new OrderBookEntry(1L, new BigDecimal("50"), new BigDecimal("10"))),
+                List.of(new OrderBookEntry(1L, new BigDecimal("60"), new BigDecimal("10"))),
                 1L
         );
         // 새 스냅샷 적용
         orderBook.applySnapshot(
-                List.of(new OrderBookEntry(2L, new BigDecimal("5"), new BigDecimal("100"))),
-                List.of(new OrderBookEntry(2L, new BigDecimal("5"), new BigDecimal("101"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("100"), new BigDecimal("5"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("101"), new BigDecimal("5"))),
                 2L
         );
         assertThat(orderBook.getBestBid()).isEqualByComparingTo("100");
@@ -63,18 +63,18 @@ public abstract class AbstractOrderBookTest {
     void addNewPriceLevel() {
         OrderBook orderBook = createOrderBook(false);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("99"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("102"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("15"))
         );
         orderBook.applySnapshot(bids, asks, 1L);
 
         orderBook.applyDiffs(
-                List.of(new OrderBookEntry(2L, new BigDecimal("50"), new BigDecimal("98"))),
-                List.of(new OrderBookEntry(2L, new BigDecimal("25"), new BigDecimal("103"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("98"), new BigDecimal("50"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("103"), new BigDecimal("25"))),
                 2L
         );
         assertThat(orderBook.getLastDiffId()).isEqualTo(2L);
@@ -88,17 +88,17 @@ public abstract class AbstractOrderBookTest {
     void updateExistingPriceLevel() {
         OrderBook orderBook = createOrderBook(false);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("99"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("102"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("15"))
         );
         orderBook.applySnapshot(bids, asks, 1L);
 
         orderBook.applyDiffs(
-                List.of(new OrderBookEntry(2L, new BigDecimal("999"), new BigDecimal("100"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("100"), new BigDecimal("999"))),
                 List.of(),
                 2L
         );
@@ -113,17 +113,17 @@ public abstract class AbstractOrderBookTest {
     void removePriceLevelWithZeroAmount() {
         OrderBook orderBook = createOrderBook(false);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("99"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("102"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("15"))
         );
         orderBook.applySnapshot(bids, asks, 1L);
 
         orderBook.applyDiffs(
-                List.of(new OrderBookEntry(2L, BigDecimal.ZERO, new BigDecimal("100"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("100"), BigDecimal.ZERO)),
                 List.of(),
                 2L
         );
@@ -137,17 +137,17 @@ public abstract class AbstractOrderBookTest {
     void updateBestBidAfterRemoval() {
         OrderBook orderBook = createOrderBook(false);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("99"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("102"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("15"))
         );
         orderBook.applySnapshot(bids, asks, 1L);
 
         orderBook.applyDiffs(
-                List.of(new OrderBookEntry(2L, BigDecimal.ZERO, new BigDecimal("100"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("100"), BigDecimal.ZERO)),
                 List.of(),
                 2L
         );
@@ -159,17 +159,17 @@ public abstract class AbstractOrderBookTest {
     void addNewBestBid() {
         OrderBook orderBook = createOrderBook(false);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("99"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("102"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("15"))
         );
         orderBook.applySnapshot(bids, asks, 1L);
 
         orderBook.applyDiffs(
-                List.of(new OrderBookEntry(2L, new BigDecimal("5"), new BigDecimal("100.5"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("100.5"), new BigDecimal("5"))),
                 List.of(),
                 2L
         );
@@ -181,23 +181,23 @@ public abstract class AbstractOrderBookTest {
     void addNewBestAsk() {
         OrderBook orderBook = createOrderBook(false);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("99"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("102"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("15"))
         );
         orderBook.applySnapshot(bids, asks, 1L);
 
         orderBook.applyDiffs(
-                List.of(new OrderBookEntry(2L, new BigDecimal("5"), new BigDecimal("100.5"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("100.5"), new BigDecimal("5"))),
                 List.of(),
                 2L
         );
         orderBook.applyDiffs(
                 List.of(),
-                List.of(new OrderBookEntry(2L, new BigDecimal("3"), new BigDecimal("100.5"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("100.5"), new BigDecimal("3"))),
                 2L
         );
 
@@ -209,10 +209,10 @@ public abstract class AbstractOrderBookTest {
     void noOverlap() {
         OrderBook orderBook = createOrderBook(true);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10"))
         );
 
         orderBook.applySnapshot(bids, asks, 1L);
@@ -226,10 +226,10 @@ public abstract class AbstractOrderBookTest {
     void equalAmountOverlap() {
         OrderBook orderBook = createOrderBook(true);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
 
         orderBook.applySnapshot(bids, asks, 1L);
@@ -245,10 +245,10 @@ public abstract class AbstractOrderBookTest {
     void bidLargerOverlap() {
         OrderBook orderBook = createOrderBook(true);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
 
         orderBook.applySnapshot(bids, asks, 1L);
@@ -263,10 +263,10 @@ public abstract class AbstractOrderBookTest {
     void askLargerOverlap() {
         OrderBook orderBook = createOrderBook(true);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15"))
         );
 
         orderBook.applySnapshot(bids, asks, 1L);
@@ -284,15 +284,18 @@ public abstract class AbstractOrderBookTest {
         // 매도: 98@5, 99@10
         // 매수 100 >= 매도 98 -> 오버랩
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("99"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("98")),
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("99"))
+                new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("10"))
         );
 
         orderBook.applySnapshot(bids, asks, 1L);
+
+        System.out.println(orderBook.getAskEntries());
+        System.out.println(orderBook.getBidEntries());
 
         // 100 vs 98: bid 10, ask 5 -> ask 삭제, bid 5 잔량
         // 5@100 vs 99@10: bid 5, ask 10 -> bid 삭제, ask 5 잔량
@@ -309,11 +312,11 @@ public abstract class AbstractOrderBookTest {
     void bidHigherThanAskMultiLevel() {
         OrderBook orderBook = createOrderBook(true);
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("105")),
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100"))
+                new OrderBookEntry(1L, new BigDecimal("105"), new BigDecimal("5")),
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("95"))
+                new OrderBookEntry(1L, new BigDecimal("95"), new BigDecimal("20"))
         );
 
         orderBook.applySnapshot(bids, asks, 1L);
@@ -322,8 +325,8 @@ public abstract class AbstractOrderBookTest {
         // 100@10 vs 95@15 -> bid 삭제, ask 5 잔량
         // empty vs 95@5 -> 종료
         assertThat(orderBook.getBidEntries()).isEmpty();
-        assertThat(orderBook.getBidEntries().getFirst().price()).isEqualByComparingTo("95");
-        assertThat(orderBook.getBidEntries().getFirst().amount()).isEqualByComparingTo("5");
+        assertThat(orderBook.getAskEntries().getFirst().price()).isEqualByComparingTo("95");
+        assertThat(orderBook.getAskEntries().getFirst().amount()).isEqualByComparingTo("5");
     }
 
     @Test
@@ -331,7 +334,7 @@ public abstract class AbstractOrderBookTest {
     void oneSidedOrderBook() {
         OrderBook orderBook = createOrderBook(true);
         orderBook.applySnapshot(
-                List.of(new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100"))),
+                List.of(new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))),
                 List.of(),
                 1L
         );
@@ -344,13 +347,13 @@ public abstract class AbstractOrderBookTest {
     void removeAllEntries() {
         OrderBook orderBook = createOrderBook(true);
         orderBook.applySnapshot(
-                List.of(new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("100"))),
-                List.of(new OrderBookEntry(1L, new BigDecimal("5"), new BigDecimal("101"))),
+                List.of(new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))),
+                List.of(new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5"))),
                 1L
         );
         orderBook.applyDiffs(
-                List.of(new OrderBookEntry(2L, BigDecimal.ZERO, new BigDecimal("100"))),
-                List.of(new OrderBookEntry(2L, BigDecimal.ZERO, new BigDecimal("101"))),
+                List.of(new OrderBookEntry(2L, new BigDecimal("100"), BigDecimal.ZERO)),
+                List.of(new OrderBookEntry(2L, new BigDecimal("101"), BigDecimal.ZERO)),
                 2L
         );
         assertThat(orderBook.getBestBid()).isNull();
@@ -363,11 +366,11 @@ public abstract class AbstractOrderBookTest {
         OrderBook orderBook = createOrderBook(true);
         orderBook.applySnapshot(
                 List.of(
-                        new OrderBookEntry(1L, new BigDecimal("1.5"), new BigDecimal("100.123")),
-                        new OrderBookEntry(1L, new BigDecimal("2.5"), new BigDecimal("100.122"))
+                        new OrderBookEntry(1L, new BigDecimal("100.123"), new BigDecimal("1.5")),
+                        new OrderBookEntry(1L, new BigDecimal("100.122"), new BigDecimal("2.5"))
                 ),
                 List.of(
-                        new OrderBookEntry(1L, new BigDecimal("0.5"), new BigDecimal("100.124"))
+                        new OrderBookEntry(1L, new BigDecimal("100.124"), new BigDecimal("0.5"))
                 ),
                 1L
         );
@@ -383,14 +386,14 @@ public abstract class AbstractOrderBookTest {
         // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
         // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("20")),
+                new OrderBookEntry(1L, new BigDecimal("103"), new BigDecimal("30"))
         );
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("25")),
+                new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("35"))
         );
         orderBook.applySnapshot(bids, asks, 1L);
         assertThat(orderBook.getBestPrice(true)).isEqualByComparingTo("101");
@@ -404,14 +407,14 @@ public abstract class AbstractOrderBookTest {
         // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
         // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
         List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
+                new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10")),
+                new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("20")),
+                new OrderBookEntry(1L, new BigDecimal("103"), new BigDecimal("30"))
         );
         List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
+                new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15")),
+                new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("25")),
+                new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("35"))
         );
         orderBook.applySnapshot(bids, asks, 1L);
         assertThat(orderBook.getBestPrice(false)).isEqualByComparingTo("100");
@@ -436,14 +439,14 @@ public abstract class AbstractOrderBookTest {
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                    new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                    new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
+                    new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10")),
+                    new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("20")),
+                    new OrderBookEntry(1L, new BigDecimal("103"), new BigDecimal("30"))
             );
             List<OrderBookEntry> bids = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                    new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                    new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
+                    new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15")),
+                    new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("25")),
+                    new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("35"))
             );
             orderBook.applySnapshot(bids, asks, 1L);
         }
@@ -504,14 +507,14 @@ public abstract class AbstractOrderBookTest {
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                    new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                    new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
+                    new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10")),
+                    new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("20")),
+                    new OrderBookEntry(1L, new BigDecimal("103"), new BigDecimal("30"))
             );
             List<OrderBookEntry> bids = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                    new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                    new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
+                    new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15")),
+                    new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("25")),
+                    new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("35"))
             );
             orderBook.applySnapshot(bids, asks, 1L);
         }
@@ -544,7 +547,7 @@ public abstract class AbstractOrderBookTest {
             // VWAP = 6140 / 60 = 102.333...
             OrderBookQueryResult result = orderBook.getVWAPForVolume(true, new BigDecimal("60"));
 
-            assertThat(result.resultPrice()).isEqualByComparingTo("102.333333333333333333333333333333333");
+            assertThat(result.resultPrice()).isEqualByComparingTo("102.33333333");
             assertThat(result.resultVolume()).isEqualByComparingTo("60");
         }
 
@@ -556,7 +559,7 @@ public abstract class AbstractOrderBookTest {
             // 60개만 가능, VWAP = 6140 / 60
             assertThat(result.queryVolume()).isEqualByComparingTo("100");
             assertThat(result.resultVolume()).isEqualByComparingTo("60");
-            assertThat(result.resultPrice()).isEqualByComparingTo("102.333333333333333333333333333333333");
+            assertThat(result.resultPrice()).isEqualByComparingTo("102.33333333");
         }
     }
 
@@ -571,14 +574,14 @@ public abstract class AbstractOrderBookTest {
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                    new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                    new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
+                    new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10")),
+                    new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("20")),
+                    new OrderBookEntry(1L, new BigDecimal("103"), new BigDecimal("30"))
             );
             List<OrderBookEntry> bids = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                    new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                    new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
+                    new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15")),
+                    new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("25")),
+                    new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("35"))
             );
             orderBook.applySnapshot(bids, asks, 1L);
         }
@@ -627,14 +630,14 @@ public abstract class AbstractOrderBookTest {
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                    new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                    new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
+                    new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10")),
+                    new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("20")),
+                    new OrderBookEntry(1L, new BigDecimal("103"), new BigDecimal("30"))
             );
             List<OrderBookEntry> bids = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                    new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                    new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
+                    new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15")),
+                    new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("25")),
+                    new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("35"))
             );
             orderBook.applySnapshot(bids, asks, 1L);
         }
@@ -688,14 +691,14 @@ public abstract class AbstractOrderBookTest {
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                    new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                    new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
+                    new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10")),
+                    new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("20")),
+                    new OrderBookEntry(1L, new BigDecimal("103"), new BigDecimal("30"))
             );
             List<OrderBookEntry> bids = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                    new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                    new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
+                    new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15")),
+                    new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("25")),
+                    new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("35"))
             );
             orderBook.applySnapshot(bids, asks, 1L);
         }
@@ -762,14 +765,14 @@ public abstract class AbstractOrderBookTest {
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                    new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                    new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
+                    new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("10")),
+                    new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("20")),
+                    new OrderBookEntry(1L, new BigDecimal("103"), new BigDecimal("30"))
             );
             List<OrderBookEntry> bids = List.of(
-                    new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                    new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                    new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
+                    new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15")),
+                    new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("25")),
+                    new OrderBookEntry(1L, new BigDecimal("98"), new BigDecimal("35"))
             );
             orderBook.applySnapshot(bids, asks, 1L);
         }
@@ -824,8 +827,8 @@ public abstract class AbstractOrderBookTest {
                 Instant.parse("2024-01-01T00:01:00Z"),
                 "BTC-USDT",
                 5L,
-                List.of(new OrderBookEntry(5L, new BigDecimal("10"), new BigDecimal("100"))),
-                List.of(new OrderBookEntry(5L, new BigDecimal("10"), new BigDecimal("101")))
+                List.of(new OrderBookEntry(5L, new BigDecimal("100"), new BigDecimal("10"))),
+                List.of(new OrderBookEntry(5L, new BigDecimal("101"), new BigDecimal("10")))
         );
 
         List<OrderBookMessage.DiffMessage> diffs = List.of(
@@ -834,7 +837,7 @@ public abstract class AbstractOrderBookTest {
                         Instant.parse("2024-01-01T00:00:00Z"),
                         "BTC-USDT",
                         3L,
-                        List.of(new OrderBookEntry(3L, new BigDecimal("5"), new BigDecimal("99"))),
+                        List.of(new OrderBookEntry(3L, new BigDecimal("99"), new BigDecimal("5"))),
                         List.of()
                 ),
                 // 스냅샷 이후 - 적용됨
@@ -842,7 +845,7 @@ public abstract class AbstractOrderBookTest {
                         Instant.parse("2024-01-01T00:02:00Z"),
                         "BTC-USDT",
                         6L,
-                        List.of(new OrderBookEntry(6L, new BigDecimal("20"), new BigDecimal("100"))),
+                        List.of(new OrderBookEntry(6L, new BigDecimal("100"), new BigDecimal("20"))),
                         List.of()
                 ),
                 new OrderBookMessage.DiffMessage(
@@ -850,7 +853,7 @@ public abstract class AbstractOrderBookTest {
                         "BTC-USDT",
                         7L,
                         List.of(),
-                        List.of(new OrderBookEntry(7L, new BigDecimal("15"), new BigDecimal("102")))
+                        List.of(new OrderBookEntry(7L, new BigDecimal("102"), new BigDecimal("15")))
                 )
         );
 
