@@ -32,7 +32,7 @@ import java.util.concurrent.ScheduledFuture;
 public class OrderBookTrackerTest {
 
     @Mock
-    private OrderBookTrackerDataSource dataSource;
+    private OrderBookDataSource dataSource;
 
     @Mock
     private TaskScheduler scheduler;

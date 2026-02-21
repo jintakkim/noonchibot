@@ -23,7 +23,7 @@ public class OrderBookTracker {
     private final Map<String, Deque<OrderBookMessage.DiffMessage>> pastDiffsWindows = new ConcurrentHashMap<>();
 
     private final String domain;
-    private final OrderBookTrackerDataSource dataSource;
+    private final OrderBookDataSource dataSource;
     private final Set<String> tradingPairs = ConcurrentHashMap.newKeySet();
 
     private volatile Boolean isRunning = false;
@@ -43,7 +43,7 @@ public class OrderBookTracker {
 
     private final OrderBookTrackerMetrics metrics = new OrderBookTrackerMetrics();
 
-    public OrderBookTracker(OrderBookTrackerDataSource dataSource, List<String> pairs, String domain,
+    public OrderBookTracker(OrderBookDataSource dataSource, List<String> pairs, String domain,
                             TaskScheduler scheduler, AsyncTaskExecutor executor,
                             BlockingQueue<OrderBookMessage.DiffMessage> diffQueue,
                             BlockingQueue<OrderBookMessage.SnapshotMessage> snapshotQueue,

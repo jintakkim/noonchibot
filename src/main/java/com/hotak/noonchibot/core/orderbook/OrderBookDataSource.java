@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 
-public interface OrderBookTrackerDataSource {
+public interface OrderBookDataSource {
     OrderBook getNewOrderBook(String pair);
 
     void listenToOrderBookDiffs(BlockingQueue<OrderBookMessage.DiffMessage> queue);
