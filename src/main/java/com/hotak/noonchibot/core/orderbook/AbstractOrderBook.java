@@ -230,7 +230,7 @@ public abstract class AbstractOrderBook extends PubSub implements OrderBook {
                 if (entry.amount().compareTo(remainingVolume) >= 0) {
                     totalCost = totalCost.add(remainingVolume.multiply(entry.price()));
                     totalVolume = volume;
-                    resultVwap = totalCost.divide(totalVolume, MathContext.DECIMAL128);
+                    resultVwap = totalCost.divide(totalVolume, 8, RoundingMode.HALF_UP);
 
                     return new OrderBookQueryResult(bestPrice, volume, resultVwap, totalVolume);
                 }
@@ -239,7 +239,7 @@ public abstract class AbstractOrderBook extends PubSub implements OrderBook {
             }
 
             if (totalVolume.compareTo(BigDecimal.ZERO) > 0) {
-                resultVwap = totalCost.divide(totalVolume, MathContext.DECIMAL128);
+                resultVwap = totalCost.divide(totalVolume, 8, RoundingMode.HALF_UP);
             }
             return new OrderBookQueryResult(bestPrice, volume, resultVwap, totalVolume);
         });
