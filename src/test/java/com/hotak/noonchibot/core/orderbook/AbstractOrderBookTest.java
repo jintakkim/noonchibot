@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import com.hotak.noonchibot.core.datatype.TradeType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -419,22 +420,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("빈 오더북은 null 반환")
     void returnsNullForEmptyBook() {
-        OrderBook orderBook = createOrderBook(false);
-
-        // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
-        // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
-        List<OrderBookEntry> asks = List.of(
-                new OrderBookEntry(1L, new BigDecimal("10"), new BigDecimal("101")),
-                new OrderBookEntry(1L, new BigDecimal("20"), new BigDecimal("102")),
-                new OrderBookEntry(1L, new BigDecimal("30"), new BigDecimal("103"))
-        );
-        List<OrderBookEntry> bids = List.of(
-                new OrderBookEntry(1L, new BigDecimal("15"), new BigDecimal("100")),
-                new OrderBookEntry(1L, new BigDecimal("25"), new BigDecimal("99")),
-                new OrderBookEntry(1L, new BigDecimal("35"), new BigDecimal("98"))
-        );
-        orderBook.applySnapshot(bids, asks, 1L);
-        AbstractOrderBook emptyBook = new AbstractOrderBook();
+        OrderBook emptyBook = createOrderBook(false);
         assertThat(emptyBook.getBestPrice(true)).isNull();
         assertThat(emptyBook.getBestPrice(false)).isNull();
     }
@@ -836,6 +822,7 @@ public abstract class AbstractOrderBookTest {
 
         OrderBookMessage.SnapshotMessage snapshot = new OrderBookMessage.SnapshotMessage(
                 Instant.parse("2024-01-01T00:01:00Z"),
+                "BTC-USDT",
                 5L,
                 List.of(new OrderBookEntry(5L, new BigDecimal("10"), new BigDecimal("100"))),
                 List.of(new OrderBookEntry(5L, new BigDecimal("10"), new BigDecimal("101")))
@@ -845,6 +832,7 @@ public abstract class AbstractOrderBookTest {
                 // 스냅샷 이전 - 무시됨
                 new OrderBookMessage.DiffMessage(
                         Instant.parse("2024-01-01T00:00:00Z"),
+                        "BTC-USDT",
                         3L,
                         List.of(new OrderBookEntry(3L, new BigDecimal("5"), new BigDecimal("99"))),
                         List.of()
@@ -852,12 +840,14 @@ public abstract class AbstractOrderBookTest {
                 // 스냅샷 이후 - 적용됨
                 new OrderBookMessage.DiffMessage(
                         Instant.parse("2024-01-01T00:02:00Z"),
+                        "BTC-USDT",
                         6L,
                         List.of(new OrderBookEntry(6L, new BigDecimal("20"), new BigDecimal("100"))),
                         List.of()
                 ),
                 new OrderBookMessage.DiffMessage(
                         Instant.parse("2024-01-01T00:03:00Z"),
+                        "BTC-USDT",
                         7L,
                         List.of(),
                         List.of(new OrderBookEntry(7L, new BigDecimal("15"), new BigDecimal("102")))
@@ -879,5 +869,25 @@ public abstract class AbstractOrderBookTest {
         assertThat(orderBook.getAskEntries())
                 .extracting(OrderBookEntry::price)
                 .contains(new BigDecimal("102"));
+    }
+
+    @Test
+    @DisplayName("Trade 메시지 적용 시 lastTradeTime, lastTradePrice 업데이트")
+    void applyTradeUpdatesTimeAndPrice() {
+        OrderBook orderBook = createOrderBook(false);
+
+        OrderBookMessage.TradeMessage trade = new OrderBookMessage.TradeMessage(
+                Instant.parse("2024-01-01T00:05:00Z"),
+                "BTC-USDT",
+                1L,
+                new BigDecimal("50000.5"),
+                new BigDecimal("0.1"),
+                TradeType.BUY
+        );
+
+        orderBook.applyTrade(trade);
+
+        assertThat(orderBook.getLastAppliedTradeTime()).isEqualTo(Instant.parse("2024-01-01T00:05:00Z"));
+        assertThat(orderBook.getLastTradePrice()).isEqualByComparingTo("50000.5");
     }
 }

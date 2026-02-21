@@ -236,6 +236,6 @@ public class OrderBookTrackerTest {
     }
 
     private OrderBookMessage.TradeMessage createTradeMsg(String pair) {
-        return new OrderBookMessage.TradeMessage(Instant.now(), pair, 0L, BigDecimal.ZERO, BigDecimal.ZERO);
+        return new OrderBookMessage.TradeMessage(Instant.now(), pair, 0L, BigDecimal.ZERO, BigDecimal.ZERO, TradeType.BUY);
     }
 }

@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -13,7 +14,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
 @RequiredArgsConstructor
-public class AbstractOrderBook extends PubSub implements OrderBook {
+public abstract class AbstractOrderBook extends PubSub implements OrderBook {
     private volatile Long lastDiffUid;
     private volatile Long snapshotUid;
     private final boolean dex;
@@ -22,6 +23,7 @@ public class AbstractOrderBook extends PubSub implements OrderBook {
     private volatile BigDecimal bestBid;
     private volatile BigDecimal bestAsk;
     private volatile BigDecimal lastTradePrice;
+    private volatile Instant lastTradeTime;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     private final Lock readLock = lock.readLock();
     private final Lock writeLock = lock.writeLock();
@@ -98,6 +100,7 @@ public class AbstractOrderBook extends PubSub implements OrderBook {
 
     @Override
     public void applyTrade(OrderBookMessage.TradeMessage message) {
+        lastTradeTime = message.getTimestamp();
         this.lastTradePrice = message.getPrice();
         triggerEvent(new OrderBookTradeEvent(message.getTradingPair(), message.getPrice(), message.getAmount(), message.getTradeId(), message.getTimestamp()));
     }
@@ -330,6 +333,11 @@ public class AbstractOrderBook extends PubSub implements OrderBook {
             }
             return new OrderBookQueryResult(price, null, resultPrice, cumulativeQuote);
         });
+    }
+
+    @Override
+    public Instant getLastAppliedTradeTime() {
+        return lastTradeTime;
     }
 
     private <T> T withReadLock(Supplier<T> action) {

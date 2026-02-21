@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 public interface ReadOnlyOrderBook {
@@ -85,4 +86,10 @@ public interface ReadOnlyOrderBook {
      * @return Quote 금액 (resultVolume에 담김)
      */
     OrderBookQueryResult getQuoteVolumeForPrice(boolean isBuy, BigDecimal price);
+
+
+    /**
+     * 마지막으로 Trade가 적용된 시간을 반환
+     */
+    Instant getLastAppliedTradeTime();
 }
