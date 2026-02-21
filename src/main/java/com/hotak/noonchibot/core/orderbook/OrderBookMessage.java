@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import com.hotak.noonchibot.core.datatype.TradeType;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
@@ -55,12 +56,14 @@ public class OrderBookMessage {
         private final long tradeId;
         private final BigDecimal price;
         private final BigDecimal amount;
+        private final TradeType tradeType;
 
-        public TradeMessage(Instant timestamp, String tradingPair, long tradeId, BigDecimal price, BigDecimal amount) {
+        public TradeMessage(Instant timestamp, String tradingPair, long tradeId, BigDecimal price, BigDecimal amount, TradeType tradeType) {
             super(Type.TRADE, timestamp, tradingPair);
             this.tradeId = tradeId;
             this.price = price;
             this.amount = amount;
+            this.tradeType = tradeType;
         }
     }
 }
