@@ -87,7 +87,6 @@ public interface ReadOnlyOrderBook {
      */
     OrderBookQueryResult getQuoteVolumeForPrice(boolean isBuy, BigDecimal price);
 
-
     /**
      * 마지막으로 Trade가 적용된 시간을 반환
      */

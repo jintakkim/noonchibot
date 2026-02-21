@@ -17,8 +17,6 @@ import java.util.concurrent.*;
 public class OrderBookTracker {
     private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(1);
     private static final Duration ERROR_RETRY_INTERVAL = Duration.ofSeconds(30);
-    private static final Duration TRADE_STALE_THRESHOLD = Duration.ofSeconds(180);
-    private static final Duration PRICE_UPDATE_THRESHOLD = Duration.ofSeconds(5);
 
     private final Map<String, Deque<OrderBookMessage.DiffMessage>> pastDiffsWindows = new ConcurrentHashMap<>();
 
@@ -321,27 +319,15 @@ public class OrderBookTracker {
     private void updateLastTradePrices() {
         if (initializedLatch.getCount() > 0) return;
 
-        Instant now = Instant.now();
-        Set<String> outdatedPairs = new HashSet<>();
+        Instant threshold = Instant.now().minusSeconds(180);
 
-        for (Map.Entry<String, OrderBook> entry : orderBooks.entrySet()) {
-            String pair = entry.getKey();
-            OrderBook book = entry.getValue();
-
-//            if (Duration.between(book.getLastAppliedTradeTime(), now).compareTo(TRADE_STALE_THRESHOLD) > 0 &&
-//                    Duration.between(book.getLastAppliedTradeTime(), now).compareTo(PRICE_UPDATE_THRESHOLD) > 0) {
-//                outdatedPairs.add(pair); // Map의 Key인 pair를 추가
-//            }
-        }
-
-        if (!outdatedPairs.isEmpty()) {
-            Map<String, BigDecimal> lastPrices = dataSource.getLastTradedPrices(outdatedPairs, domain);
-
-            lastPrices.forEach((pair, price) -> {
-                OrderBook book = orderBooks.get(pair);
-                if (book != null) book.setLastTradePrice(price);
-            });
-        }
+        orderBooks.forEach((pair, book) -> {
+            Instant lastTradeTime = book.getLastAppliedTradeTime();
+            if (lastTradeTime != null && lastTradeTime.isBefore(threshold)) {
+                BigDecimal price = dataSource.getLastTradedPrice(pair);
+                if (price != null) book.setLastTradePrice(price);
+            }
+        });
     }
 
     public Map<String, ReadOnlyOrderBook> getReadOnlyOrderBooks() {
@@ -351,6 +337,4 @@ public class OrderBookTracker {
     public boolean isReady() {
         return initializedLatch.getCount() == 0;
     }
-
-
 }
