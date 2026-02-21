@@ -18,6 +18,7 @@ public class OrderBookTracker {
     private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(1);
     private static final Duration ERROR_RETRY_INTERVAL = Duration.ofSeconds(30);
 
+    /// 스냅샷 복구 시 restoreFromSnapshotAndDiffs에 전달할 diff 메시지 윈도우
     private final Map<String, Deque<OrderBookMessage.DiffMessage>> pastDiffsWindows = new ConcurrentHashMap<>();
 
     private final String domain;
@@ -32,9 +33,9 @@ public class OrderBookTracker {
     private final List<ScheduledFuture<?>> scheduledTasks = new ArrayList<>();
     private final List<Future<?>> streamTasks = new ArrayList<>();
 
-    private final BlockingQueue<OrderBookMessage.DiffMessage> diffQueue;
-    private final BlockingQueue<OrderBookMessage.SnapshotMessage> snapshotQueue;
-    private final BlockingQueue<OrderBookMessage.TradeMessage> tradeQueue;
+    private final BlockingQueue<OrderBookMessage.DiffMessage> diffQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<OrderBookMessage.SnapshotMessage> snapshotQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<OrderBookMessage.TradeMessage> tradeQueue = new LinkedBlockingQueue<>();
 
     private final Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
     private final Map<String, Deque<OrderBookMessage>> savedMessageQueues = new ConcurrentHashMap<>();
@@ -42,18 +43,12 @@ public class OrderBookTracker {
     private final OrderBookTrackerMetrics metrics = new OrderBookTrackerMetrics();
 
     public OrderBookTracker(OrderBookDataSource dataSource, List<String> pairs, String domain,
-                            TaskScheduler scheduler, AsyncTaskExecutor executor,
-                            BlockingQueue<OrderBookMessage.DiffMessage> diffQueue,
-                            BlockingQueue<OrderBookMessage.SnapshotMessage> snapshotQueue,
-                            BlockingQueue<OrderBookMessage.TradeMessage> tradeQueue) {
+                            TaskScheduler scheduler, AsyncTaskExecutor executor) {
         this.domain = domain;
         this.dataSource = dataSource;
         this.tradingPairs.addAll(pairs);
         this.scheduler = scheduler;
         this.executor = executor;
-        this.diffQueue = diffQueue;
-        this.snapshotQueue = snapshotQueue;
-        this.tradeQueue = tradeQueue;
     }
 
     public void start() {
