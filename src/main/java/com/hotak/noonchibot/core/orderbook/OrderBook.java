@@ -1,6 +1,9 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import tools.jackson.databind.JsonNode;
+
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 public interface OrderBook extends ReadOnlyOrderBook {
@@ -33,4 +36,19 @@ public interface OrderBook extends ReadOnlyOrderBook {
      * @param diffs 버퍼에 저장해둔 최근 Diff 메시지 리스트
      */
     void restoreFromSnapshotAndDiffs(OrderBookMessage.SnapshotMessage snapshot, List<OrderBookMessage.DiffMessage> diffs);
+
+    /**
+     * 거래소 api 데이터(json)로부터 diff 메시지 생성
+     */
+    OrderBookMessage.DiffMessage diffMessageFromExchange(JsonNode msg, Instant timestamp, String tradingPair);
+
+    /**
+     * 거래소 api 데이터(json)로부터 trade 메시지 생성
+     */
+    OrderBookMessage.TradeMessage tradeMessageFromExchange(JsonNode msg, String tradingPair);
+
+    /**
+     * 거래소 api 데이터(json)로부터 snapshot 메시지 생성
+     */
+    OrderBookMessage.SnapshotMessage snapshotMessageFromExchange(JsonNode msg, Instant timestamp, String tradingPair);
 }
