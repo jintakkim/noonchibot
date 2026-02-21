@@ -29,7 +29,7 @@ public class OrderBookTracker {
 
     private final TaskScheduler scheduler;
     private final AsyncTaskExecutor executor;
-    private final List<ScheduledFuture<?>> scheduledTasks = new CopyOnWriteArrayList<>();
+    private final List<ScheduledFuture<?>> scheduledTasks = new ArrayList<>();
     private final List<Future<?>> streamTasks = new ArrayList<>();
 
     private final BlockingQueue<OrderBookMessage.DiffMessage> diffQueue;
