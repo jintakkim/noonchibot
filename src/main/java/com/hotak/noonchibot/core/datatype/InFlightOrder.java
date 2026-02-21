@@ -37,7 +37,7 @@ public class InFlightOrder {
     private final CompletableFuture<Void> completelyFilledEvent = new CompletableFuture<>();
 
     private String exchangeOrderId;
-    private State  currentState;
+    private State currentState;
     private BigDecimal executedAmountBase = BigDecimal.ZERO;
     private BigDecimal executedAmountQuote = BigDecimal.ZERO;
     private Instant lastUpdateTimestamp;
