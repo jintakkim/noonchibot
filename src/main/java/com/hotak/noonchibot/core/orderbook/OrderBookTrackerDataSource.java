@@ -18,5 +18,5 @@ public interface OrderBookTrackerDataSource {
 
     boolean unsubscribeFromTradingPair(String pair);
 
-    Map<String, BigDecimal> getLastTradedPrices(Set<String> outdatedPairs, String domain);
+    Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs, String domain);
 }
