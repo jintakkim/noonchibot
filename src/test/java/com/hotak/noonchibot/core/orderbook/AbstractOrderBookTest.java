@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -14,7 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public abstract class AbstractOrderBookTest {
 
-    public abstract OrderBook createOrderBook(boolean dex);
+    protected abstract boolean isDex();
+    protected abstract OrderBook createOrderBook();
 
     @Test
     @DisplayName("빈 오더북에 스냅샷 적용")
@@ -28,7 +30,7 @@ public abstract class AbstractOrderBookTest {
                 new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5")),
                 new OrderBookEntry(1L, new BigDecimal("102"), new BigDecimal("15"))
         );
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
 
         orderBook.applySnapshot(bids, asks, 1L);
 
@@ -41,7 +43,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("스냅샷 적용 시 기존 데이터 초기화")
     void snapshotClearsPreviousData() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
         // 기존 데이터 적용
         orderBook.applySnapshot(
                 List.of(new OrderBookEntry(1L, new BigDecimal("50"), new BigDecimal("10"))),
@@ -61,7 +63,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("새 가격 레벨 추가")
     void addNewPriceLevel() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
                 new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
@@ -86,7 +88,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("기존 가격 레벨 수량 업데이트")
     void updateExistingPriceLevel() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
                 new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
@@ -111,7 +113,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("수량이 0이면 가격 레벨 삭제")
     void removePriceLevelWithZeroAmount() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
                 new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
@@ -135,7 +137,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("best bid 삭제 시 다음 best bid로 갱신")
     void updateBestBidAfterRemoval() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
                 new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
@@ -157,7 +159,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("새로운 best bid 추가")
     void addNewBestBid() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
                 new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
@@ -179,7 +181,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("새로운 best ask 추가")
     void addNewBestAsk() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10")),
                 new OrderBookEntry(1L, new BigDecimal("99"), new BigDecimal("20"))
@@ -206,8 +208,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("오버랩 없는 경우 - 변경 없음")
+    @EnabledIf("isDex")
     void noOverlap() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
@@ -223,8 +226,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("동일 수량 오버랩 - 양쪽 모두 삭제")
+    @EnabledIf("isDex")
     void equalAmountOverlap() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
@@ -242,8 +246,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("매수 수량이 더 큰 오버랩")
+    @EnabledIf("isDex")
     void bidLargerOverlap() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("15"))
         );
@@ -260,8 +265,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("매도 수량이 더 큰 오버랩")
+    @EnabledIf("isDex")
     void askLargerOverlap() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
         );
@@ -278,8 +284,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("다중 레벨 오버랩 처리")
+    @EnabledIf("isDex")
     void multiLevelOverlap() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         // 매수: 100@10, 99@20
         // 매도: 98@5, 99@10
         // 매수 100 >= 매도 98 -> 오버랩
@@ -309,8 +316,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("매수가 > 매도가인 다중 레벨")
+    @EnabledIf("isDex")
     void bidHigherThanAskMultiLevel() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         List<OrderBookEntry> bids = List.of(
                 new OrderBookEntry(1L, new BigDecimal("105"), new BigDecimal("5")),
                 new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))
@@ -331,8 +339,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("한쪽만 있는 오더북")
+    @EnabledIf("isDex")
     void oneSidedOrderBook() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         orderBook.applySnapshot(
                 List.of(new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))),
                 List.of(),
@@ -344,8 +353,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("모든 항목 삭제")
+    @EnabledIf("isDex")
     void removeAllEntries() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         orderBook.applySnapshot(
                 List.of(new OrderBookEntry(1L, new BigDecimal("100"), new BigDecimal("10"))),
                 List.of(new OrderBookEntry(1L, new BigDecimal("101"), new BigDecimal("5"))),
@@ -362,8 +372,9 @@ public abstract class AbstractOrderBookTest {
 
     @Test
     @DisplayName("소수점 가격 처리")
+    @EnabledIf("isDex")
     void decimalPrices() {
-        OrderBook orderBook = createOrderBook(true);
+        OrderBook orderBook = createOrderBook();
         orderBook.applySnapshot(
                 List.of(
                         new OrderBookEntry(1L, new BigDecimal("100.123"), new BigDecimal("1.5")),
@@ -381,7 +392,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("매수 시 best ask 반환")
     void returnsBestAskForBuy() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
 
         // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
         // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
@@ -402,7 +413,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("매도 시 best bid 반환")
     void returnsBestBidForSell() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
 
         // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
         // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
@@ -423,7 +434,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("빈 오더북은 null 반환")
     void returnsNullForEmptyBook() {
-        OrderBook emptyBook = createOrderBook(false);
+        OrderBook emptyBook = createOrderBook();
         assertThat(emptyBook.getBestPrice(true)).isNull();
         assertThat(emptyBook.getBestPrice(false)).isNull();
     }
@@ -435,7 +446,7 @@ public abstract class AbstractOrderBookTest {
         private OrderBook orderBook;
         @BeforeEach
         void setUp() {
-            orderBook = createOrderBook(false);
+            orderBook = createOrderBook();
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -503,7 +514,7 @@ public abstract class AbstractOrderBookTest {
         private OrderBook orderBook;
         @BeforeEach
         void setUp() {
-            orderBook = createOrderBook(false);
+            orderBook = createOrderBook();
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -570,7 +581,7 @@ public abstract class AbstractOrderBookTest {
         private OrderBook orderBook;
         @BeforeEach
         void setUp() {
-            orderBook = createOrderBook(false);
+            orderBook = createOrderBook();
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -626,7 +637,7 @@ public abstract class AbstractOrderBookTest {
 
         @BeforeEach
         void setUp() {
-            orderBook = createOrderBook(false);
+            orderBook = createOrderBook();
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -687,7 +698,7 @@ public abstract class AbstractOrderBookTest {
 
         @BeforeEach
         void setUp() {
-            orderBook = createOrderBook(false);
+            orderBook = createOrderBook();
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -761,7 +772,7 @@ public abstract class AbstractOrderBookTest {
 
         @BeforeEach
         void setUp() {
-            orderBook = createOrderBook(false);
+            orderBook = createOrderBook();
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -821,7 +832,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("스냅샷 이후 diff만 적용")
     void appliesOnlyDiffsAfterSnapshot() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
 
         OrderBookMessage.SnapshotMessage snapshot = new OrderBookMessage.SnapshotMessage(
                 Instant.parse("2024-01-01T00:01:00Z"),
@@ -877,7 +888,7 @@ public abstract class AbstractOrderBookTest {
     @Test
     @DisplayName("Trade 메시지 적용 시 lastTradeTime, lastTradePrice 업데이트")
     void applyTradeUpdatesTimeAndPrice() {
-        OrderBook orderBook = createOrderBook(false);
+        OrderBook orderBook = createOrderBook();
 
         OrderBookMessage.TradeMessage trade = new OrderBookMessage.TradeMessage(
                 Instant.parse("2024-01-01T00:05:00Z"),
