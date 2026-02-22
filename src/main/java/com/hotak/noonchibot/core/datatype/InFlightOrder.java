@@ -1,12 +1,13 @@
 package com.hotak.noonchibot.core.datatype;
 
-import com.hotak.noonchibot.core.trade.fee.TradeFee;
+import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,15 +30,15 @@ public class InFlightOrder {
 
     private final String clientOrderId;
     private final String tradingPair;
-    private final OrderType orderType;
     private final TradeType tradeType;
     private final BigDecimal amount;
     private final BigDecimal price;
     private final Instant creationTimestamp;
     private final CompletableFuture<Void> completelyFilledEvent = new CompletableFuture<>();
+    private final CompletableFuture<Void> processedByExchangeEvent = new CompletableFuture<>();
 
     private String exchangeOrderId;
-    private State  currentState;
+    private State currentState;
     private BigDecimal executedAmountBase = BigDecimal.ZERO;
     private BigDecimal executedAmountQuote = BigDecimal.ZERO;
     private Instant lastUpdateTimestamp;
@@ -66,28 +67,24 @@ public class InFlightOrder {
      * 체결 정보 업데이트 적용
      *
      * @param tradeUpdate 체결 정보
-     * @return 업데이트 적용 여부
      */
-    public boolean updateWithTradeUpdate(TradeUpdate tradeUpdate) {
-        String tradeId = tradeUpdate.tradeId();
-
+    public void updateWithTradeUpdate(TradeUpdate tradeUpdate) {
         // 이미 처리된 체결이거나 주문 ID 불일치
         boolean clientIdMatch = tradeUpdate.clientOrderId() != null
                 && tradeUpdate.clientOrderId().equals(this.clientOrderId);
         boolean exchangeIdMatch = tradeUpdate.exchangeOrderId() != null
                 && tradeUpdate.exchangeOrderId().equals(this.exchangeOrderId);
 
-        if (orderFills.containsKey(tradeId) || (!clientIdMatch && !exchangeIdMatch)) {
-            return false;
+        if (orderFills.containsKey(tradeUpdate.tradeId()) || (!clientIdMatch && !exchangeIdMatch)) {
+            throw new InFlightUpdateFailedException("주문 아이디가 일치하지 않습니다.");
         }
         // 체결 정보 저장
-        orderFills.put(tradeId, tradeUpdate);
+        orderFills.put(tradeUpdate.tradeId(), tradeUpdate);
         // 체결 수량 누적
         executedAmountBase = executedAmountBase.add(tradeUpdate.fillBaseAmount());
         executedAmountQuote = executedAmountQuote.add(tradeUpdate.fillQuoteAmount());
         this.lastUpdateTimestamp = tradeUpdate.fillTimestamp();
         checkFilledCondition();
-        return true;
     }
 
     /**
