@@ -6,7 +6,7 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 
 public interface OrderBookDataSource {
-    OrderBook getNewOrderBook(String pair);
+    OrderBook getNewOrderBook(String tradingPair);
 
     void listenToOrderBookDiffs(BlockingQueue<OrderBookMessage.DiffMessage> queue);
 
@@ -14,9 +14,9 @@ public interface OrderBookDataSource {
 
     void listenToTrades(BlockingQueue<OrderBookMessage.TradeMessage> queue);
 
-    boolean subscribeToTradingPair(String pair);
+    boolean subscribeToTradingPair(String tradingPair);
 
-    boolean unsubscribeFromTradingPair(String pair);
+    boolean unsubscribeFromTradingPair(String tradingPair);
 
     Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs);
 
