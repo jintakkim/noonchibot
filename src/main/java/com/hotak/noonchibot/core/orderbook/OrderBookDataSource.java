@@ -14,9 +14,9 @@ public interface OrderBookDataSource {
 
     void listenToTrades(BlockingQueue<OrderBookMessage.TradeMessage> queue);
 
-    boolean subscribeToTradingPair(String tradingPair);
+    void subscribeToTradingPair(String tradingPair);
 
-    boolean unsubscribeFromTradingPair(String tradingPair);
+    void unsubscribeFromTradingPair(String tradingPair);
 
     Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs);
 
