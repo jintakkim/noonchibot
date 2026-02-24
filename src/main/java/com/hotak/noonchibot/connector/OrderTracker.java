@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.connector;
 
+import com.hotak.noonchibot.core.PubSub;
 import com.hotak.noonchibot.core.datatype.*; // 관련 클래스 패키지 가정
 import com.hotak.noonchibot.core.event.*;    // 이벤트 클래스 패키지 가정
 import lombok.Getter;
@@ -20,16 +21,15 @@ import java.util.concurrent.TimeoutException;
 public class OrderTracker {
     private static final int TRADE_FILLS_WAIT_TIMEOUT = 5;
 
-    private final AbstractConnector connector;
-    private int lostOrderCountLimit;
+    private final PubSub eventPublisher;
+    private int lostOrderCountLimit = 2;
 
     private final Map<String, InFlightOrder> inFlightOrders = new ConcurrentHashMap<>();
     private final Map<String, InFlightOrder> lostOrders = new ConcurrentHashMap<>();
     private final Map<String, Integer> orderNotFoundRecords = new ConcurrentHashMap<>();
 
-    public OrderTracker(AbstractConnector connector, int lostOrderCountLimit) {
-        this.connector = connector;
-        this.lostOrderCountLimit = lostOrderCountLimit;
+    public OrderTracker(PubSub eventPublisher) {
+        this.eventPublisher = eventPublisher;
     }
 
     public Map<String, InFlightOrder> getAllOrders() { return new HashMap<>(inFlightOrders); }
@@ -161,30 +161,30 @@ public class OrderTracker {
     private void triggerCreatedEvent(InFlightOrder order) {
         if (order.getTradeType() == TradeType.BUY) {
             BuyOrderCreatedEvent event = new BuyOrderCreatedEvent(
-                    connector.getCurrentTimestamp(), order.getOrderType(), order.getTradingPair(),
+                    Instant.now(), order.getOrderType(), order.getTradingPair(),
                     order.getAmount(), order.getPrice(), order.getClientOrderId(),
                     order.getCreationTimestamp(), order.getExchangeOrderId()
             );
-            connector.triggerEvent(event);
+            eventPublisher.triggerEvent(event);
 
         } else {
             SellOrderCreatedEvent event = new SellOrderCreatedEvent(
-                    connector.getCurrentTimestamp(), order.getOrderType(), order.getTradingPair(),
+                    Instant.now(), order.getOrderType(), order.getTradingPair(),
                     order.getAmount(), order.getPrice(), order.getClientOrderId(),
                     order.getCreationTimestamp(), order.getExchangeOrderId()
             );
-            connector.triggerEvent(event);
+            eventPublisher.triggerEvent(event);
         }
     }
 
     private void triggerCancelledEvent(InFlightOrder order) {
-        connector.triggerEvent(new OrderCancelledEvent(connector.getCurrentTimestamp(), order.getClientOrderId(), order.getExchangeOrderId()));
+        eventPublisher.triggerEvent(new OrderCancelledEvent(Instant.now(), order.getClientOrderId(), order.getExchangeOrderId()));
     }
 
     private void triggerFilledEvent(InFlightOrder order, TradeUpdate tradeUpdate) {
-        connector.triggerEvent(
+        eventPublisher.triggerEvent(
                 new OrderFilledEvent(
-                        connector.getCurrentTimestamp(), order.getClientOrderId(), order.getTradingPair(),
+                        Instant.now(), order.getClientOrderId(), order.getTradingPair(),
                         order.getTradeType(), order.getOrderType(), tradeUpdate.fillBaseAmount(), tradeUpdate.fillPrice(),
                          tradeUpdate.tradeFee(), tradeUpdate.tradeId(), tradeUpdate.exchangeOrderId()
                 )
@@ -194,19 +194,19 @@ public class OrderTracker {
     private void triggerCompletedEvent(InFlightOrder order) {
         if (order.getTradeType() == TradeType.BUY) {
             BuyOrderCompletedEvent event = new BuyOrderCompletedEvent(
-                    connector.getCurrentTimestamp(), order.getOrderType(), order.getTradingPair(),
+                    Instant.now(), order.getOrderType(), order.getTradingPair(),
                     order.getAmount(), order.getPrice(), order.getClientOrderId(),
                     order.getCreationTimestamp(), order.getExchangeOrderId()
             );
-            connector.triggerEvent(event);
+            eventPublisher.triggerEvent(event);
 
         } else {
             SellOrderCompletedEvent event = new SellOrderCompletedEvent(
-                    connector.getCurrentTimestamp(), order.getOrderType(), order.getTradingPair(),
+                    Instant.now(), order.getOrderType(), order.getTradingPair(),
                     order.getAmount(), order.getPrice(), order.getClientOrderId(),
                     order.getCreationTimestamp(), order.getExchangeOrderId()
             );
-            connector.triggerEvent(event);
+            eventPublisher.triggerEvent(event);
         }
     }
 
@@ -214,14 +214,14 @@ public class OrderTracker {
         Map<String, Object> miscUpdates = orderUpdate.miscUpdates();
 
         OrderFailureEvent event = new OrderFailureEvent(
-                connector.getCurrentTimestamp(),
+                Instant.now(),
                 order.getClientOrderId(),
                 order.getOrderType(),
                 (String) miscUpdates.get("error_message"),
                 (String) miscUpdates.get("error_type")
         );
 
-        connector.triggerEvent(event);
+        eventPublisher.triggerEvent(event);
     }
 
     private void triggerOrderCreation(InFlightOrder trackedOrder, InFlightOrder.State previousState, InFlightOrder.State newState) {
