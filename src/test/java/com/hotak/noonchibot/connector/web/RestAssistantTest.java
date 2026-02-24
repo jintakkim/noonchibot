@@ -41,7 +41,7 @@ public class RestAssistantTest {
                 List.of(),
                 List.of(),
                 null,
-                new NoOpThrottler(),
+                new NoOpRestThrottler(),
                 objectMapper
         );
     }
@@ -101,7 +101,7 @@ public class RestAssistantTest {
                         .authRequired(true)
                         .headers(new HttpHeaders() {{ add("X-API-KEY", "test-key"); }})
                         .build(),
-                new NoOpThrottler(),
+                new NoOpRestThrottler(),
                 objectMapper
         );
 
@@ -124,7 +124,7 @@ public class RestAssistantTest {
                 List.of(response -> {
                     throw new RateLimitException("rate limit");
                 }),
-                null, new NoOpThrottler(), objectMapper
+                null, new NoOpRestThrottler(), objectMapper
         );
 
         // when & then
@@ -135,7 +135,7 @@ public class RestAssistantTest {
 
 
 
-    class NoOpThrottler implements Throttler {
+    class NoOpRestThrottler implements RestThrottler {
         @Override
         public <T> T execute(String limitId, Supplier<T> task) {
             return task.get();
