@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.core.event;
 
-import com.hotak.noonchibot.core.order.OrderType;
+import com.hotak.noonchibot.core.datatype.OrderType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
