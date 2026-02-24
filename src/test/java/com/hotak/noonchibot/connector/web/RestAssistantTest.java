@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector.web;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import wiremock.org.checkerframework.checker.units.qual.N;
 
 import java.net.http.HttpClient;
 import java.util.List;
@@ -41,7 +43,7 @@ public class RestAssistantTest {
                 List.of(),
                 List.of(),
                 null,
-                new NoOpThrottler(),
+                new NoOpRestThrottler(),
                 objectMapper
         );
     }
@@ -58,10 +60,13 @@ public class RestAssistantTest {
 
         // when
         JsonNode result = restAssistant.executeRequestAndGetJsonBody(
-                "/api/ticker", "limit1", HttpMethod.GET, false,
-                Map.of("symbol", "BTCUSDT"), null, null
+                RestRequest.builder()
+                        .pathUrl("/api/ticker")
+                        .method(HttpMethod.GET)
+                        .authRequired(false)
+                        .params(Map.of("symbol", "BTCUSDT"))
+                        .build()
         );
-
         // then
         assertThat(result.get("price").asString()).isEqualTo("50000");
     }
@@ -77,10 +82,13 @@ public class RestAssistantTest {
                         """)));
 
         RestResponse response = restAssistant.executeRequestAndGetResponse(
-                "/api/order", "limit1", HttpMethod.POST, false,
-                null, Map.of("side", "BUY"), null
+                RestRequest.builder()
+                        .pathUrl("/api/order")
+                        .method(HttpMethod.GET)
+                        .authRequired(false)
+                        .params(Map.of("side", "BUY"))
+                        .build()
         );
-
         assertThat(response.statusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.body()).contains("orderId");
     }
@@ -96,18 +104,24 @@ public class RestAssistantTest {
         restAssistant = new RestAssistant(
                 restClient, List.of(), List.of(),
                 request -> RestRequest.builder()
-                        .url(request.url())
+                        .pathUrl(request.pathUrl())
                         .method(request.method())
                         .authRequired(true)
                         .headers(new HttpHeaders() {{ add("X-API-KEY", "test-key"); }})
                         .build(),
-                new NoOpThrottler(),
+                new NoOpRestThrottler(),
                 objectMapper
         );
 
         // when & then
         assertThatNoException().isThrownBy(() ->
-                restAssistant.executeRequestAndGetJsonBody("/api/account", "limit1", HttpMethod.GET, true, null, null, null)
+                restAssistant.executeRequestAndGetJsonBody(
+                        RestRequest.builder()
+                                .pathUrl("/api/account")
+                                .method(HttpMethod.GET)
+                                .authRequired(true)
+                                .build()
+                )
         );
     }
 
@@ -124,25 +138,70 @@ public class RestAssistantTest {
                 List.of(response -> {
                     throw new RateLimitException("rate limit");
                 }),
-                null, new NoOpThrottler(), objectMapper
+                null, new NoOpRestThrottler(), objectMapper
         );
 
         // when & then
         assertThatThrownBy(
-                () -> restAssistant.executeRequestAndGetResponse("/api/orders", "limit1", HttpMethod.GET, false, null, null, null)
+                () -> restAssistant.executeRequestAndGetResponse(
+                        RestRequest.builder()
+                                .pathUrl("/api/orders")
+                                .method(HttpMethod.GET)
+                                .authRequired(false)
+                                .build()
+                )
         ).isInstanceOf(RateLimitException.class);
+    }
+
+    @Test
+    @DisplayName("customWeight가 설정되면 throttler에 weight를 전달한다.")
+    void customWeight_callsThrottlerWithWeight() {
+        // given
+        int expectedWeight = 5;
+
+        stubFor(get(urlPathEqualTo("/api/ticker"))
+                .willReturn(okJson("{\"symbol\":\"BTCUSDT\"}")));
+
+        NoOpRestThrottler throttler = new NoOpRestThrottler();
+        restAssistant = new RestAssistant(
+                restClient, List.of(), List.of(),
+                null, new NoOpRestThrottler(), objectMapper
+        );
+
+        // when
+        restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/ticker")
+                        .method(HttpMethod.GET)
+                        .authRequired(false)
+                        .customWeight(expectedWeight)
+                        .build()
+        );
+        Assertions.assertThat(throttler.getCustomWeight()).isEqualTo(expectedWeight);
     }
 
 
 
-    class NoOpThrottler implements Throttler {
+    static class NoOpRestThrottler implements RestThrottler {
+        private Integer customWeight;
+
+        @Override
+        public <T> T execute(String limitId, Supplier<T> task, Integer customWeight) {
+            this.customWeight = customWeight;
+            return task.get();
+        }
+
+        public Integer getCustomWeight() {
+            return customWeight;
+        }
+
         @Override
         public <T> T execute(String limitId, Supplier<T> task) {
             return task.get();
         }
     }
 
-    class RateLimitException extends RuntimeException {
+    static class RateLimitException extends RuntimeException {
         public RateLimitException(String message) {
             super(message);
         }
