@@ -11,6 +11,7 @@ import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.order.OrderUpdate;
+import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.orderbook.ReadOnlyOrderBook;
 import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
@@ -41,8 +42,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     private static final Duration TRADING_FEES_INTERVAL = Duration.ofHours(12);
     private static final Duration ERROR_RETRY_INTERVAL = Duration.ofMillis(500);
 
-    private final Map<String, String> symbolTradingPairMap = new HashMap<>();
-    private final Map<String, String> tradingPairSymbolMap = new HashMap<>();
     private final Map<String, TradingRule> tradingRules = new HashMap<>();
     private final UserStreamTracker userStreamTracker;
     private final OrderIdGenerator orderIdGenerator;
@@ -54,6 +53,8 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     private final RestAssistant restAssistant;
     private final String checkNetworkRequestPath;
     private final String tradingRulesRequestPath;
+    private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
+    private final OrderBookDataSource orderBookDataSource;
     private Future<?> pollStatusFuture;
     private Future<?> userStreamFuture;
     private final String domain;
@@ -74,7 +75,9 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
             String domain,
             RestAssistant restAssistant,
             String checkNetworkRequestPath,
-            String tradingRulesRequestPath
+            String tradingRulesRequestPath,
+            TradingPairSymbolRegistry tradingPairSymbolRegistry,
+            OrderBookDataSource orderBookDataSource
 
     ) {
         super(name, feeEstimator, balanceLimit);
@@ -88,6 +91,9 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         this.restAssistant = restAssistant;
         this.checkNetworkRequestPath = checkNetworkRequestPath;
         this.tradingRulesRequestPath = tradingRulesRequestPath;
+        this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
+        this.orderBookDataSource = orderBookDataSource;
+
     }
 
     /**
@@ -141,16 +147,12 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
     @Override
     public boolean isReady() {
-        return isTradingPairSymbolMapReady() &&
+        return !tradingPairSymbolRegistry.isEmpty() &&
                 orderBookTracker.isReady() &&
                 !accountBalances.isEmpty() &&
                 !tradingRules.isEmpty() &&
                 userStreamTracker.isRunning();
 
-    }
-
-    private boolean isTradingPairSymbolMapReady() {
-        return !symbolTradingPairMap.isEmpty() && !tradingPairSymbolMap.isEmpty() && symbolTradingPairMap.size() == tradingPairSymbolMap.size();
     }
 
     @Override
@@ -229,7 +231,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
             return;
         }
 
-        BigDecimal notionalSize = price == null ? getLastTradedPrice(tradingPair).multiply(quantizedOrderAmount) : quantizedPrice.multiply(quantizedOrderAmount);
+        BigDecimal notionalSize = price == null ? orderBookDataSource.getLastTradedPrice(tradingPair).multiply(quantizedOrderAmount) : quantizedPrice.multiply(quantizedOrderAmount);
         if (notionalSize.compareTo(tradingRule.minNotionalSize()) < 0) {
             updateOrderAfterFailure(orderId, tradingPair, "주문 금액이 최소 주문 금액보다 커야합니다.");
             return;
@@ -262,20 +264,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
             log.error("주문을 취소하는데 실패 헀습니다", e);
         }
     }
-
-    @Override
-    public List<String> getAllTradingPairs() {
-        return new ArrayList<>(symbolTradingPairMap.values());
-    }
-
-    public String getExchangeSymbol(String tradingPair) {
-        return tradingPairSymbolMap.get(tradingPair);
-    }
-
-    public String getTradingPair(String symbol) {
-        return symbolTradingPairMap.get(symbol);
-    }
-
 
     /**
      * 최우선 호가 리턴
