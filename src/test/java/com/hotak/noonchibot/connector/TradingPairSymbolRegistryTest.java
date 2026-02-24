@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class TradingPairSymbolRegistryTest {
     private SimpleTradingPairSymbolRegistry registry;
@@ -15,14 +16,14 @@ public class TradingPairSymbolRegistryTest {
     @BeforeEach
     void setUp() {
         Map<String, String> symbolTradingPairMap = Map.of(
-                "BTC-USDT", "BTC/USDT",
-                "ETH-USDT", "ETH/USDT",
-                "XRP-USDT", "XRP/USDT"
+                "BTCUSDT", "BTC/USDT",
+                "ETHUSDT", "ETH/USDT",
+                "XRPUSDT", "XRP/USDT"
         );
         Map<String, String> tradingPairSymbolMap = Map.of(
-                "BTC/USDT", "BTC-USDT",
-                "ETH/USDT", "ETH-USDT",
-                "XRP/USDT", "XRP-USDT"
+                "BTC/USDT", "BTCUSDT",
+                "ETH/USDT", "ETHUSDT",
+                "XRP/USDT", "XRPUSDT"
         );
         registry = new SimpleTradingPairSymbolRegistry(symbolTradingPairMap, tradingPairSymbolMap);
     }
@@ -41,11 +42,18 @@ public class TradingPairSymbolRegistryTest {
         assertThat(registry.convertExchangeSymbolToTradingPair("XRPUSDT")).isEqualTo("XRP/USDT");
     }
 
-    @DisplayName("존재하지 않는 키를 조회하면 null을 반환한다")
+    @DisplayName("존재하지 않는 트레이딩페어를 조회하면 예외를 던진다")
     @Test
-    void returnNullForUnknownKey() {
-        assertThat(registry.convertTradingPairToExchangeSymbol("DOGE/USDT")).isNull();
-        assertThat(registry.convertExchangeSymbolToTradingPair("DOGEUSDT")).isNull();
+    void throwExceptionForUnknownTradingPair() {
+        assertThatThrownBy(() -> registry.convertTradingPairToExchangeSymbol("DOGE/USDT"))
+                .isInstanceOf(NotRegisteredException.class);
+    }
+
+    @DisplayName("존재하지 않는 거래소 심볼을 조회하면 예외를 던진다")
+    @Test
+    void throwExceptionForUnknownExchangeSymbol() {
+        assertThatThrownBy(() -> registry.convertExchangeSymbolToTradingPair("DOGEUSDT"))
+                .isInstanceOf(NotRegisteredException.class);
     }
 
     @DisplayName("데이터가 있으면 비어있지 않다")
@@ -59,14 +67,14 @@ public class TradingPairSymbolRegistryTest {
     void emptyWhenBothMapsEmpty() {
         SimpleTradingPairSymbolRegistry emptyRegistry =
                 new SimpleTradingPairSymbolRegistry(Map.of(), Map.of());
-
         assertThat(emptyRegistry.isEmpty()).isTrue();
     }
 
     @DisplayName("한쪽 맵만 비어있으면 비어있지 않다")
     @Test
     void notEmptyWhenOneMapHasData() {
-        SimpleTradingPairSymbolRegistry partialRegistry = new SimpleTradingPairSymbolRegistry(Map.of("BTCUSDT", "BTC/USDT"), Map.of());
+        SimpleTradingPairSymbolRegistry partialRegistry =
+                new SimpleTradingPairSymbolRegistry(Map.of("BTCUSDT", "BTC/USDT"), Map.of());
         assertThat(partialRegistry.isEmpty()).isFalse();
     }
 
