@@ -2,7 +2,7 @@ package com.hotak.noonchibot.core.event;
 
 import java.time.Instant;
 
-public record OrderCancelledEvent(
+public record OrderCanceledEvent(
     Instant timestamp,
     String orderId,
     String exchangeOrderId
