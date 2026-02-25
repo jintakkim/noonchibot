@@ -3,6 +3,7 @@ package com.hotak.noonchibot.core.datatype;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -13,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @RequiredArgsConstructor
 @Getter
+@Setter
 public class InFlightOrder {
     public enum State {
         PENDING_CREATE, OPEN, PENDING_CANCEL, CANCELED,
@@ -28,7 +30,6 @@ public class InFlightOrder {
     private final BigDecimal price;
     private final Instant creationTimestamp;
 
-    // --- [추가된 부분] 비동기 이벤트를 위한 필드 선언 ---
     private final CompletableFuture<Void> completelyFilledEvent = new CompletableFuture<>();
     private final CompletableFuture<Void> processedByExchangeEvent = new CompletableFuture<>();
 
@@ -39,6 +40,12 @@ public class InFlightOrder {
     private Instant lastUpdateTimestamp;
 
     private final Map<String, TradeUpdate> orderFills = new ConcurrentHashMap<>();
+
+    public InFlightOrder(String clientOrderId, String tradingPair, OrderType orderType, TradeType tradeType,
+                         BigDecimal amount, BigDecimal price, Instant creationTimestamp, String exchangeOrderId) {
+        this(clientOrderId, tradingPair, orderType, tradeType, amount, price, creationTimestamp);
+        this.exchangeOrderId = exchangeOrderId;
+    }
 
     public boolean isDone() {
         if (currentState == State.CANCELED || currentState == State.FILLED || currentState == State.FAILED) {
@@ -87,7 +94,6 @@ public class InFlightOrder {
 
         this.currentState = orderUpdate.newState();
 
-        // 이제 processedByExchangeEvent 필드가 선언되었으므로 에러가 나지 않습니다.
         if (this.currentState != State.PENDING_CREATE) {
             this.processedByExchangeEvent.complete(null);
         }
@@ -108,5 +114,6 @@ public class InFlightOrder {
     }
 
     public String getBaseAsset() { return this.tradingPair.split("-")[0]; }
+
     public String getQuoteAsset() { return this.tradingPair.split("-")[1]; }
 }
