@@ -34,6 +34,13 @@ public class OrderTracker {
 
     public Map<String, InFlightOrder> getAllOrders() { return new HashMap<>(inFlightOrders); }
 
+    //Fillable, Updatable 주문들까지 모두 포함해 반환 / inFlightOrders에 유실된 주문은 포함되지 않는다
+    public Map<String, InFlightOrder> getActiveAndLostOrders() {
+        Map<String, InFlightOrder> allOrders = new HashMap<>(inFlightOrders);
+        allOrders.putAll(lostOrders);
+        return allOrders;
+    }
+
     public void startTrackingOrder(InFlightOrder order) {
         inFlightOrders.put(order.getClientOrderId(), order);
     }
@@ -96,12 +103,12 @@ public class OrderTracker {
                 try {
                     trackedOrder.getCompletelyFilledEvent().get(TRADE_FILLS_WAIT_TIMEOUT, TimeUnit.SECONDS);
                 } catch (TimeoutException e) {
-                    log.warn("시간 초과! 체결 정보가 제때 안 왔네요.");
+                    log.warn("체결 정보 반환 시간이 초과되었습니다.");
                 } catch (InterruptedException e) {
-                    log.error("누가 기다리는 나를 깨웠어요! (시스템 종료 등)");
-                    Thread.currentThread().interrupt(); // 매너 있게 인터럽트 상태 복구
+                    log.error("비동기 작업 대기 중 스레드가 인터럽트 되었습니다.");
+                    Thread.currentThread().interrupt();
                 } catch (ExecutionException e) {
-                    log.error("기다리던 로직 내부에서 에러가 터졌어요: {}", e.getCause().getMessage());
+                    log.error("로직에서 에러가 발생했습니다 : {}", e.getCause().getMessage());
                 }
             }
 
@@ -134,7 +141,7 @@ public class OrderTracker {
                             InFlightOrder.State.FAILED,
                             clientOrderId,
                             null,
-                            null
+                            Map.of()
                     );
                     processOrderUpdate(orderUpdate);
                     lostOrders.put(trackedOrder.getClientOrderId(), trackedOrder);
@@ -177,8 +184,8 @@ public class OrderTracker {
         }
     }
 
-    private void triggerCancelledEvent(InFlightOrder order) {
-        eventPublisher.triggerEvent(new OrderCancelledEvent(Instant.now(), order.getClientOrderId(), order.getExchangeOrderId()));
+    private void triggerCanceledEvent(InFlightOrder order) {
+        eventPublisher.triggerEvent(new OrderCanceledEvent(Instant.now(), order.getClientOrderId(), order.getExchangeOrderId()));
     }
 
     private void triggerFilledEvent(InFlightOrder order, TradeUpdate tradeUpdate) {
@@ -249,7 +256,7 @@ public class OrderTracker {
         InFlightOrder.State state = orderUpdate.newState();
 
         if (state == InFlightOrder.State.CANCELED || state == InFlightOrder.State.PENDING_CANCEL) {
-            triggerCancelledEvent(trackedOrder);
+            triggerCanceledEvent(trackedOrder);
             log.info("Successfully canceled order {}.", trackedOrder.getClientOrderId());
 
         } else if (state == InFlightOrder.State.FILLED) {
