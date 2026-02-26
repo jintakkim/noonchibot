@@ -4,6 +4,7 @@ import com.hotak.noonchibot.core.datatype.TokenAmount;
 import com.hotak.noonchibot.core.datatype.TradeType;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.util.List;
 
 public interface TradeFee {
@@ -30,5 +31,17 @@ public interface TradeFee {
         } else {
             return new DeductedFromReturnsTradeFee(percent, percentToken, flatFees);
         }
+    }
+
+    default BigDecimal getTotalAmount(BigDecimal fillQuoteAmount) {
+        BigDecimal percentAmount = fillQuoteAmount
+                .multiply(getPercent())
+                .divide(new BigDecimal("100"), MathContext.DECIMAL128);
+
+        BigDecimal flatAmount = getFlatFees().stream()
+                .map(TokenAmount::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return percentAmount.add(flatAmount);
     }
 }
