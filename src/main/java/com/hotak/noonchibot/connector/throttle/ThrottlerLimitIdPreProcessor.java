@@ -9,7 +9,7 @@ import com.hotak.noonchibot.connector.web.RestRequest;
 public class ThrottlerLimitIdPreProcessor implements RestPreProcessor {
     @Override
     public RestRequest process(RestRequest request) {
-        if(request.throttlerLimitId() == null) return request;
+        if(request.throttlerLimitId() != null) return request;
         return request.toBuilder().throttlerLimitId(request.pathUrl()).build();
     }
 }
