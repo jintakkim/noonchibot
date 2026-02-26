@@ -52,9 +52,7 @@ public class OrderBookTracker {
     }
 
     public void start() {
-        if (isRunning) return;
         initializedLatch = new CountDownLatch(1);
-        isRunning = true;
 
         log.info("OrderBookTracker 시작 중...");
         metrics.setTrackerStartTime(Instant.now());

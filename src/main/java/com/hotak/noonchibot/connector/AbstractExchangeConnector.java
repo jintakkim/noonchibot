@@ -1,10 +1,8 @@
 package com.hotak.noonchibot.connector;
 
-import ch.qos.logback.core.read.ListAppender;
 import com.hotak.noonchibot.connector.web.Authenticator;
 import com.hotak.noonchibot.connector.throttle.RateLimit;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestResponse;
 import com.hotak.noonchibot.core.RetryableTrigger;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.order.OrderState;
@@ -17,7 +15,6 @@ import com.hotak.noonchibot.core.orderbook.ReadOnlyOrderBook;
 import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -277,8 +274,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 //    public BigDecimal getMidPrice(String tradingPair) {
 //        return getBestPrice(tradingPair, true).add(getBestPrice(tradingPair, false)).divide(BigDecimal.TWO, RoundingMode.HALF_UP);
 //    }
-
-    public abstract BigDecimal getLastTradedPrice(String tradingPair);
 
     private void pollStatusIfNeeded() {
         long intervalMs = getStatusPollInterval(getCurrentTimestamp()).toMillis();
