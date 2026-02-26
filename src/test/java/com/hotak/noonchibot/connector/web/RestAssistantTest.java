@@ -103,12 +103,7 @@ public class RestAssistantTest {
 
         restAssistant = new RestAssistant(
                 restClient, List.of(), List.of(),
-                request -> RestRequest.builder()
-                        .pathUrl(request.pathUrl())
-                        .method(request.method())
-                        .authRequired(true)
-                        .headers(new HttpHeaders() {{ add("X-API-KEY", "test-key"); }})
-                        .build(),
+                new TestAuthenticator(),
                 new NoOpRestThrottler(),
                 objectMapper
         );
@@ -198,6 +193,23 @@ public class RestAssistantTest {
         @Override
         public <T> T execute(String limitId, Supplier<T> task) {
             return task.get();
+        }
+    }
+
+    static class TestAuthenticator implements Authenticator {
+        @Override
+        public RestRequest restAuthenticate(RestRequest restRequest) {
+            return RestRequest.builder()
+                    .pathUrl(restRequest.pathUrl())
+                    .method(restRequest.method())
+                    .authRequired(true)
+                    .headers(new HttpHeaders() {{ add("X-API-KEY", "test-key"); }})
+                    .build();
+        }
+
+        @Override
+        public WsRequest wsAuthenticate(WsRequest wsRequest) {
+            throw new UnsupportedOperationException("Not supported yet.");
         }
     }
 
