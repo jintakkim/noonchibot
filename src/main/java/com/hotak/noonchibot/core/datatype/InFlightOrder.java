@@ -2,17 +2,16 @@ package com.hotak.noonchibot.core.datatype;
 
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
-@RequiredArgsConstructor
 @Getter
 @Setter
 public class InFlightOrder {
@@ -42,9 +41,38 @@ public class InFlightOrder {
     private final Map<String, TradeUpdate> orderFills = new ConcurrentHashMap<>();
 
     public InFlightOrder(String clientOrderId, String tradingPair, OrderType orderType, TradeType tradeType,
+                         BigDecimal amount, BigDecimal price, Instant creationTimestamp) {
+        this(clientOrderId, tradingPair, orderType, tradeType, amount, price, creationTimestamp, null);
+    }
+
+    public InFlightOrder(String clientOrderId, String tradingPair, OrderType orderType, TradeType tradeType,
                          BigDecimal amount, BigDecimal price, Instant creationTimestamp, String exchangeOrderId) {
-        this(clientOrderId, tradingPair, orderType, tradeType, amount, price, creationTimestamp);
+        this.clientOrderId = clientOrderId;
+        this.tradingPair = tradingPair;
+        this.orderType = orderType;
+        this.tradeType = tradeType;
+        this.amount = amount;
+        this.price = price;
+        this.creationTimestamp = creationTimestamp;
         this.exchangeOrderId = exchangeOrderId;
+
+        if (exchangeOrderId != null) {
+            this.processedByExchangeEvent.complete(null);
+        }
+    }
+
+    public LimitOrder toLimitOrder() {
+        return new LimitOrder(
+                this.clientOrderId,
+                this.tradingPair,
+                this.orderType,
+                this.getBaseAsset(),
+                this.getQuoteAsset(),
+                this.price,
+                this.amount,
+                this.executedAmountBase,
+                this.creationTimestamp
+        );
     }
 
     public boolean isDone() {
@@ -104,6 +132,22 @@ public class InFlightOrder {
         if (isChanged) {
             this.lastUpdateTimestamp = orderUpdate.updateTimestamp();
         }
+    }
+
+    public BigDecimal getAverageExecutedPrice() {
+        if (executedAmountBase.compareTo(BigDecimal.ZERO) == 0 || orderFills.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        return executedAmountQuote.divide(executedAmountBase, MathContext.DECIMAL128);
+    }
+
+    public BigDecimal getCumulativeFeePaid() {
+        return orderFills.values().stream()
+                .map(fill -> {
+                    if (fill.tradeFee() == null) return BigDecimal.ZERO;
+                    return fill.tradeFee().getTotalAmount(fill.fillQuoteAmount());
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private void checkFilledCondition() {
