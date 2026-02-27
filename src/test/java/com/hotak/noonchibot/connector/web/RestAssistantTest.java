@@ -1,0 +1,221 @@
+package com.hotak.noonchibot.connector.web;
+
+
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import wiremock.org.checkerframework.checker.units.qual.N;
+
+import java.net.http.HttpClient;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.assertj.core.api.Assertions.*;
+
+@WireMockTest
+public class RestAssistantTest {
+
+    private RestAssistant restAssistant;
+    private RestClient restClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @BeforeEach
+    void setUp(WireMockRuntimeInfo wm) {
+        restClient = RestClient.builder()
+                .requestFactory(new JdkClientHttpRequestFactory(HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()))
+                .baseUrl(wm.getHttpBaseUrl())
+                .build();
+
+        restAssistant = new RestAssistant(
+                restClient,
+                List.of(),
+                List.of(),
+                null,
+                new NoOpRestThrottler(),
+                objectMapper
+        );
+    }
+
+    @Test
+    @DisplayName("GET 요청 - 200 응답 body를 JsonNode로 파싱한다")
+    void get_returnsJsonBody() {
+        // given
+        stubFor(get(urlPathEqualTo("/api/ticker"))
+                .withQueryParam("symbol", equalTo("BTCUSDT"))
+                .willReturn(okJson("""
+                       {"symbol":"BTCUSDT","price":"50000"}
+                       """)));
+
+        // when
+        JsonNode result = restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .pathUrl("/api/ticker")
+                        .method(HttpMethod.GET)
+                        .authRequired(false)
+                        .params(Map.of("symbol", "BTCUSDT"))
+                        .build()
+        );
+        // then
+        assertThat(result.get("price").asString()).isEqualTo("50000");
+    }
+
+
+    @Test
+    @DisplayName("POST 요청 - body를 전송하고 응답을 받는다")
+    void post_sendsBodyAndReturnsResponse() {
+        stubFor(post("/api/order")
+                .withRequestBody(containing("BUY"))
+                .willReturn(okJson("""
+                        {"orderId":"123","status":"NEW"}
+                        """)));
+
+        RestResponse response = restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/order")
+                        .method(HttpMethod.GET)
+                        .authRequired(false)
+                        .params(Map.of("side", "BUY"))
+                        .build()
+        );
+        assertThat(response.statusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.body()).contains("orderId");
+    }
+
+    @Test
+    @DisplayName("인증 헤더가 요청에 포함된다")
+    void auth_addsSignatureHeader() {
+        // given
+        stubFor(get("/api/account")
+                .withHeader("X-API-KEY", equalTo("test-key"))
+                .willReturn(okJson("{\"balance\":\"1000\"}")));
+
+        restAssistant = new RestAssistant(
+                restClient, List.of(), List.of(),
+                new TestAuthenticator(),
+                new NoOpRestThrottler(),
+                objectMapper
+        );
+
+        // when & then
+        assertThatNoException().isThrownBy(() ->
+                restAssistant.executeRequestAndGetJsonBody(
+                        RestRequest.builder()
+                                .pathUrl("/api/account")
+                                .method(HttpMethod.GET)
+                                .authRequired(true)
+                                .build()
+                )
+        );
+    }
+
+    @Test
+    @DisplayName("일부 200응답, body에러 일때 에러 감지 PostProcessor가 있다면 예외를 던진다")
+    void postProcessor_throwsOnErrorStatus() {
+        // given
+        stubFor(get("/api/orders")
+                .willReturn(aResponse().withStatus(200).withBody("{\"code\":-1003}")));
+
+        restAssistant = new RestAssistant(
+                restClient,
+                List.of(),
+                List.of(response -> {
+                    throw new RateLimitException("rate limit");
+                }),
+                null, new NoOpRestThrottler(), objectMapper
+        );
+
+        // when & then
+        assertThatThrownBy(
+                () -> restAssistant.executeRequestAndGetResponse(
+                        RestRequest.builder()
+                                .pathUrl("/api/orders")
+                                .method(HttpMethod.GET)
+                                .authRequired(false)
+                                .build()
+                )
+        ).isInstanceOf(RateLimitException.class);
+    }
+
+    @Test
+    @DisplayName("customWeight가 설정되면 throttler에 weight를 전달한다.")
+    void customWeight_callsThrottlerWithWeight() {
+        // given
+        int expectedWeight = 5;
+
+        stubFor(get(urlPathEqualTo("/api/ticker"))
+                .willReturn(okJson("{\"symbol\":\"BTCUSDT\"}")));
+
+        NoOpRestThrottler throttler = new NoOpRestThrottler();
+        restAssistant = new RestAssistant(
+                restClient, List.of(), List.of(),
+                null, new NoOpRestThrottler(), objectMapper
+        );
+
+        // when
+        restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/ticker")
+                        .method(HttpMethod.GET)
+                        .authRequired(false)
+                        .customWeight(expectedWeight)
+                        .build()
+        );
+        Assertions.assertThat(throttler.getCustomWeight()).isEqualTo(expectedWeight);
+    }
+
+
+
+    static class NoOpRestThrottler implements RestThrottler {
+        private Integer customWeight;
+
+        @Override
+        public <T> T execute(String limitId, Supplier<T> task, Integer customWeight) {
+            this.customWeight = customWeight;
+            return task.get();
+        }
+
+        public Integer getCustomWeight() {
+            return customWeight;
+        }
+
+        @Override
+        public <T> T execute(String limitId, Supplier<T> task) {
+            return task.get();
+        }
+    }
+
+    static class TestAuthenticator implements Authenticator {
+        @Override
+        public RestRequest restAuthenticate(RestRequest restRequest) {
+            return RestRequest.builder()
+                    .pathUrl(restRequest.pathUrl())
+                    .method(restRequest.method())
+                    .authRequired(true)
+                    .headers(new HttpHeaders() {{ add("X-API-KEY", "test-key"); }})
+                    .build();
+        }
+
+        @Override
+        public WsRequest wsAuthenticate(WsRequest wsRequest) {
+            throw new UnsupportedOperationException("Not supported yet.");
+        }
+    }
+
+    static class RateLimitException extends RuntimeException {
+        public RateLimitException(String message) {
+            super(message);
+        }
+    }
+}

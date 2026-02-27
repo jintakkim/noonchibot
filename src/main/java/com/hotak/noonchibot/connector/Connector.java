@@ -1,8 +1,7 @@
 package com.hotak.noonchibot.connector;
 
-import com.hotak.noonchibot.core.order.InFlightOrder;
+import com.hotak.noonchibot.core.datatype.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderType;
-import com.hotak.noonchibot.core.datatype.PositionAction;
 import com.hotak.noonchibot.core.event.EventListener;
 import com.hotak.noonchibot.core.event.OrderFilledEvent;
 
@@ -12,17 +11,26 @@ import java.util.List;
 import java.util.Map;
 
 public interface Connector {
-    String buy(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Instant expirationTs, PositionAction positionAction);
-    String sell(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Instant expirationTs, PositionAction positionAction);
+    String buy(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args);
+    String sell(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args);
+
+    /**
+     * 단일 취소
+     */
     void cancel(String tradingPair, String orderId);
     void cancelAll();
     void stopTrackingOrder(String orderId);
 
     List<OrderFilledEvent> getOrderFilledEvent();
-    String getDisplayName();
+    String getName();
     <T> void subscribe(Class<T> eventType, EventListener<T> listener);
     <T> void unsubscribe(Class<T> eventType, EventListener<T> listener);
     boolean isReady();
+
+    /**
+     * @return 지원하는 주문 타입 리스트
+     */
+    List<OrderType> getSupportedOrderTypes();
 
 
     //todo: amount 적절하게 quantize되는지 체크

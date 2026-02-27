@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.event;
 
 import com.hotak.noonchibot.core.order.OrderType;
+import com.hotak.noonchibot.core.datatype.PositionAction;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.trade.fee.TradeFee;
 
@@ -17,5 +18,8 @@ public record OrderFilledEvent(
         BigDecimal amount,
         TradeFee tradeFee,
         String exchangeTradeId,
-        String exchangeOrderId
-) {}
+        String exchangeOrderId,
+        Integer leverage,
+        PositionAction position
+) {
+}

@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.event;
 
 import com.hotak.noonchibot.core.order.OrderType;
+import com.hotak.noonchibot.core.datatype.PositionAction;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -199,7 +200,9 @@ public class SimpleEventLoggerTest {
                 BigDecimal.ONE,
                 null,
                 "1",
-                "1"
+                "1",
+                null,
+                PositionAction.NIL
         );
     }
 }
