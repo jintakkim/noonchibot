@@ -87,6 +87,7 @@ class WsAssistantTest {
         when(session.isOpen()).thenReturn(true);
         WsConnection conn = connectWithMockSession(session);
         WsRequest request = new WsRequest(Map.of("method", "SUBSCRIBE"), false);
+        when(wsPreProcessor.process(any(WsRequest.class))).thenReturn(request);
         conn.send(request);
         verify(wsPreProcessor, times(1)).process(request);
     }

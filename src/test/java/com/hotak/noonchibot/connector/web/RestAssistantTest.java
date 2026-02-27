@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector.web;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,11 +15,12 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import wiremock.org.checkerframework.checker.units.qual.N;
 
 import java.net.http.HttpClient;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
@@ -43,7 +45,7 @@ public class RestAssistantTest {
                 List.of(),
                 List.of(),
                 null,
-                new NoOpRestThrottler(),
+                new NoOpAsyncThrottler(),
                 objectMapper
         );
     }
@@ -84,9 +86,9 @@ public class RestAssistantTest {
         RestResponse response = restAssistant.executeRequestAndGetResponse(
                 RestRequest.builder()
                         .pathUrl("/api/order")
-                        .method(HttpMethod.GET)
+                        .method(HttpMethod.POST)
                         .authRequired(false)
-                        .params(Map.of("side", "BUY"))
+                        .body(Map.of("side", "BUY"))
                         .build()
         );
         assertThat(response.statusCode()).isEqualTo(HttpStatus.OK);
@@ -104,7 +106,7 @@ public class RestAssistantTest {
         restAssistant = new RestAssistant(
                 restClient, List.of(), List.of(),
                 new TestAuthenticator(),
-                new NoOpRestThrottler(),
+                new NoOpAsyncThrottler(),
                 objectMapper
         );
 
@@ -133,7 +135,7 @@ public class RestAssistantTest {
                 List.of(response -> {
                     throw new RateLimitException("rate limit");
                 }),
-                null, new NoOpRestThrottler(), objectMapper
+                null, new NoOpAsyncThrottler(), objectMapper
         );
 
         // when & then
@@ -149,18 +151,18 @@ public class RestAssistantTest {
     }
 
     @Test
-    @DisplayName("customWeight가 설정되면 throttler에 weight를 전달한다.")
-    void customWeight_callsThrottlerWithWeight() {
+    @DisplayName("weightOverrides가 설정되면 throttler에 weight를 전달한다.")
+    void weightOverrides_callsThrottlerWithWeight() {
         // given
-        int expectedWeight = 5;
+        Map<String, Integer> weightOverrides = Map.of("test-weight", 1);
 
         stubFor(get(urlPathEqualTo("/api/ticker"))
                 .willReturn(okJson("{\"symbol\":\"BTCUSDT\"}")));
 
-        NoOpRestThrottler throttler = new NoOpRestThrottler();
+        NoOpAsyncThrottler throttler = new NoOpAsyncThrottler();
         restAssistant = new RestAssistant(
                 restClient, List.of(), List.of(),
-                null, new NoOpRestThrottler(), objectMapper
+                null, throttler, objectMapper
         );
 
         // when
@@ -169,30 +171,27 @@ public class RestAssistantTest {
                         .pathUrl("/api/ticker")
                         .method(HttpMethod.GET)
                         .authRequired(false)
-                        .customWeight(expectedWeight)
+                        .weightOverrides(weightOverrides)
                         .build()
         );
-        Assertions.assertThat(throttler.getCustomWeight()).isEqualTo(expectedWeight);
+        Assertions.assertThat(throttler.weightOverrides).containsEntry("test-weight", 1);
+
     }
 
 
 
-    static class NoOpRestThrottler implements RestThrottler {
-        private Integer customWeight;
+    static class NoOpAsyncThrottler implements AsyncThrottler {
+        public Map<String, Integer> weightOverrides;
 
         @Override
-        public <T> T execute(String limitId, Supplier<T> task, Integer customWeight) {
-            this.customWeight = customWeight;
-            return task.get();
-        }
-
-        public Integer getCustomWeight() {
-            return customWeight;
+        public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task, Map<String, Integer> weightOverrides) {
+            this.weightOverrides = weightOverrides;
+            return CompletableFuture.completedFuture(task.get());
         }
 
         @Override
-        public <T> T execute(String limitId, Supplier<T> task) {
-            return task.get();
+        public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task) {
+            return CompletableFuture.completedFuture(task.get());
         }
     }
 

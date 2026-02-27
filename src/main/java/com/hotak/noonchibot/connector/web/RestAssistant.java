@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.connector.web;
 
+import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
@@ -14,7 +15,7 @@ public class RestAssistant {
     private final List<RestPreProcessor> preProcessors;
     private final List<RestPostProcessor> postProcessors;
     private final Authenticator authenticator;
-    private final RestThrottler restThrottler;
+    private final AsyncThrottler asyncThrottler;
     private final ObjectMapper objectMapper;
 
     public JsonNode executeRequestAndGetJsonBody(RestRequest request) {
@@ -23,21 +24,21 @@ public class RestAssistant {
 
     public RestResponse executeRequestAndGetResponse(RestRequest request) {
         RestRequest finalRequest = applyAuthentication(applyPreProcessors(request));
-        if(finalRequest.customWeight() == null) {
-            return restThrottler.execute(
+        if(finalRequest.weightOverrides() == null) {
+            return asyncThrottler.execute(
                     finalRequest.throttlerLimitId(),
                     () -> {
                         RestResponse response = call(finalRequest);
                         return applyPostProcessors(response);
-                    });
+                    }).join();
         }
-        return restThrottler.execute(
+        return asyncThrottler.execute(
                 finalRequest.throttlerLimitId(),
                 () -> {
                     RestResponse response = call(finalRequest);
                     return applyPostProcessors(response);
                     },
-                finalRequest.customWeight());
+                finalRequest.weightOverrides()).join();
     }
 
     private RestRequest applyPreProcessors(RestRequest request) {
