@@ -16,6 +16,6 @@ public record RestRequest(
         boolean authRequired,
         String throttlerLimitId,
         // null 전달시 Property의 기본설정 weight 사용
-        Integer customWeight
+        Map<String, Integer> weightOverrides
 ) {
 }
