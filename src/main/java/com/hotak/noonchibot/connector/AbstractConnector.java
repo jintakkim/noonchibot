@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector;
 
 import com.hotak.noonchibot.core.event.SimpleEventLogger;
+import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
 import com.hotak.noonchibot.core.NetworkIterator;
 import com.hotak.noonchibot.core.datatype.*;

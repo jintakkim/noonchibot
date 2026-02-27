@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.core.datatype;
+package com.hotak.noonchibot.core.order;
 
 import java.time.Instant;
 import java.util.Map;

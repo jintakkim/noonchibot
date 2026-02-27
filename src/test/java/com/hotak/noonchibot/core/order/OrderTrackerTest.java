@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.connector;
+package com.hotak.noonchibot.core.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;

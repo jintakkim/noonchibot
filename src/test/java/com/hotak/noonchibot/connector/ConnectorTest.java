@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.connector;
 
-import com.hotak.noonchibot.core.datatype.InFlightOrder;
-import com.hotak.noonchibot.core.datatype.OrderType;
+import com.hotak.noonchibot.core.order.InFlightOrder;
+import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.datatype.TradeUpdate;
 import com.hotak.noonchibot.core.event.EventLogger;

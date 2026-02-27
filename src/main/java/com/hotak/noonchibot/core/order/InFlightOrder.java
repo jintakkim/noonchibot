@@ -1,5 +1,7 @@
-package com.hotak.noonchibot.core.datatype;
+package com.hotak.noonchibot.core.order;
 
+import com.hotak.noonchibot.core.datatype.TradeType;
+import com.hotak.noonchibot.core.datatype.TradeUpdate;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
 import lombok.Getter;
 import lombok.Setter;

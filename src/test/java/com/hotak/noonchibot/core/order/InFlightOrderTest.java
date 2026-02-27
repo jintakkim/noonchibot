@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.core;
+package com.hotak.noonchibot.core.order;
 
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;

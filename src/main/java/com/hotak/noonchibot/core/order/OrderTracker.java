@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.connector;
+package com.hotak.noonchibot.core.order;
 
 import com.hotak.noonchibot.core.PubSub;
 import com.hotak.noonchibot.core.datatype.*; // 관련 클래스 패키지 가정
