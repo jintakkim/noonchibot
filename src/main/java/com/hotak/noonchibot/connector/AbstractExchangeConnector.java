@@ -1,10 +1,9 @@
 package com.hotak.noonchibot.connector;
 
-import ch.qos.logback.core.read.ListAppender;
 import com.hotak.noonchibot.connector.web.Authenticator;
 import com.hotak.noonchibot.connector.throttle.RateLimit;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestResponse;
+import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.RetryableTrigger;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.order.OrderState;
@@ -17,7 +16,6 @@ import com.hotak.noonchibot.core.orderbook.ReadOnlyOrderBook;
 import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -25,10 +23,7 @@ import tools.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -97,16 +92,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     /**
-     * @return 거래소 인증에 필요한 authenticator
-     */
-    protected abstract Authenticator getAuthenticator();
-
-    /**
-     * @return 거래소 요청 빈도 제한 규칙 리턴
-     */
-    protected abstract List<RateLimit> getRateLimitRules();
-
-    /**
      * 클라이언트에서 임의로 정하는 id에 대해 prefix를 붙인다.
      *
      * @return 주문 id에 붙일 prefix
@@ -148,7 +133,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     public boolean isReady() {
         return !tradingPairSymbolRegistry.isEmpty() &&
-                orderBookTracker.isReady() &&
                 !accountBalances.isEmpty() &&
                 !tradingRules.isEmpty() &&
                 userStreamTracker.isRunning();
@@ -156,7 +140,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     @Override
-    public abstract List<OrderType> getSupportedOrderTypes();
+    public abstract Set<OrderType> getSupportedOrderTypes();
 
     /**
      * 요청 에러가 시간 동기화 문제인지 확인
@@ -278,8 +262,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 //        return getBestPrice(tradingPair, true).add(getBestPrice(tradingPair, false)).divide(BigDecimal.TWO, RoundingMode.HALF_UP);
 //    }
 
-    public abstract BigDecimal getLastTradedPrice(String tradingPair);
-
     private void pollStatusIfNeeded() {
         long intervalMs = getStatusPollInterval(getCurrentTimestamp()).toMillis();
         long lastTick = lastTimestamp.toEpochMilli() / intervalMs;
@@ -339,7 +321,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     protected void startNetwork() {
         stopNetwork();
-        orderBookTracker.start();
         userStreamTracker.start();
 
         //주기적 트레이딩 룰 업데이트 스케줄러 등록
@@ -394,8 +375,13 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     private void updateTradingRules() {
-        String url = getApiRequestUrl(tradingRulesRequestPath, false);
-        JsonNode body = restAssistant.executeRequestAndGetJsonBody(url, null, HttpMethod.GET, false, null, null, null);
+        JsonNode body = restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .method(HttpMethod.GET)
+                        .pathUrl(tradingRulesRequestPath)
+                        .authRequired(false)
+                        .build()
+        );
         Map<String, TradingRule> tradingRules = parseTradingRule(body).stream().collect(Collectors.toMap(TradingRule::tradingPair, Function.identity()));
         this.tradingRules.clear();
         this.tradingRules.putAll(tradingRules);
@@ -410,7 +396,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     protected void stopNetwork() {
         lastTimestamp = null;
-        orderBookTracker.stop();
         userStreamTracker.stop();
         scheduledTasks.forEach(task -> task.cancel(true));
         if (pollStatusFuture != null) pollStatusFuture.cancel(true);
@@ -421,7 +406,13 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     protected NetworkStatus checkNetwork() {
         try {
             String url = getApiRequestUrl(checkNetworkRequestPath, false);
-            restAssistant.executeRequestAndGetResponse(url, null, HttpMethod.GET, false, null, null, null);
+            restAssistant.executeRequestAndGetResponse(
+                    RestRequest.builder()
+                            .method(HttpMethod.GET)
+                            .pathUrl(checkNetworkRequestPath)
+                            .authRequired(false)
+                            .build()
+            );
             return NetworkStatus.CONNECTED;
         } catch (Exception e) {
             log.warn("network check failed", e);

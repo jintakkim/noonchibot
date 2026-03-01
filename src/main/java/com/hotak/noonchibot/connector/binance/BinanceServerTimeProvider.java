@@ -1,0 +1,25 @@
+package com.hotak.noonchibot.connector.binance;
+
+import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.connector.web.ServerTimeProvider;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpMethod;
+import tools.jackson.databind.JsonNode;
+
+@RequiredArgsConstructor
+public class BinanceServerTimeProvider implements ServerTimeProvider {
+    private final RestAssistant restAssistant;
+
+    @Override
+    public long getServerTimeMs() {
+        JsonNode body = restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .method(HttpMethod.GET)
+                        .pathUrl(BinanceApiSpec.SERVER_TIME_PATH_URL)
+                        .authRequired(false)
+                        .build()
+        );
+        return body.get("serverTime").asLong();
+    }
+}
