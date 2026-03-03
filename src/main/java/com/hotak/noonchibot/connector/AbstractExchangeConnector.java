@@ -1,10 +1,7 @@
 package com.hotak.noonchibot.connector;
 
-import ch.qos.logback.core.read.ListAppender;
-import com.hotak.noonchibot.connector.web.Authenticator;
-import com.hotak.noonchibot.connector.throttle.RateLimit;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestResponse;
+import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.RetryableTrigger;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.order.OrderState;
@@ -17,7 +14,6 @@ import com.hotak.noonchibot.core.orderbook.ReadOnlyOrderBook;
 import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -25,10 +21,7 @@ import tools.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -42,7 +35,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     private static final Duration TRADING_FEES_INTERVAL = Duration.ofHours(12);
     private static final Duration ERROR_RETRY_INTERVAL = Duration.ofMillis(500);
 
-    private final Map<String, TradingRule> tradingRules = new HashMap<>();
+    protected volatile Map<String, TradingRule> tradingRules;
     private final UserStreamTracker userStreamTracker;
     private final OrderIdGenerator orderIdGenerator;
     private final OrderBookTracker orderBookTracker;
@@ -53,11 +46,24 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     private final RestAssistant restAssistant;
     private final String checkNetworkRequestPath;
     private final String tradingRulesRequestPath;
-    private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
+    private final String tradingPairRequestPath;
+    /**
+     * 취소주문이 동기적으로 처리되는지 여부
+     */
+    private final boolean isCancelRequestInExchangeSynchronous;
+    /**
+     * 클라이언트에서 임의로 정하는 id에 대해 prefix
+     */
+    private final String clientOrderIdPrefix;
+    /**
+     * 거래소에서 설정한 id 최대 길이
+     */
+    private final int clientOrderIdMaxLength;
+
+    protected final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final OrderBookDataSource orderBookDataSource;
     private Future<?> pollStatusFuture;
     private Future<?> userStreamFuture;
-    private final String domain;
     private final List<ScheduledFuture<?>> scheduledTasks = new ArrayList<>();
     private Instant lastTimestamp = Instant.MIN;
 
@@ -72,10 +78,13 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
             OrderTracker orderTracker,
             TaskScheduler scheduler,
             AsyncTaskExecutor executor,
-            String domain,
             RestAssistant restAssistant,
             String checkNetworkRequestPath,
             String tradingRulesRequestPath,
+            String tradingPairRequestPath,
+            boolean isCancelRequestInExchangeSynchronous,
+            String clientOrderIdPrefix,
+            int clientOrderIdMaxLength,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             OrderBookDataSource orderBookDataSource
 
@@ -87,51 +96,16 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         this.orderTracker = orderTracker;
         this.scheduler = scheduler;
         this.executor = executor;
-        this.domain = domain;
         this.restAssistant = restAssistant;
         this.checkNetworkRequestPath = checkNetworkRequestPath;
         this.tradingRulesRequestPath = tradingRulesRequestPath;
+        this.tradingPairRequestPath = tradingPairRequestPath;
+        this.isCancelRequestInExchangeSynchronous = isCancelRequestInExchangeSynchronous;
+        this.clientOrderIdPrefix = clientOrderIdPrefix;
+        this.clientOrderIdMaxLength = clientOrderIdMaxLength;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.orderBookDataSource = orderBookDataSource;
-
     }
-
-    /**
-     * @return 거래소 인증에 필요한 authenticator
-     */
-    protected abstract Authenticator getAuthenticator();
-
-    /**
-     * @return 거래소 요청 빈도 제한 규칙 리턴
-     */
-    protected abstract List<RateLimit> getRateLimitRules();
-
-    /**
-     * 클라이언트에서 임의로 정하는 id에 대해 prefix를 붙인다.
-     *
-     * @return 주문 id에 붙일 prefix
-     */
-    protected abstract String getClientOrderIdPrefix();
-
-    /**
-     * @return 거래소에서 설정한 id 최대 길이
-     */
-    protected abstract int getClientOrderIdMaxLength();
-
-    /**
-     * @return 지원하는 거래쌍 목록 조회 request path
-     */
-    protected abstract String getTradingPairRequestPath();
-
-    /**
-     * @return 지원하는 거래쌍 목록
-     */
-    protected abstract List<String> getTradingPairs();
-
-    /**
-     * @return 거래소의 취소 요청이 동기적으로 처리 되는지 여부
-     */
-    protected abstract boolean isCancelRequestProcessSynchronously();
 
     protected abstract String getPrivateRestUrl(String pathUrl, String domain);
 
@@ -148,7 +122,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     public boolean isReady() {
         return !tradingPairSymbolRegistry.isEmpty() &&
-                orderBookTracker.isReady() &&
                 !accountBalances.isEmpty() &&
                 !tradingRules.isEmpty() &&
                 userStreamTracker.isRunning();
@@ -156,12 +129,12 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     @Override
-    public abstract List<OrderType> getSupportedOrderTypes();
+    public abstract Set<OrderType> getSupportedOrderType(String tradingPair);
 
     /**
      * 요청 에러가 시간 동기화 문제인지 확인
      */
-    protected abstract boolean isRequestExceptionRelatedToTimeSynchronizer();
+    protected abstract boolean isRequestExceptionRelatedToTimeSynchronizer(Exception e);
 
     /**
      * 주문 상태 조회시 주문 없음 예외인지 확인
@@ -196,14 +169,14 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
     @Override
     public String buy(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args) {
-        String clientOrderId = orderIdGenerator.createClientOrderId(true, tradingPair, getClientOrderIdPrefix(), getClientOrderIdMaxLength());
+        String clientOrderId = orderIdGenerator.createClientOrderId(true, tradingPair, clientOrderIdPrefix, clientOrderIdMaxLength);
         createOrder(TradeType.BUY, clientOrderId, tradingPair, orderType, amount, price, args);
         return clientOrderId;
     }
 
     @Override
     public String sell(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args) {
-        String clientOrderId = orderIdGenerator.createClientOrderId(false, tradingPair, getClientOrderIdPrefix(), getClientOrderIdMaxLength());
+        String clientOrderId = orderIdGenerator.createClientOrderId(false, tradingPair, clientOrderIdPrefix, clientOrderIdMaxLength);
         createOrder(TradeType.SELL, clientOrderId, tradingPair, orderType, amount, price, args);
         return clientOrderId;
     }
@@ -221,7 +194,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         orderTracker.startTrackingOrder(orderId, null, tradingPair, orderType, tradeType, quantizedPrice, quantizedOrderAmount);
         InFlightOrder order = orderTracker.findActiveOrder(orderId).orElseThrow();
 
-        if (!getSupportedOrderTypes().contains(orderType)) {
+        if (!getSupportedOrderType(tradingPair).contains(orderType)) {
             updateOrderAfterFailure(orderId, tradingPair, "해당 오더 타입은 지원하지 않습니다.");
             return;
         }
@@ -252,7 +225,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
         try {
             placeCancel(clientOrderId, trackedOrder);
-            OrderState newState = isCancelRequestProcessSynchronously() ? OrderState.CANCELED : OrderState.PENDING_CANCEL;
+            OrderState newState = isCancelRequestInExchangeSynchronous ? OrderState.CANCELED : OrderState.PENDING_CANCEL;
             OrderUpdate orderUpdate = new OrderUpdate(tradingPair, getCurrentTimestamp(), newState, clientOrderId, null);
             orderTracker.updateOrder(orderUpdate);
         } catch (Exception e) {
@@ -277,8 +250,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 //    public BigDecimal getMidPrice(String tradingPair) {
 //        return getBestPrice(tradingPair, true).add(getBestPrice(tradingPair, false)).divide(BigDecimal.TWO, RoundingMode.HALF_UP);
 //    }
-
-    public abstract BigDecimal getLastTradedPrice(String tradingPair);
 
     private void pollStatusIfNeeded() {
         long intervalMs = getStatusPollInterval(getCurrentTimestamp()).toMillis();
@@ -339,7 +310,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     protected void startNetwork() {
         stopNetwork();
-        orderBookTracker.start();
         userStreamTracker.start();
 
         //주기적 트레이딩 룰 업데이트 스케줄러 등록
@@ -394,23 +364,27 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     private void updateTradingRules() {
-        String url = getApiRequestUrl(tradingRulesRequestPath, false);
-        JsonNode body = restAssistant.executeRequestAndGetJsonBody(url, null, HttpMethod.GET, false, null, null, null);
-        Map<String, TradingRule> tradingRules = parseTradingRule(body).stream().collect(Collectors.toMap(TradingRule::tradingPair, Function.identity()));
-        this.tradingRules.clear();
-        this.tradingRules.putAll(tradingRules);
+        JsonNode body = restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .method(HttpMethod.GET)
+                        .pathUrl(tradingRulesRequestPath)
+                        .authRequired(false)
+                        .params(Map.of("symbols", tradingPairSymbolRegistry.getAllExchangeSymbols()))
+                        .build()
+        );
+        this.tradingRules = parseTradingRule(body).stream().collect(Collectors.toMap(TradingRule::tradingPair, Function.identity()));
     }
+    protected abstract List<TradingRule> parseTradingRule(JsonNode node);
+
     protected abstract void updateTradingFees();
     protected abstract void updateBalances();
     protected abstract void updateTimeSynchronizer();
     protected abstract void updateOrders();
     protected abstract void processUserStreamEvent(Object event);
-    protected abstract List<TradingRule> parseTradingRule(JsonNode node);
 
     @Override
     protected void stopNetwork() {
         lastTimestamp = null;
-        orderBookTracker.stop();
         userStreamTracker.stop();
         scheduledTasks.forEach(task -> task.cancel(true));
         if (pollStatusFuture != null) pollStatusFuture.cancel(true);
@@ -421,7 +395,13 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     protected NetworkStatus checkNetwork() {
         try {
             String url = getApiRequestUrl(checkNetworkRequestPath, false);
-            restAssistant.executeRequestAndGetResponse(url, null, HttpMethod.GET, false, null, null, null);
+            restAssistant.executeRequestAndGetResponse(
+                    RestRequest.builder()
+                            .method(HttpMethod.GET)
+                            .pathUrl(checkNetworkRequestPath)
+                            .authRequired(false)
+                            .build()
+            );
             return NetworkStatus.CONNECTED;
         } catch (Exception e) {
             log.warn("network check failed", e);

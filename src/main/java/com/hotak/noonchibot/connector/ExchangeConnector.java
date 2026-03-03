@@ -10,5 +10,5 @@ import java.util.List;
 public interface ExchangeConnector extends Connector {
 
     List<String> getAllTradingPairs();;
-    TradeFee getFee(String baseCurrency, String quoteCurrency, OrderType orderType, TradeType tradeType, BigDecimal amount, BigDecimal price, boolean isMaker);
+    TradeFee getFee(String baseCurrency, String quoteCurrency, OrderType orderType, TradeType tradeType, BigDecimal amount, BigDecimal price, Boolean isMaker);
 }
