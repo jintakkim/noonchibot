@@ -100,10 +100,4 @@ public class BinanceConnector extends AbstractExchangeConnector {
         }
         throw new IllegalArgumentException("Filter not found: " + Arrays.toString(filterTypes));
     }
-
-    @Override
-    public TradeFee getFee(String baseCurrency, String quoteCurrency, OrderType orderType, TradeType tradeType, BigDecimal amount, BigDecimal price, Boolean isMaker) {
-        boolean maker = isMaker != null ? isMaker : orderType == OrderType.LIMIT_MAKER;
-        return new DeductedFromReturnsTradeFee();
-    }
 }

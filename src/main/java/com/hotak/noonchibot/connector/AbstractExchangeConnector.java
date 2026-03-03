@@ -11,7 +11,6 @@ import com.hotak.noonchibot.core.order.OrderUpdate;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.orderbook.ReadOnlyOrderBook;
-import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpMethod;

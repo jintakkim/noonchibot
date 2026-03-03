@@ -1,12 +1,13 @@
 package com.hotak.noonchibot.connector;
 
 import com.hotak.noonchibot.core.event.SimpleEventLogger;
-import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
 import com.hotak.noonchibot.core.NetworkIterator;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.OrderFilledEvent;
 import com.hotak.noonchibot.core.trade.fee.TradeFee;
 import com.hotak.noonchibot.core.event.EventLogger;
+import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
+import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
 
 import java.time.Instant;
 import java.util.List;
@@ -17,23 +18,23 @@ import java.util.stream.Stream;
 
 public abstract class AbstractConnector extends NetworkIterator implements Connector {
     private final String name;
-    private final FeeEstimator feeEstimator;
     protected final Map<String, BigDecimal> accountBalances;
     protected final Map<String, BigDecimal> accountAvailableBalances;
     private final EventLogger eventLogger;
+    private final TradeFeeSchemaLoader tradeFeeSchemaLoader;
     /**
      * <market, <currency, balance>> 맵으로 이루어진 제한 설정
      * 특정 마켓에서 특정 currency의 사용을 제한할 수 있다.
      */
     private final Map<String, Map<String, BigDecimal>> balanceLimit;
 
-    public AbstractConnector(String name, FeeEstimator feeEstimator, Map<String, Map<String, BigDecimal>> balanceLimit) {
+    public AbstractConnector(String name, Map<String, Map<String, BigDecimal>> balanceLimit, TradeFeeSchemaLoader tradeFeeSchemaLoader) {
         this.name = name;
-        this.feeEstimator = feeEstimator;
         this.accountBalances = new HashMap<>();
         this.accountAvailableBalances = new HashMap<>();
         this.eventLogger = new SimpleEventLogger(name);
         this.balanceLimit = balanceLimit == null ? new HashMap<>() : balanceLimit;
+        this.tradeFeeSchemaLoader = tradeFeeSchemaLoader;
     }
 
     /**
@@ -108,7 +109,7 @@ public abstract class AbstractConnector extends NetworkIterator implements Conne
                 // 가치 = 미체결 수량 * 주문 가격
                 BigDecimal outstandingValue = outstandingAmount.multiply(order.getPrice());
                 // 수수료 계산
-                BigDecimal feePct = estimateTradeFee(TradeType.BUY).getPercent();
+                BigDecimal feePct = estimateTradeFee(order.getTradingPair(), TradeType.BUY, true).getPercent();
                 // outstandingValue *= (1 + feePct)
                 outstandingValue = outstandingValue.multiply(BigDecimal.ONE.add(feePct));
                 assetBalances.merge(order.getQuoteAsset(), outstandingValue, BigDecimal::add);
@@ -123,10 +124,10 @@ public abstract class AbstractConnector extends NetworkIterator implements Conne
 
     /**
      * 실제 발생된 수수료가 아닌 수수료 예측치
-     * 마켓 주문도 in_flight_order로 짧은 시간동안 존재할 수 있지만 대부분의 in_flight_order가 maker 주문이기 때문에 모든 주문을 maker 주문으로 가정한다.
      */
-    private TradeFee estimateTradeFee(TradeType tradeType) {
-        return feeEstimator.buildTradeFee(name, true, tradeType);
+    protected TradeFee estimateTradeFee(String tradingPair, TradeType tradeType, boolean isMaker) {
+        TradeFeeSchema schema = tradeFeeSchemaLoader.get(tradingPair);
+        return TradeFee.newSpotFee(schema, tradeType, isMaker);
     }
 
     @Override
