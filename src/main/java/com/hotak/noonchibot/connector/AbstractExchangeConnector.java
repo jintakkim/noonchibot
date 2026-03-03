@@ -14,7 +14,7 @@ import com.hotak.noonchibot.core.order.OrderUpdate;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.orderbook.ReadOnlyOrderBook;
-import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
+import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpHeaders;
@@ -64,8 +64,8 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
     public AbstractExchangeConnector(
             String name,
-            FeeEstimator feeEstimator,
-            Map<String, Map<String, BigDecimal>> balanceLimit,
+            Map<String, BigDecimal> balanceLimit,
+            TradeFeeSchemaLoader tradeFeeSchemaLoader,
             UserStreamTracker userStreamTracker,
             OrderIdGenerator orderIdGenerator,
             OrderBookTracker orderBookTracker,
@@ -80,7 +80,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
             OrderBookDataSource orderBookDataSource
 
     ) {
-        super(name, feeEstimator, balanceLimit);
+        super(name, balanceLimit, tradeFeeSchemaLoader);
         this.userStreamTracker = userStreamTracker;
         this.orderIdGenerator = orderIdGenerator;
         this.orderBookTracker = orderBookTracker;
@@ -156,7 +156,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     @Override
-    public abstract List<OrderType> getSupportedOrderTypes();
+    public abstract Set<OrderType> getSupportedOrderType(String tradingPair);
 
     /**
      * 요청 에러가 시간 동기화 문제인지 확인

@@ -5,7 +5,7 @@ import lombok.Getter;
 import java.time.Instant;
 
 @Getter
-public class TimeIterator extends PubSub {
+public class TimeIterator {
     private volatile Clock clock;
     private volatile Instant currentTimestamp;
 
