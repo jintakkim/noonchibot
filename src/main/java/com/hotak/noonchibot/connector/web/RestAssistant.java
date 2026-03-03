@@ -1,7 +1,9 @@
 package com.hotak.noonchibot.connector.web;
 
+import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
@@ -35,9 +37,12 @@ public class RestAssistant {
         return asyncThrottler.execute(
                 finalRequest.throttlerLimitId(),
                 () -> {
-                    RestResponse response = call(finalRequest);
-                    return applyPostProcessors(response);
-                    },
+                    RestResponse response = applyPostProcessors(call(finalRequest));
+                    if (response.statusCode().isError() && request.throwError()) {
+                        throw new ExchangeApiException(response.statusCode(), response.body());
+                    }
+                    return response;
+                },
                 finalRequest.weightOverrides()).join();
     }
 
@@ -69,7 +74,9 @@ public class RestAssistant {
                     if (request.headers() != null) h.addAll(request.headers());
                 });
         if(request.body() != null) spec.body(request.body());
-        ResponseEntity<String> entity = spec.retrieve().toEntity(String.class);
+        ResponseEntity<String> entity = spec.retrieve()
+                .onStatus(HttpStatusCode::isError, (req, res) -> {}) // do noting.
+                .toEntity(String.class);
         return new RestResponse(entity.getStatusCode(), entity.getHeaders(), entity.getBody());
     }
 
