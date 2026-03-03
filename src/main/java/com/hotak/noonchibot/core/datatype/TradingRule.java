@@ -15,9 +15,9 @@ public record TradingRule(
         // 최소 주문 금액 (price × amount) ex) 10 USDT
         BigDecimal minNotionalSize,
         // 가격 유효 자릿수
-        BigDecimal maxPriceSignificantDigits,
         boolean supportMarketOrder,
         boolean supportLimitOrder,
+        int maxPriceSignificantDigits,
         // 매수 시 담보 토큰 ex) USDT
         String buyOrderCollateralToken,
         // 매도 시 담보 토큰 ex) BTC
