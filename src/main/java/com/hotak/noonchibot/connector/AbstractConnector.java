@@ -4,6 +4,7 @@ import com.hotak.noonchibot.core.PubSub;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.NetworkIterator;
 import com.hotak.noonchibot.core.datatype.*;
+import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.trade.fee.TradeFee;
 import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
 import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
