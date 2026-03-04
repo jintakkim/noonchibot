@@ -38,4 +38,9 @@ public class SimpleTradingPairSymbolRegistry implements TradingPairSymbolRegistr
     public List<String> getAllTradingPairs() {
         return new ArrayList<>(symbolTradingPairMap.values());
     }
+
+    @Override
+    public List<String> getAllExchangeSymbols() {
+        return new ArrayList<>(tradingPairSymbolMap.values());
+    }
 }

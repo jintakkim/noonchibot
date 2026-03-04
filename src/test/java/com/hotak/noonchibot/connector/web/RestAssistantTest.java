@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector.web;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
@@ -21,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
@@ -176,6 +179,156 @@ public class RestAssistantTest {
         );
         Assertions.assertThat(throttler.weightOverrides).containsEntry("test-weight", 1);
 
+    }
+
+    @Test
+    @DisplayName("4xx 에러 - throwError=true면 예외를 던진다")
+    void clientError_throwErrorTrue_throwsException() {
+        stubFor(get("/api/order")
+                .willReturn(aResponse()
+                        .withStatus(400)
+                        .withBody("{\"code\":-2010,\"msg\":\"Insufficient balance\"}")));
+
+        assertThatThrownBy(() ->
+                restAssistant.executeRequestAndGetResponse(
+                        RestRequest.builder()
+                                .pathUrl("/api/order")
+                                .method(HttpMethod.GET)
+                                .throwError(true)
+                                .build()
+                )
+        ).isInstanceOf(ExchangeApiException.class)
+                .satisfies(e -> {
+                    ExchangeApiException ex = (ExchangeApiException) e;
+                    assertThat(ex.httpStatusCode).isEqualTo(HttpStatusCode.valueOf(400));
+                    assertThat(ex.getMessage()).contains("-2010");
+                });
+    }
+
+    @Test
+    @DisplayName("5xx 에러 - throwError=true면 예외를 던진다")
+    void serverError_throwErrorTrue_throwsException() {
+        stubFor(get("/api/order")
+                .willReturn(aResponse()
+                        .withStatus(503)
+                        .withBody("Service Unavailable")));
+
+        assertThatThrownBy(() ->
+                restAssistant.executeRequestAndGetResponse(
+                        RestRequest.builder()
+                                .pathUrl("/api/order")
+                                .method(HttpMethod.GET)
+                                .throwError(true)
+                                .build()
+                )
+        ).isInstanceOf(ExchangeApiException.class)
+                .satisfies(e -> {
+                    ExchangeApiException ex = (ExchangeApiException) e;
+                    assertThat(ex.httpStatusCode).isEqualTo(HttpStatusCode.valueOf(503));
+                });
+    }
+
+    @Test
+    @DisplayName("4xx 에러 - throwError=false면 예외 없이 응답을 반환한다")
+    void clientError_throwErrorFalse_returnsResponse() {
+        stubFor(get("/api/order")
+                .willReturn(aResponse()
+                        .withStatus(400)
+                        .withBody("{\"code\":-2010,\"msg\":\"Insufficient balance\"}")));
+
+        RestResponse response = restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/order")
+                        .method(HttpMethod.GET)
+                        .throwError(false)
+                        .build()
+        );
+
+        assertThat(response.statusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.body()).contains("-2010");
+    }
+
+    @Test
+    @DisplayName("5xx 에러 - throwError=false면 예외 없이 응답을 반환한다")
+    void serverError_throwErrorFalse_returnsResponse() {
+        stubFor(get("/api/order")
+                .willReturn(aResponse()
+                        .withStatus(503)
+                        .withBody("Service Unavailable")));
+
+        RestResponse response = restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/order")
+                        .method(HttpMethod.GET)
+                        .throwError(false)
+                        .build()
+        );
+
+        assertThat(response.statusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.body()).contains("Service Unavailable");
+    }
+
+    @Test
+    @DisplayName("4xx 에러 - throwError=false여도 PostProcessor는 실행된다")
+    void clientError_throwErrorFalse_postProcessorStillRuns() {
+        stubFor(get("/api/orders")
+                .willReturn(aResponse()
+                        .withStatus(429)
+                        .withBody("{\"code\":-1003,\"msg\":\"Too many requests\"}")));
+
+        restAssistant = new RestAssistant(
+                restClient,
+                List.of(),
+                List.of(response -> {
+                    if (response.body() != null && response.body().contains("-1003")) {
+                        throw new RateLimitException("rate limit");
+                    }
+                    return response;
+                }),
+                null, new NoOpAsyncThrottler(), objectMapper
+        );
+
+        assertThatThrownBy(() ->
+                restAssistant.executeRequestAndGetResponse(
+                        RestRequest.builder()
+                                .pathUrl("/api/orders")
+                                .method(HttpMethod.GET)
+                                .throwError(false)
+                                .build()
+                )
+        ).isInstanceOf(RateLimitException.class);
+    }
+
+    @Test
+    @DisplayName("4xx 에러 - PostProcessor가 예외를 안 던지면 throwError에 따라 동작한다")
+    void clientError_postProcessorPassesThrough_followsThrowError() {
+        AtomicBoolean postProcessorCalled = new AtomicBoolean(false);
+
+        stubFor(get("/api/orders")
+                .willReturn(aResponse()
+                        .withStatus(400)
+                        .withBody("{\"code\":-1021,\"msg\":\"Timestamp error\"}")));
+
+        restAssistant = new RestAssistant(
+                restClient,
+                List.of(),
+                List.of(response -> {
+                    postProcessorCalled.set(true);
+                    return response;
+                }),
+                null, new NoOpAsyncThrottler(), objectMapper
+        );
+
+        RestResponse response = restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/orders")
+                        .method(HttpMethod.GET)
+                        .throwError(false)
+                        .build()
+        );
+
+        assertThat(postProcessorCalled).isTrue();
+        assertThat(response.statusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
 

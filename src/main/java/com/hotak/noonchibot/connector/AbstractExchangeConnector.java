@@ -1,23 +1,17 @@
 package com.hotak.noonchibot.connector;
 
-import ch.qos.logback.core.read.ListAppender;
 import com.hotak.noonchibot.connector.web.Authenticator;
 import com.hotak.noonchibot.connector.throttle.RateLimit;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestResponse;
 import com.hotak.noonchibot.core.RetryableTrigger;
 import com.hotak.noonchibot.core.datatype.*;
-import com.hotak.noonchibot.core.order.OrderState;
-import com.hotak.noonchibot.core.order.OrderTracker;
-import com.hotak.noonchibot.core.order.OrderType;
-import com.hotak.noonchibot.core.order.OrderUpdate;
+import com.hotak.noonchibot.core.order.*;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.orderbook.ReadOnlyOrderBook;
-import com.hotak.noonchibot.core.trade.fee.FeeEstimator;
+import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -25,10 +19,7 @@ import tools.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -64,8 +55,8 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
     public AbstractExchangeConnector(
             String name,
-            FeeEstimator feeEstimator,
-            Map<String, Map<String, BigDecimal>> balanceLimit,
+            Map<String, BigDecimal> balanceLimit,
+            TradeFeeSchemaLoader tradeFeeSchemaLoader,
             UserStreamTracker userStreamTracker,
             OrderIdGenerator orderIdGenerator,
             OrderBookTracker orderBookTracker,
@@ -80,7 +71,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
             OrderBookDataSource orderBookDataSource
 
     ) {
-        super(name, feeEstimator, balanceLimit);
+        super(name, balanceLimit, tradeFeeSchemaLoader);
         this.userStreamTracker = userStreamTracker;
         this.orderIdGenerator = orderIdGenerator;
         this.orderBookTracker = orderBookTracker;
@@ -148,7 +139,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     public boolean isReady() {
         return !tradingPairSymbolRegistry.isEmpty() &&
-                orderBookTracker.isReady() &&
                 !accountBalances.isEmpty() &&
                 !tradingRules.isEmpty() &&
                 userStreamTracker.isRunning();
@@ -156,7 +146,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     @Override
-    public abstract List<OrderType> getSupportedOrderTypes();
+    public abstract Set<OrderType> getSupportedOrderType(String tradingPair);
 
     /**
      * 요청 에러가 시간 동기화 문제인지 확인
@@ -208,7 +198,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         return clientOrderId;
     }
 
-    private void createOrder(TradeType tradeType, String orderId, String tradingPair, OrderType orderType, BigDecimal amount, BigDecimal price, Object... args) {
+    private void createOrder(TradeType tradeType, String clientOrderId, String tradingPair, OrderType orderType, BigDecimal amount, BigDecimal price, Object... args) {
         TradingRule tradingRule = tradingRules.get(tradingPair);
         if (tradingRule == null) throw new IllegalArgumentException("trading rule not found");
 
@@ -218,34 +208,35 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         }
         BigDecimal quantizedOrderAmount = quantizeOrderAmount(tradingPair, amount);
 
-        orderTracker.startTrackingOrder(orderId, null, tradingPair, orderType, tradeType, quantizedPrice, quantizedOrderAmount);
-        InFlightOrder order = orderTracker.findActiveOrder(orderId).orElseThrow();
+        InFlightOrder order = new InFlightOrder(clientOrderId, tradingPair, orderType, tradeType, amount, price, getCurrentTimestamp());
+        orderTracker.startTrackingOrder(order);
 
-        if (!getSupportedOrderTypes().contains(orderType)) {
-            updateOrderAfterFailure(orderId, tradingPair, "해당 오더 타입은 지원하지 않습니다.");
+
+        if (!getSupportedOrderType(tradingPair).contains(orderType)) {
+            updateOrderAfterFailure(clientOrderId, tradingPair, "해당 오더 타입은 지원하지 않습니다.");
             return;
         }
 
         if (quantizedOrderAmount.compareTo(tradingRule.minOrderSize()) < 0) {
-            updateOrderAfterFailure(orderId, tradingPair, "주문 수량이 최소 주문 수량보다 커야합니다.");
+            updateOrderAfterFailure(clientOrderId, tradingPair, "주문 수량이 최소 주문 수량보다 커야합니다.");
             return;
         }
 
         BigDecimal notionalSize = price == null ? orderBookDataSource.getLastTradedPrice(tradingPair).multiply(quantizedOrderAmount) : quantizedPrice.multiply(quantizedOrderAmount);
         if (notionalSize.compareTo(tradingRule.minNotionalSize()) < 0) {
-            updateOrderAfterFailure(orderId, tradingPair, "주문 금액이 최소 주문 금액보다 커야합니다.");
+            updateOrderAfterFailure(clientOrderId, tradingPair, "주문 금액이 최소 주문 금액보다 커야합니다.");
             return;
         }
         try {
             placeOrderAndProcessUpdate(order, args);
         } catch (Exception e) {
-            onOrderFailure(orderId, tradingPair, e);
+            onOrderFailure(clientOrderId, tradingPair, e);
         }
     }
 
     @Override
     public void cancel(String tradingPair, String clientOrderId) {
-        InFlightOrder trackedOrder = orderTracker.findTrackedOrder(clientOrderId).orElse(null);
+        InFlightOrder trackedOrder = orderTracker.fetchTrackedOrder(clientOrderId);
         if (trackedOrder == null) {
             log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
         }
@@ -254,7 +245,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
             placeCancel(clientOrderId, trackedOrder);
             OrderState newState = isCancelRequestProcessSynchronously() ? OrderState.CANCELED : OrderState.PENDING_CANCEL;
             OrderUpdate orderUpdate = new OrderUpdate(tradingPair, getCurrentTimestamp(), newState, clientOrderId, null);
-            orderTracker.updateOrder(orderUpdate);
+            orderTracker.processOrderUpdate(orderUpdate);
         } catch (Exception e) {
             if(isOrderNotFoundDuringCancellationException(e)) {
                 log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
@@ -311,7 +302,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     private String placeOrderAndProcessUpdate(InFlightOrder order, Object... args) {
         OrderPlacedDto placedOrder = placeOrder(order.getClientOrderId(), order.getTradingPair(), order.getAmount(), order.getTradeType(), order.getOrderType(), order.getPrice(), args);
         OrderUpdate orderUpdate = new OrderUpdate(order.getTradingPair(), placedOrder.timestamp(), OrderState.OPEN, order.getClientOrderId(), placedOrder.exchangeOrderId());
-        orderTracker.updateOrder(orderUpdate);
+        orderTracker.processOrderUpdate(orderUpdate);
         return placedOrder.exchangeOrderId();
     }
 
@@ -322,7 +313,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
     private void updateOrderAfterFailure(String orderId, String tradingPair, String message) {
         OrderUpdate.FailedOrderUpdate orderUpdate = new OrderUpdate.FailedOrderUpdate(tradingPair, getCurrentTimestamp(), orderId, null, message);
-        orderTracker.updateOrder(orderUpdate);
+        orderTracker.processOrderUpdate(orderUpdate);
     }
 
     private void onOrderFailure(String orderId, String tradingPair, Exception e) {
@@ -339,7 +330,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     protected void startNetwork() {
         stopNetwork();
-        orderBookTracker.start();
         userStreamTracker.start();
 
         //주기적 트레이딩 룰 업데이트 스케줄러 등록
@@ -410,7 +400,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     protected void stopNetwork() {
         lastTimestamp = null;
-        orderBookTracker.stop();
         userStreamTracker.stop();
         scheduledTasks.forEach(task -> task.cancel(true));
         if (pollStatusFuture != null) pollStatusFuture.cancel(true);

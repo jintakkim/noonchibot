@@ -21,5 +21,4 @@ public record OrderFilledEvent(
         String exchangeOrderId,
         Integer leverage,
         PositionAction position
-) {
-}
+) implements ExchangeEvent {}

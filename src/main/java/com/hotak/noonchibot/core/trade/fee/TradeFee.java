@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.core.trade.fee;
 
+import com.hotak.noonchibot.core.datatype.PositionAction;
 import com.hotak.noonchibot.core.datatype.TokenAmount;
 import com.hotak.noonchibot.core.datatype.TradeType;
 
@@ -24,13 +25,26 @@ public interface TradeFee {
      */
     List<TokenAmount> getFlatFees();
 
-    static TradeFee newSpotFee(TradeFeeSchema schema, TradeType tradeType, BigDecimal percent, String percentToken, List<TokenAmount> flatFees) {
-        boolean isAddedToCost = (tradeType == TradeType.BUY && (!schema.buyPercentFeeDeductedFromReturns() || schema.percentFeeToken() != null));
-        if (isAddedToCost) {
-            return new AddedToCostTradeFee(percent, percentToken, flatFees);
-        } else {
-            return new DeductedFromReturnsTradeFee(percent, percentToken, flatFees);
-        }
+    static TradeFee newSpotFee(TradeFeeSchema schema, TradeType tradeType, boolean isMaker) {
+        BigDecimal percent = isMaker ? schema.makerPercentFee() : schema.takerPercentFee();
+        List<TokenAmount> flatFees = isMaker ? schema.makerFixedFees() : schema.takerFixedFees();
+        boolean isAddedToCost = (tradeType == TradeType.BUY
+                && (!schema.buyPercentFeeDeductedFromReturns() || schema.percentFeeToken() != null));
+
+        return isAddedToCost
+                ? new AddedToCostTradeFee(percent, schema.percentFeeToken(), flatFees)
+                : new DeductedFromReturnsTradeFee(percent, schema.percentFeeToken(), flatFees);
+    }
+
+    static TradeFee newPerpetualFee(TradeFeeSchema schema, PositionAction positionAction, boolean isMaker) {
+        BigDecimal percent = isMaker ? schema.makerPercentFee() : schema.takerPercentFee();
+        List<TokenAmount> flatFees = isMaker ? schema.makerFixedFees() : schema.takerFixedFees();
+
+        boolean isAddedToCost = (positionAction == PositionAction.OPEN || schema.percentFeeToken() != null);
+
+        return isAddedToCost
+                ? new AddedToCostTradeFee(percent, schema.percentFeeToken(), flatFees)
+                : new DeductedFromReturnsTradeFee(percent, schema.percentFeeToken(), flatFees);
     }
 
     default BigDecimal getTotalAmount(BigDecimal fillQuoteAmount) {

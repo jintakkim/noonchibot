@@ -21,4 +21,5 @@ public interface TradingPairSymbolRegistry {
     boolean isEmpty();
 
     List<String> getAllTradingPairs();
+    List<String> getAllExchangeSymbols();
 }
