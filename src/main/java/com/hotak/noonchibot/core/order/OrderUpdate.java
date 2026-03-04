@@ -1,28 +1,27 @@
 package com.hotak.noonchibot.core.order;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-
 import java.time.Instant;
 
+public record OrderUpdate(
+        String tradingPair,
+        Instant updateTimestamp,
+        InFlightOrder.State newState,
+        String clientOrderId,
+        String exchangeOrderId,
+        //nullable
+        OrderFailure orderFailure
 
-@Getter
-@RequiredArgsConstructor
-public class OrderUpdate {
-        private final String tradingPair;
-        private final Instant updateTimestamp;
-        private final OrderState newState;
-        private final String clientOrderId;
-        private final String exchangeOrderId;
+) {
 
-        @Getter
-        public static class FailedOrderUpdate extends OrderUpdate {
-            private final String errorMessage;
+    public OrderUpdate(
+            String tradingPair,
+            Instant updateTimestamp,
+            InFlightOrder.State newState,
+            String clientOrderId,
+            String exchangeOrderId
+    ) {
+       this(tradingPair, updateTimestamp, newState, clientOrderId, exchangeOrderId, null);
+    }
 
-            public FailedOrderUpdate(String tradingPair, Instant updateTimestamp, String clientOrderId, String exchangeOrderId, String errorMessage) {
-                super(tradingPair, updateTimestamp, OrderState.FAILED, clientOrderId, exchangeOrderId);
-                this.errorMessage = errorMessage;
-            }
-        }
-
+    public record OrderFailure(String errorType, String errorMessage) {}
 }

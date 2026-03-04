@@ -18,7 +18,5 @@ public record OrderFilledEvent(
         BigDecimal amount,
         TradeFee tradeFee,
         String exchangeTradeId,
-        String exchangeOrderId,
-        Integer leverage,
-        PositionAction position
+        String exchangeOrderId
 ) implements ExchangeEvent {}

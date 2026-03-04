@@ -116,7 +116,7 @@ public class OrderTracker {
                         InFlightOrder.State.FAILED,
                         clientOrderId,
                         null,
-                        new OrderUpdate.OrderFailure("LOST_ORDER", "거래소에서 주문을 찾을 수 없습니다.")
+                        null
                 ));
                 lostOrders.put(clientOrderId, trackedOrder);
             }

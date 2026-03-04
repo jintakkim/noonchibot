@@ -213,18 +213,18 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
 
         if (!getSupportedOrderType(tradingPair).contains(orderType)) {
-            updateOrderAfterFailure(clientOrderId, tradingPair, "해당 오더 타입은 지원하지 않습니다.");
+            updateOrderAfterFailure(clientOrderId, tradingPair, new OrderValidationException.UnsupportedOrderTypeException("해당 오더 타입은 지원하지 않습니다."));
             return;
         }
 
         if (quantizedOrderAmount.compareTo(tradingRule.minOrderSize()) < 0) {
-            updateOrderAfterFailure(clientOrderId, tradingPair, "주문 수량이 최소 주문 수량보다 커야합니다.");
+            updateOrderAfterFailure(clientOrderId, tradingPair, new OrderValidationException.BelowMinOrderSizeException("주문 수량이 최소 주문 수량보다 커야합니다."));
             return;
         }
 
         BigDecimal notionalSize = price == null ? orderBookDataSource.getLastTradedPrice(tradingPair).multiply(quantizedOrderAmount) : quantizedPrice.multiply(quantizedOrderAmount);
         if (notionalSize.compareTo(tradingRule.minNotionalSize()) < 0) {
-            updateOrderAfterFailure(clientOrderId, tradingPair, "주문 금액이 최소 주문 금액보다 커야합니다.");
+            updateOrderAfterFailure(clientOrderId, tradingPair, new OrderValidationException.BelowMinNotionalException("주문 금액이 최소 주문 금액보다 커야합니다."));
             return;
         }
         try {
@@ -236,15 +236,14 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
     @Override
     public void cancel(String tradingPair, String clientOrderId) {
-        InFlightOrder trackedOrder = orderTracker.fetchTrackedOrder(clientOrderId);
+        InFlightOrder trackedOrder = orderTracker.findActiveOrder(clientOrderId, null).orElse(null);
         if (trackedOrder == null) {
             log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
         }
-
         try {
             placeCancel(clientOrderId, trackedOrder);
-            OrderState newState = isCancelRequestProcessSynchronously() ? OrderState.CANCELED : OrderState.PENDING_CANCEL;
-            OrderUpdate orderUpdate = new OrderUpdate(tradingPair, getCurrentTimestamp(), newState, clientOrderId, null);
+            InFlightOrder.State newState = isCancelRequestProcessSynchronously() ? InFlightOrder.State.CANCELED : InFlightOrder.State.PENDING_CANCEL;
+            OrderUpdate orderUpdate = new OrderUpdate(tradingPair, getCurrentTimestamp(), newState, clientOrderId, null, null);
             orderTracker.processOrderUpdate(orderUpdate);
         } catch (Exception e) {
             if(isOrderNotFoundDuringCancellationException(e)) {
@@ -301,7 +300,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
     private String placeOrderAndProcessUpdate(InFlightOrder order, Object... args) {
         OrderPlacedDto placedOrder = placeOrder(order.getClientOrderId(), order.getTradingPair(), order.getAmount(), order.getTradeType(), order.getOrderType(), order.getPrice(), args);
-        OrderUpdate orderUpdate = new OrderUpdate(order.getTradingPair(), placedOrder.timestamp(), OrderState.OPEN, order.getClientOrderId(), placedOrder.exchangeOrderId());
+        OrderUpdate orderUpdate = new OrderUpdate(order.getTradingPair(), placedOrder.timestamp(), InFlightOrder.State.OPEN, order.getClientOrderId(), placedOrder.exchangeOrderId());
         orderTracker.processOrderUpdate(orderUpdate);
         return placedOrder.exchangeOrderId();
     }
@@ -311,14 +310,15 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
      */
     protected abstract OrderPlacedDto placeOrder(String orderId, String tradingPair, BigDecimal amount, TradeType tradeType, OrderType orderType, BigDecimal price, Object... args);
 
-    private void updateOrderAfterFailure(String orderId, String tradingPair, String message) {
-        OrderUpdate.FailedOrderUpdate orderUpdate = new OrderUpdate.FailedOrderUpdate(tradingPair, getCurrentTimestamp(), orderId, null, message);
+    private void updateOrderAfterFailure(String orderId, String tradingPair, Exception exception) {
+        OrderUpdate.OrderFailure failure = new OrderUpdate.OrderFailure(exception.getClass().getSimpleName(), exception.getMessage());
+        OrderUpdate orderUpdate = new OrderUpdate(tradingPair, getCurrentTimestamp(), InFlightOrder.State.FAILED, orderId, null, failure);
         orderTracker.processOrderUpdate(orderUpdate);
     }
 
     private void onOrderFailure(String orderId, String tradingPair, Exception e) {
         log.error("{}에 대한 주문을 제출하는데 실패 했습니다, 네트워크 에러나 거래소 서버 상태, apiKey 문제 일 수 있습니다.", orderId);
-        updateOrderAfterFailure(orderId, tradingPair, e.getMessage());
+        updateOrderAfterFailure(orderId, tradingPair, e);
     }
 
     /**
