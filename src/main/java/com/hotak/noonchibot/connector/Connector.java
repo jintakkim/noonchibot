@@ -20,8 +20,8 @@ public interface Connector {
      * 단일 취소
      */
     void cancel(String tradingPair, String orderId);
+
     void cancelAll();
-    void stopTrackingOrder(String orderId);
 
     List<OrderFilledEvent> getOrderFilledEvent();
     String getName();
@@ -29,6 +29,7 @@ public interface Connector {
     <T extends ExchangeEvent> void unsubscribe(Class<T> eventType, EventListener<T> listener);
     boolean isReady();
 
+    List<String> getAllTradingPairs();
     /**
      * @return 지원하는 주문 타입 리스트
      */

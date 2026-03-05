@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.trade.fee;
 
-import com.hotak.noonchibot.core.datatype.TokenAmount;
+import com.hotak.noonchibot.core.datatype.PositionAction;
+import com.hotak.noonchibot.core.datatype.TradeType;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -59,4 +60,26 @@ public record TradeFeeSchema(
             throw new IllegalArgumentException("percentFeeToken이 설정된 경우 buyPercentFeeDeductedFromReturns는 true일 수 없습니다.");
         }
     }
+
+//    static TradeFee newSpotFee(TradeFeeSchema schema, TradeType tradeType, boolean isMaker) {
+//        BigDecimal percent = isMaker ? schema.makerPercentFee() : schema.takerPercentFee();
+//        List<TokenAmount> flatFees = isMaker ? schema.makerFixedFees() : schema.takerFixedFees();
+//        boolean isAddedToCost = (tradeType == TradeType.BUY
+//                && (!schema.buyPercentFeeDeductedFromReturns() || schema.percentFeeToken() != null));
+//
+//        return isAddedToCost
+//                ? new AddedToCostTradeFee(percent, schema.percentFeeToken(), flatFees)
+//                : new DeductedFromReturnsTradeFee(percent, schema.percentFeeToken(), flatFees);
+//    }
+//
+//    static TradeFee newPerpetualFee(TradeFeeSchema schema, PositionAction positionAction, boolean isMaker) {
+//        BigDecimal percent = isMaker ? schema.makerPercentFee() : schema.takerPercentFee();
+//        List<TokenAmount> flatFees = isMaker ? schema.makerFixedFees() : schema.takerFixedFees();
+//
+//        boolean isAddedToCost = (positionAction == PositionAction.OPEN || schema.percentFeeToken() != null);
+//
+//        return isAddedToCost
+//                ? new AddedToCostTradeFee(percent, schema.percentFeeToken(), flatFees)
+//                : new DeductedFromReturnsTradeFee(percent, schema.percentFeeToken(), flatFees);
+//    }
 }

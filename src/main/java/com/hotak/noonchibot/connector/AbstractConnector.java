@@ -22,7 +22,7 @@ public abstract class AbstractConnector extends NetworkIterator implements Conne
     protected final Map<String, BigDecimal> accountAvailableBalances;
     private final EventLogger eventLogger;
     private final TradeFeeSchemaLoader tradeFeeSchemaLoader;
-    private final PubSub pubSub = new PubSub();
+    protected final PubSub pubSub = new PubSub();
 
     private final Map<String, BigDecimal> balanceLimit;
 

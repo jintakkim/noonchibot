@@ -33,6 +33,10 @@ public class OrderTracker {
         return fillable;
     }
 
+    public Map<String, InFlightOrder> getActiveOrders() {
+        return new HashMap<>(activeOrders);
+    }
+
     public void startTrackingOrder(InFlightOrder order) {
         activeOrders.put(order.getClientOrderId(), order);
     }
@@ -158,7 +162,7 @@ public class OrderTracker {
                 new OrderFilledEvent(
                         order.getLastUpdateTimestamp(), order.getClientOrderId(), order.getTradingPair(),
                         order.getTradeType(), order.getOrderType(), tradeUpdate.fillBaseAmount(), tradeUpdate.fillPrice(),
-                        tradeUpdate.tradeFee(), tradeUpdate.tradeId(), tradeUpdate.exchangeOrderId()
+                        tradeUpdate.fee(), tradeUpdate.tradeId(), tradeUpdate.exchangeOrderId()
                 )
         );
     }

@@ -1,9 +1,10 @@
 package com.hotak.noonchibot.core.datatype;
 
-import com.hotak.noonchibot.core.trade.fee.TradeFee;
+import com.hotak.noonchibot.core.trade.fee.TokenAmount;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 public record TradeUpdate(
         String tradeId,
@@ -14,8 +15,8 @@ public record TradeUpdate(
         BigDecimal fillPrice,
         BigDecimal fillBaseAmount,
         BigDecimal fillQuoteAmount,
-        TradeFee tradeFee,
+        List<TokenAmount> fee,
         //nullable if dex
-        Boolean isTaker
+        Boolean isMaker
 ) {
 }

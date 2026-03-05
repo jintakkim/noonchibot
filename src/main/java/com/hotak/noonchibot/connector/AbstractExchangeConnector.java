@@ -1,8 +1,7 @@
 package com.hotak.noonchibot.connector;
 
-import com.hotak.noonchibot.connector.web.Authenticator;
-import com.hotak.noonchibot.connector.throttle.RateLimit;
 import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.RetryableTrigger;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.order.*;
@@ -21,36 +20,48 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
 public abstract class AbstractExchangeConnector extends AbstractConnector implements ExchangeConnector {
-    private static final Duration SHORT_POLL_INTERVAL = Duration.ofSeconds(5);
-    private static final Duration LONG_POLL_INTERVAL = Duration.ofMinutes(2);
-    private static final Duration TICK_INTERVAL_LIMIT = Duration.ofMinutes(1);
-    private static final Duration TRADING_RULES_INTERVAL = Duration.ofMinutes(30);
-    private static final Duration TRADING_FEES_INTERVAL = Duration.ofHours(12);
-    private static final Duration ERROR_RETRY_INTERVAL = Duration.ofMillis(500);
+    protected static final Duration SHORT_POLL_INTERVAL = Duration.ofSeconds(5);
+    protected static final Duration LONG_POLL_INTERVAL = Duration.ofMinutes(2);
+    protected static final Duration TICK_INTERVAL_LIMIT = Duration.ofMinutes(1);
+    protected static final Duration TRADING_RULES_INTERVAL = Duration.ofMinutes(30);
+    protected static final Duration ERROR_RETRY_INTERVAL = Duration.ofMillis(500);
 
-    private final Map<String, TradingRule> tradingRules = new HashMap<>();
+    protected volatile Map<String, TradingRule> tradingRules = Collections.emptyMap();
     private final UserStreamTracker userStreamTracker;
     private final OrderIdGenerator orderIdGenerator;
-    private final OrderBookTracker orderBookTracker;
-    private final OrderTracker orderTracker;
+    protected final OrderBookTracker orderBookTracker;
+    protected final OrderTracker orderTracker;
     private final TaskScheduler scheduler;
-    private final AsyncTaskExecutor executor;
-    private final Semaphore pollSemaphore = new Semaphore(0);
-    private final RestAssistant restAssistant;
+    protected final AsyncTaskExecutor executor;
+    protected final RestAssistant restAssistant;
     private final String checkNetworkRequestPath;
     private final String tradingRulesRequestPath;
-    private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
+    /**
+     * 취소주문이 동기적으로 처리되는지 여부
+     */
+    private final boolean isCancelRequestInExchangeSynchronous;
+    /**
+     * 클라이언트에서 임의로 정하는 id에 대해 prefix
+     */
+    private final String clientOrderIdPrefix;
+    /**
+     * 거래소에서 설정한 id 최대 길이
+     */
+    private final int clientOrderIdMaxLength;
+    protected final TradingPairSymbolRegistry tradingPairSymbolRegistry;
+
     private final OrderBookDataSource orderBookDataSource;
     private Future<?> pollStatusFuture;
     private Future<?> userStreamFuture;
-    private final String domain;
     private final List<ScheduledFuture<?>> scheduledTasks = new ArrayList<>();
     private Instant lastTimestamp = Instant.MIN;
+    protected Instant lastPollTimestamp = Instant.MIN;
 
 
     public AbstractExchangeConnector(
@@ -63,10 +74,12 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
             OrderTracker orderTracker,
             TaskScheduler scheduler,
             AsyncTaskExecutor executor,
-            String domain,
             RestAssistant restAssistant,
             String checkNetworkRequestPath,
             String tradingRulesRequestPath,
+            boolean isCancelRequestInExchangeSynchronous,
+            String clientOrderIdPrefix,
+            int clientOrderIdMaxLength,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             OrderBookDataSource orderBookDataSource
 
@@ -78,58 +91,18 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         this.orderTracker = orderTracker;
         this.scheduler = scheduler;
         this.executor = executor;
-        this.domain = domain;
         this.restAssistant = restAssistant;
         this.checkNetworkRequestPath = checkNetworkRequestPath;
         this.tradingRulesRequestPath = tradingRulesRequestPath;
+        this.isCancelRequestInExchangeSynchronous = isCancelRequestInExchangeSynchronous;
+        this.clientOrderIdPrefix = clientOrderIdPrefix;
+        this.clientOrderIdMaxLength = clientOrderIdMaxLength;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.orderBookDataSource = orderBookDataSource;
 
     }
 
-    /**
-     * @return 거래소 인증에 필요한 authenticator
-     */
-    protected abstract Authenticator getAuthenticator();
-
-    /**
-     * @return 거래소 요청 빈도 제한 규칙 리턴
-     */
-    protected abstract List<RateLimit> getRateLimitRules();
-
-    /**
-     * 클라이언트에서 임의로 정하는 id에 대해 prefix를 붙인다.
-     *
-     * @return 주문 id에 붙일 prefix
-     */
-    protected abstract String getClientOrderIdPrefix();
-
-    /**
-     * @return 거래소에서 설정한 id 최대 길이
-     */
-    protected abstract int getClientOrderIdMaxLength();
-
-    /**
-     * @return 지원하는 거래쌍 목록 조회 request path
-     */
-    protected abstract String getTradingPairRequestPath();
-
-    /**
-     * @return 지원하는 거래쌍 목록
-     */
-    protected abstract List<String> getTradingPairs();
-
-    /**
-     * @return 거래소의 취소 요청이 동기적으로 처리 되는지 여부
-     */
-    protected abstract boolean isCancelRequestProcessSynchronously();
-
-    protected abstract String getPrivateRestUrl(String pathUrl, String domain);
-
-    protected abstract String getPublicRestUrl(String pathUrl, String domain);
-
-
-    protected ReadOnlyOrderBook getReadOnlyOrderBook(String tradingPair) {
+    protected ReadOnlyOrderBook getOrderBook(String tradingPair) {
         ReadOnlyOrderBook orderBook = orderBookTracker.getReadOnlyOrderBooks().get(tradingPair);
         if (orderBook == null)
             throw new IllegalArgumentException("No order book found for trading pair: " + tradingPair);
@@ -151,7 +124,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     /**
      * 요청 에러가 시간 동기화 문제인지 확인
      */
-    protected abstract boolean isRequestExceptionRelatedToTimeSynchronizer();
+    protected abstract boolean isRequestExceptionRelatedToTimeSynchronizer(Exception e);
 
     /**
      * 주문 상태 조회시 주문 없음 예외인지 확인
@@ -162,6 +135,11 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
      * 주문 취소시 주문 없음 예외인지 확인
      */
     protected abstract boolean isOrderNotFoundDuringCancellationException(Exception e);
+
+    @Override
+    public Map<String, InFlightOrder> getInFlightOrders() {
+        return orderTracker.getActiveOrders();
+    }
 
     @Override
     public BigDecimal getOrderPriceQuantum(String tradingPair, BigDecimal price) {
@@ -178,6 +156,11 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     @Override
+    public List<String> getAllTradingPairs() {
+        return tradingPairSymbolRegistry.getAllTradingPairs();
+    }
+
+    @Override
     public void onTick(Instant timestamp) {
         super.onTick(timestamp);
         pollStatusIfNeeded();
@@ -186,14 +169,14 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 
     @Override
     public String buy(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args) {
-        String clientOrderId = orderIdGenerator.createClientOrderId(true, tradingPair, getClientOrderIdPrefix(), getClientOrderIdMaxLength());
+        String clientOrderId = orderIdGenerator.createClientOrderId(true, tradingPair, clientOrderIdPrefix, clientOrderIdMaxLength);
         createOrder(TradeType.BUY, clientOrderId, tradingPair, orderType, amount, price, args);
         return clientOrderId;
     }
 
     @Override
     public String sell(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args) {
-        String clientOrderId = orderIdGenerator.createClientOrderId(false, tradingPair, getClientOrderIdPrefix(), getClientOrderIdMaxLength());
+        String clientOrderId = orderIdGenerator.createClientOrderId(false, tradingPair, clientOrderIdPrefix, clientOrderIdMaxLength);
         createOrder(TradeType.SELL, clientOrderId, tradingPair, orderType, amount, price, args);
         return clientOrderId;
     }
@@ -242,7 +225,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         }
         try {
             placeCancel(clientOrderId, trackedOrder);
-            InFlightOrder.State newState = isCancelRequestProcessSynchronously() ? InFlightOrder.State.CANCELED : InFlightOrder.State.PENDING_CANCEL;
+            InFlightOrder.State newState = isCancelRequestInExchangeSynchronous ? InFlightOrder.State.CANCELED : InFlightOrder.State.PENDING_CANCEL;
             OrderUpdate orderUpdate = new OrderUpdate(tradingPair, getCurrentTimestamp(), newState, clientOrderId, null, null);
             orderTracker.processOrderUpdate(orderUpdate);
         } catch (Exception e) {
@@ -268,8 +251,6 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
 //        return getBestPrice(tradingPair, true).add(getBestPrice(tradingPair, false)).divide(BigDecimal.TWO, RoundingMode.HALF_UP);
 //    }
 
-    public abstract BigDecimal getLastTradedPrice(String tradingPair);
-
     private void pollStatusIfNeeded() {
         long intervalMs = getStatusPollInterval(getCurrentTimestamp()).toMillis();
         long lastTick = lastTimestamp.toEpochMilli() / intervalMs;
@@ -277,6 +258,7 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         if (currentTick > lastTick) pollStatusFuture = executor.submit(() -> {
             try {
                 pollStatus();
+                lastPollTimestamp = getCurrentTimestamp();
             } catch (Exception e) {
                 log.error("polling 방식의 status 업데이트 도중 예외 발생", e);
             }
@@ -343,38 +325,26 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
                 tradingRuleUpdateTrigger.recordFailure();
             }
         }, tradingRuleUpdateTrigger));
-
-        //주기적 거래 수수료 업데이트 스케줄러 등록
-        RetryableTrigger tradingFeeUpdateTrigger = new RetryableTrigger(TRADING_FEES_INTERVAL, ERROR_RETRY_INTERVAL);
-        scheduledTasks.add(scheduler.schedule(() -> {
-            try {
-                updateTradingFees();
-                tradingFeeUpdateTrigger.recordSuccess();
-            } catch (Exception e) {
-                log.error("error occurred while updating trading fee", e);
-                tradingFeeUpdateTrigger.recordFailure();
-            }
-        }, tradingFeeUpdateTrigger));
-
         listenUserStream();
     }
 
     /**
      * 상태 폴링
      */
-    private void pollStatus() {
-        updateTimeSynchronizer();
+    protected void pollStatus() {
         CompletableFuture<Void> balancesFuture = CompletableFuture.runAsync(this::updateBalances, executor);
-        CompletableFuture<Void> ordersFuture = CompletableFuture.runAsync(this::updateOrders, executor);
+        CompletableFuture<Void> ordersFuture = CompletableFuture.runAsync(() -> {
+            updateOrdersFills(); //order의 trades update
+            updateOrders();  //order의 state update
+        }, executor);
         CompletableFuture.allOf(balancesFuture, ordersFuture).join();
     }
-
 
     private void listenUserStream() {
         userStreamFuture = executor.submit(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    Object event = userStreamTracker.userStream.take();
+                    JsonNode event = userStreamTracker.userStream.take();
                     processUserStreamEvent(event);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -384,16 +354,65 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     }
 
     private void updateTradingRules() {
-        String url = getApiRequestUrl(tradingRulesRequestPath, false);
-        JsonNode body = restAssistant.executeRequestAndGetJsonBody(url, null, HttpMethod.GET, false, null, null, null);
-        Map<String, TradingRule> tradingRules = parseTradingRule(body).stream().collect(Collectors.toMap(TradingRule::tradingPair, Function.identity()));
-        this.tradingRules.clear();
-        this.tradingRules.putAll(tradingRules);
+        JsonNode body = restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .method(HttpMethod.GET)
+                        .pathUrl(tradingRulesRequestPath)
+                        .params(Map.of("symbols", tradingPairSymbolRegistry.getAllExchangeSymbols()))
+                        .build()
+        );
+        this.tradingRules = parseTradingRule(body).stream().collect(Collectors.toMap(TradingRule::tradingPair, Function.identity()));
     }
-    protected abstract void updateTradingFees();
+
+    /**
+     * using restApi
+     */
     protected abstract void updateBalances();
-    protected abstract void updateTimeSynchronizer();
-    protected abstract void updateOrders();
+
+    /**
+     * using restApi
+     */
+    protected abstract List<TradeUpdate> fetchAllTradeUpdatesForOrder(InFlightOrder order);
+
+    private void updateOrders() {
+        List<InFlightOrder> orders = orderTracker.getActiveOrders().values().stream().toList();
+        updateOrdersWithErrorHandler(orders, this::handleUpdateErrorForActiveOrder);
+    }
+
+    @FunctionalInterface
+    private interface OrderErrorHandler {
+        void handle(InFlightOrder order, Exception error);
+    }
+
+    private void updateOrdersWithErrorHandler(List<InFlightOrder> orders, OrderErrorHandler errorHandler) {
+        executeParallel(orders, order -> {
+            try {
+                OrderUpdate update = fetchOrderStatus(order);
+                orderTracker.processOrderUpdate(update);
+            } catch (Exception e) {
+                errorHandler.handle(order, e);
+            }
+        });
+    }
+
+    private void handleUpdateErrorForActiveOrder(InFlightOrder order, Exception error) {
+        log.warn("Error fetching status update for active order(client order id: {}", order.getClientOrderId(), error);
+        orderTracker.processOrderNotFound(order.getClientOrderId());
+    }
+
+    /**
+     * using restApi
+     * order의 상태를 조회한다.
+     */
+    protected abstract OrderUpdate fetchOrderStatus(InFlightOrder order);
+
+    private void updateOrdersFills() {
+        executeParallel(orderTracker.getFillableOrders().values(), order -> {
+            List<TradeUpdate> tradeUpdates = fetchAllTradeUpdatesForOrder(order);
+            tradeUpdates.forEach(orderTracker::processTradeUpdate);
+        });
+    }
+
     protected abstract void processUserStreamEvent(Object event);
     protected abstract List<TradingRule> parseTradingRule(JsonNode node);
 
@@ -409,8 +428,12 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
     @Override
     protected NetworkStatus checkNetwork() {
         try {
-            String url = getApiRequestUrl(checkNetworkRequestPath, false);
-            restAssistant.executeRequestAndGetResponse(url, null, HttpMethod.GET, false, null, null, null);
+            restAssistant.executeRequestAndGetResponse(
+                    RestRequest.builder()
+                            .method(HttpMethod.GET)
+                            .pathUrl(checkNetworkRequestPath)
+                            .build()
+            );
             return NetworkStatus.CONNECTED;
         } catch (Exception e) {
             log.warn("network check failed", e);
@@ -418,8 +441,20 @@ public abstract class AbstractExchangeConnector extends AbstractConnector implem
         }
     }
 
-    private String getApiRequestUrl(String pathUrl, boolean isAuthRequired) {
-        if(isAuthRequired) return getPrivateRestUrl(pathUrl, domain);
-        return getPublicRestUrl(pathUrl, domain);
+    private void executeParallel(Collection<InFlightOrder> orders, Consumer<InFlightOrder> task) {
+        List<Future<?>> futures = new ArrayList<>();
+        for (InFlightOrder order : orders) {
+            futures.add(executor.submit(() -> task.accept(order)));
+        }
+        for (Future<?> future : futures) {
+            try {
+                future.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (ExecutionException e) {
+                // task 내부에서 처리
+            }
+        }
     }
 }
