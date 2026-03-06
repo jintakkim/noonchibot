@@ -3,6 +3,8 @@ package com.hotak.noonchibot.core.order;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.datatype.TradeUpdate;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
+import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -11,6 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+@Slf4j
 public class InFlightOrder {
     public enum State {
         PENDING_CREATE, OPEN, PENDING_CANCEL, CANCELED,
@@ -92,7 +95,8 @@ public class InFlightOrder {
         String tradeId = tradeUpdate.tradeId();
 
         if (orderFills.containsKey(tradeId)) {
-            throw new InFlightUpdateFailedException("이미 처리된 Trade ID입니다: " + tradeId);
+            log.warn("이미 처리된 tradeId: {} 입니다.", tradeId);
+            return;
         }
 
         boolean clientIdMatch = Objects.equals(tradeUpdate.clientOrderId(), this.clientOrderId);
@@ -142,10 +146,8 @@ public class InFlightOrder {
 
     public synchronized BigDecimal getCumulativeFeePaid() {
         return orderFills.values().stream()
-                .map(fill -> {
-                    if (fill.tradeFee() == null) return BigDecimal.ZERO;
-                    return fill.tradeFee().getTotalAmount(fill.fillQuoteAmount());
-                })
+                .flatMap(fill -> fill.fee().stream())
+                .map(TokenAmount::amount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 

@@ -2,362 +2,288 @@ package com.hotak.noonchibot.core.order;
 
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
+import com.hotak.noonchibot.core.trade.fee.TokenAmount;
 import com.hotak.noonchibot.core.trade.fee.TradeFee;
 import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class InFlightOrderTest {
-    private InFlightOrder testOrder;
-    private TradeFeeSchema testTradeFeeSchema;
+class InFlightOrderTest {
+
+    private InFlightOrder order;
 
     @BeforeEach
     void setUp() {
-        testOrder = new InFlightOrder(
+        order = new InFlightOrder(
                 "OID-123", "BTC-USDT", OrderType.LIMIT, TradeType.BUY,
                 new BigDecimal("1.0"), new BigDecimal("50000.0"), Instant.now(), null);
-
-        testTradeFeeSchema = new TradeFeeSchema(
-                null,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                false,
-                Collections.emptyList(),
-                Collections.emptyList()
-        );
     }
 
-    @Test
-    @DisplayName("주문 생성 초기화, exchangeId set이 정상적으로 작동한다.")
-    void testOrderCreationState() {
-        assertEquals(InFlightOrder.State.PENDING_CREATE, testOrder.getCurrentState());
-        assertNull(testOrder.getExchangeOrderId());
-        assertFalse(testOrder.getProcessedByExchangeEvent().isDone());
-
-        String exchangeId = "EX-1";
-
-        testOrder.setExchangeOrderId(exchangeId);
-        testOrder.setCurrentState(InFlightOrder.State.OPEN);
-
-        assertEquals(InFlightOrder.State.OPEN, testOrder.getCurrentState());
-        assertNotNull(testOrder.getExchangeOrderId());
-        assertEquals(0, BigDecimal.ZERO.compareTo(testOrder.getAverageExecutedPrice()));
-        assertEquals(exchangeId, testOrder.getExchangeOrderId());
-    }
-
-    @Test
-    @DisplayName("주문 취소 요청(Pending) 후 취소 확정(Cancelled)이 정상적으로 처리된다.")
-    void testOrderCancellationFlow() {
-        String exchangeId = "EX-1";
-        testOrder.setExchangeOrderId(exchangeId);
-        testOrder.setCurrentState(InFlightOrder.State.OPEN);
-
-        testOrder.setCurrentState(InFlightOrder.State.PENDING_CANCEL);
-
-        assertFalse(testOrder.isDone());
-        assertEquals(InFlightOrder.State.PENDING_CANCEL, testOrder.getCurrentState());
-
-        testOrder.setCurrentState(InFlightOrder.State.CANCELED);
-
-        assertTrue(testOrder.isDone());
-        assertEquals(InFlightOrder.State.CANCELED, testOrder.getCurrentState());
-    }
-
-    @Test
-    @DisplayName("주문 실패(Failed) 상태 검증")
-    void testOrderFailure() {
-        testOrder.setCurrentState(InFlightOrder.State.FAILED);
-
-        assertTrue(testOrder.isDone());
-        assertEquals(InFlightOrder.State.FAILED, testOrder.getCurrentState());
-    }
-
-    @Test
-    @DisplayName("부분 체결(Partial) 후 완전 체결(Filled) 흐름 검증")
-    void testOrderFillFlow() {
-        testOrder.setExchangeOrderId("EX-1");
-        testOrder.setCurrentState(InFlightOrder.State.OPEN);
-
-        testOrder.setCurrentState(InFlightOrder.State.PARTIALLY_FILLED);
-        testOrder.setExecutedAmountBase(new BigDecimal("0.5"));
-
-        assertFalse(testOrder.isDone());
-
-        testOrder.setCurrentState(InFlightOrder.State.FILLED);
-        testOrder.setExecutedAmountBase(new BigDecimal("1.0"));
-
-        assertTrue(testOrder.isDone());
-    }
-
-    @Test
-    @DisplayName("한 번에 전량 체결될 경우 평균 체결가는 주문 가격과 같다.")
-    void testAveragePriceWithSingleFill() {
-        BigDecimal expectedPrice = new BigDecimal("50000.0");
-
-        TradeUpdate fill = new TradeUpdate(
-                "trade-1", testOrder.getClientOrderId(), "EX-1", testOrder.getTradingPair(), Instant.now(),
-                expectedPrice,
-                new BigDecimal("1.0"),
-                new BigDecimal("50000.0"),
-                null, true
-        );
-
-        testOrder.updateWithTradeUpdate(fill);
-        BigDecimal actualPrice = testOrder.getAverageExecutedPrice();
-
-        assertNotNull(actualPrice);
-        assertEquals(0, expectedPrice.compareTo(actualPrice));
-    }
-
-    @Test
-    @DisplayName("주문이 두 번에 걸쳐 체결될 때, 가중 평균 가격이 정확히 계산된다.")
-    void testAveragePriceWithMultipleFills() {
-        TradeUpdate fill1 = new TradeUpdate(
-                "trade_1", testOrder.getClientOrderId(), "EX-1", testOrder.getTradingPair(), Instant.now(),
-                new BigDecimal("50000.50"),
-                new BigDecimal("0.5"),
-                new BigDecimal("25000.25"),
-                null, false
-        );
-        testOrder.updateWithTradeUpdate(fill1);
-
-        TradeUpdate fill2 = new TradeUpdate(
-                "trade_2", testOrder.getClientOrderId(), "EX-1", testOrder.getTradingPair(), Instant.now(),
-                new BigDecimal("50001.00"),
-                new BigDecimal("0.5"),
-                new BigDecimal("25000.50"),
-                null, true
-        );
-        testOrder.updateWithTradeUpdate(fill2);
-
-        BigDecimal expectedPrice = new BigDecimal("50000.75");
-        BigDecimal actualPrice = testOrder.getAverageExecutedPrice();
-
-        assertNotNull(actualPrice);
-        assertEquals(0, expectedPrice.compareTo(actualPrice));
-    }
-
-    @Test
-    @DisplayName("InFlightOrder가 LimitOrder record로 정확하게 변환되어야 한다.")
-    void testToLimitOrder() {
-        LimitOrder limitOrder = testOrder.toLimitOrder();
-
-        assertNotNull(limitOrder);
-        assertEquals(testOrder.getClientOrderId(), limitOrder.clientOrderId());
-        assertEquals(testOrder.getTradingPair(), limitOrder.tradingPair());
-        assertEquals(testOrder.getOrderType(), limitOrder.orderType());
-        assertEquals(0, testOrder.getPrice().compareTo(limitOrder.price()));
-        assertEquals(0, testOrder.getAmount().compareTo(limitOrder.amount()));
-        assertEquals(0, BigDecimal.ZERO.compareTo(limitOrder.filledAmount()));
-        assertEquals(0, testOrder.getCreationTimestamp().compareTo(limitOrder.creationTimestamp()));
-    }
+    @Nested
+    @DisplayName("주문 생성 및 상태 전이")
+    class OrderLifecycleTest {
 
         @Test
-        @DisplayName("Client Order ID가 불일치하면 예외가 발생하고 상태는 변경되지 않는다.")
-        void testUpdateWithOrderUpdateClientOrderIdMismatch() {
-            String exId = "EX-1";
-            testOrder.setCurrentState(InFlightOrder.State.OPEN);
-            testOrder.setExchangeOrderId(exId);
+        @DisplayName("거래소 접수 후 OPEN 상태로 전이하고 exchangeOrderId가 설정된다")
+        void transitionToOpen() {
+            order.updateWithOrderUpdate(orderUpdate(InFlightOrder.State.OPEN, "EX-1"));
 
-            OrderUpdate mismatchOrderUpdate = new OrderUpdate(
-                    testOrder.getTradingPair(),
-                    Instant.now(),
-                    testOrder.getCurrentState(),
-                    "wrongClientId",
-                    "wrongExchangeId",
-                    Map.of()
-            );
-            assertThrows(InFlightUpdateFailedException.class, () -> {
-                testOrder.updateWithOrderUpdate(mismatchOrderUpdate);
-            });
+            assertThat(order.getCurrentState()).isEqualTo(InFlightOrder.State.OPEN);
+            assertThat(order.getExchangeOrderId()).isEqualTo("EX-1");
+            assertThat(order.isDone()).isFalse();
         }
 
         @Test
-        @DisplayName("정상적인 OPEN 업데이트 시 ExchangeID와 타임스탬프가 갱신된다.")
-        void testUpdateWithOrderUpdateOpenOrder() {
-            String exId = "EX-1";
-            testOrder.setCurrentState(InFlightOrder.State.OPEN);
-            testOrder.setExchangeOrderId(exId);
+        @DisplayName("OPEN → PENDING_CANCEL → CANCELED 취소 흐름이 정상 처리된다")
+        void cancellationFlow() {
+            order.updateWithOrderUpdate(orderUpdate(InFlightOrder.State.OPEN, "EX-1"));
+            order.updateWithOrderUpdate(orderUpdate(InFlightOrder.State.PENDING_CANCEL, "EX-1"));
 
-            OrderUpdate validOrderUpdate = new OrderUpdate(
-                    testOrder.getTradingPair(),
-                    Instant.now(),
-                    testOrder.getCurrentState(),
-                    testOrder.getClientOrderId(),
-                    exId,
-                    Map.of()
-            );
-            testOrder.updateWithOrderUpdate(validOrderUpdate);
+            assertThat(order.isDone()).isFalse();
 
-            assertEquals(validOrderUpdate.exchangeOrderId(), testOrder.getExchangeOrderId());
-            assertEquals(InFlightOrder.State.OPEN, testOrder.getCurrentState());
+            order.updateWithOrderUpdate(orderUpdate(InFlightOrder.State.CANCELED, "EX-1"));
+
+            assertThat(order.isDone()).isTrue();
+            assertThat(order.getCurrentState()).isEqualTo(InFlightOrder.State.CANCELED);
         }
 
         @Test
-        @DisplayName("상태 변경(Partial) 시 체결량은 변하지 않는다.")
-        void testUpdateStateChangeOnly() {
-            String exId = "EX-1";
-            testOrder.setCurrentState(InFlightOrder.State.OPEN);
-            testOrder.setExchangeOrderId(exId);
+        @DisplayName("주문 생성 실패 시 FAILED는 최종 상태이다")
+        void failedIsTerminal() {
+            order.updateWithOrderUpdate(orderUpdate(InFlightOrder.State.FAILED, null));
 
-            OrderUpdate partialFillUpdate = new OrderUpdate(
-                        testOrder.getTradingPair(),
-                        Instant.now(),
-                        InFlightOrder.State.PARTIALLY_FILLED,
-                        testOrder.getClientOrderId(),
-                        exId,
-                        Map.of()
-            );
-
-            testOrder.updateWithOrderUpdate(partialFillUpdate);
-
-            assertEquals(InFlightOrder.State.PARTIALLY_FILLED, testOrder.getCurrentState());
-            assertEquals(0, BigDecimal.ZERO.compareTo(testOrder.getExecutedAmountBase()));
+            assertThat(order.isDone()).isTrue();
+            assertThat(order.getCurrentState().isTerminal()).isTrue();
         }
 
-    @Test
-    @DisplayName("TradeUpdate가 적용되면 체결 수량과 TradeFee(newSpotFee)가 정상적으로 갱신된다.")
-    void testUpdateWithTradeUpdateBasic() {
-        TradeFee tradeFee = TradeFee.newSpotFee(
-                testTradeFeeSchema,
-                testOrder.getTradeType(),
-                new BigDecimal("1.0"),
-                "USDT",
-                Collections.emptyList()
-        );
+        @Test
+        @DisplayName("부분 체결 후 완전 체결까지의 전체 흐름이 정상 처리된다")
+        void partialToFullFill() {
+            order.updateWithOrderUpdate(orderUpdate(InFlightOrder.State.OPEN, "EX-1"));
 
-        TradeUpdate tradeUpdate = new TradeUpdate(
-                "trade-id-1",
-                testOrder.getClientOrderId(),
-                testOrder.getExchangeOrderId(),
-                testOrder.getTradingPair(),
-                Instant.now(),
-                new BigDecimal("1.0"),
-                new BigDecimal("500.0"),
-                new BigDecimal("500.0"),
-                tradeFee,
-                true
-        );
+            order.updateWithTradeUpdate(createFill("t-1", "50000.0", "0.5", "25000.0", List.of()));
+            order.updateWithOrderUpdate(orderUpdate(InFlightOrder.State.PARTIALLY_FILLED, "EX-1"));
 
-        testOrder.updateWithTradeUpdate(tradeUpdate);
+            assertThat(order.isDone()).isFalse();
+            assertThat(order.getExecutedAmountBase()).isEqualByComparingTo(new BigDecimal("0.5"));
 
-        assertEquals(0, tradeUpdate.fillBaseAmount().compareTo(testOrder.getExecutedAmountBase()));
-        assertEquals(0, tradeUpdate.fillQuoteAmount().compareTo(testOrder.getExecutedAmountQuote()));
-        assertEquals(tradeUpdate.fillTimestamp(), testOrder.getLastUpdateTimestamp());
+            order.updateWithTradeUpdate(createFill("t-2", "50000.0", "0.5", "25000.0", List.of()));
+            order.updateWithOrderUpdate(orderUpdate(InFlightOrder.State.FILLED, "EX-1"));
 
-        BigDecimal expectedFee = new BigDecimal("5.0");
-        assertEquals(0, expectedFee.compareTo(tradeUpdate.tradeFee().getTotalAmount(tradeUpdate.fillQuoteAmount())));
+            assertThat(order.isDone()).isTrue();
+            assertThat(order.getExecutedAmountBase()).isEqualByComparingTo(new BigDecimal("1.0"));
+            assertThat(order.isOrderFilled()).isTrue();
+        }
+
+        private OrderUpdate orderUpdate(InFlightOrder.State state, String exchangeOrderId) {
+            return new OrderUpdate("BTC-USDT", Instant.now(), state, "OID-123", exchangeOrderId, null);
+        }
     }
 
-    @Test
-    @DisplayName("이미 처리된 TradeUpdate(중복 ID)는 무시되어야 한다.")
-    void testUpdateWithTradeUpdateDuplicateTradeUpdate() {
-        TradeFee zeroFee = TradeFee.newSpotFee(
-                testTradeFeeSchema,
-                testOrder.getTradeType(),
-                BigDecimal.ZERO,
-                "USDT",
-                Collections.emptyList()
-        );
+    @Nested
+    @DisplayName("OrderUpdate 적용")
+    class OrderUpdateTest {
 
-        TradeUpdate tradeUpdate = new TradeUpdate(
-                "duplicate-trade-id",
-                testOrder.getClientOrderId(),
-                testOrder.getExchangeOrderId(),
-                testOrder.getTradingPair(),
-                Instant.now(),
-                new BigDecimal("1.0"),
-                new BigDecimal("500.0"),
-                new BigDecimal("500.0"),
-                zeroFee,
-                true
-        );
+        @Test
+        @DisplayName("clientOrderId가 일치하면 exchangeOrderId와 상태가 갱신된다")
+        void validUpdate() {
+            OrderUpdate update = new OrderUpdate(
+                    "BTC-USDT", Instant.now(), InFlightOrder.State.PARTIALLY_FILLED,
+                    "OID-123", "EX-1", null
+            );
+            order.updateWithOrderUpdate(update);
 
-        testOrder.updateWithTradeUpdate(tradeUpdate);
+            assertThat(order.getExchangeOrderId()).isEqualTo("EX-1");
+            assertThat(order.getCurrentState()).isEqualTo(InFlightOrder.State.PARTIALLY_FILLED);
+        }
 
-        assertEquals(0, new BigDecimal("500.0").compareTo(testOrder.getExecutedAmountBase()));
 
-        assertThrows(InFlightUpdateFailedException.class, () -> {
-            testOrder.updateWithTradeUpdate(tradeUpdate);
-        });
+        @Test
+        @DisplayName("clientOrderId가 불일치하면 예외가 발생한다")
+        void rejectsClientOrderIdMismatch() {
+            OrderUpdate mismatch = new OrderUpdate(
+                    "BTC-USDT", Instant.now(), InFlightOrder.State.FILLED,
+                    "WRONG-ID", "WRONG-EX", null
+            );
 
-        assertEquals(0, new BigDecimal("500.0").compareTo(testOrder.getExecutedAmountBase()));
+            assertThatThrownBy(() -> order.updateWithOrderUpdate(mismatch))
+                    .isInstanceOf(InFlightUpdateFailedException.class);
+        }
     }
 
-    @Test
-    @DisplayName("여러 번의 분할 체결(Partial Fills)이 누적되어 정확히 계산된다.")
-    void testUpdateWithTradeUpdateMultipleTradeUpdates() {
-        TradeFee commonFee = TradeFee.newSpotFee(
-                testTradeFeeSchema,
-                testOrder.getTradeType(),
-                BigDecimal.ZERO,
-                "USDT",
-                Collections.emptyList()
-        );
+    @Nested
+    @DisplayName("TradeUpdate 적용")
+    class TradeUpdateTest {
 
-        BigDecimal price1 = new BigDecimal("0.5");
-        BigDecimal amount1 = new BigDecimal("500.0");
-        TradeUpdate update1 = new TradeUpdate(
-                "trade-1", testOrder.getClientOrderId(), null, testOrder.getTradingPair(), Instant.now(),
-                price1, amount1, price1.multiply(amount1), commonFee, true
-        );
+        @Test
+        @DisplayName("체결 수량과 금액이 누적된다")
+        void accumulatesFills() {
+            TradeUpdate fill = createFill("trade-1", "50000.0", "0.6", "30000.0", List.of());
+            order.updateWithTradeUpdate(fill);
 
-        testOrder.updateWithTradeUpdate(update1);
+            assertThat(order.getExecutedAmountBase()).isEqualByComparingTo(new BigDecimal("0.6"));
+            assertThat(order.getExecutedAmountQuote()).isEqualByComparingTo(new BigDecimal("30000.0"));
+        }
 
-        assertEquals(0, amount1.compareTo(testOrder.getExecutedAmountBase()));
+        @Test
+        @DisplayName("중복 tradeId는 무시되고 체결량이 중복 누적되지 않는다")
+        void ignoresDuplicateTradeId() {
+            TradeUpdate fill = createFill("dup-trade", "50000.0", "0.5", "25000.0", List.of());
+            order.updateWithTradeUpdate(fill);
+            order.updateWithTradeUpdate(fill);
+            assertThat(order.getExecutedAmountBase()).isEqualByComparingTo(new BigDecimal("0.5"));
+        }
 
-        BigDecimal price2 = new BigDecimal("1.0");
-        BigDecimal amount2 = new BigDecimal("500.0");
-        TradeUpdate update2 = new TradeUpdate(
-                "trade-2", testOrder.getClientOrderId(), null, testOrder.getTradingPair(), Instant.now(),
-                price2, amount2, price2.multiply(amount2), commonFee, true
-        );
-
-        testOrder.updateWithTradeUpdate(update2);
-
-        BigDecimal totalAmount = amount1.add(amount2); // 1000.0
-        BigDecimal totalQuote = price1.multiply(amount1).add(price2.multiply(amount2)); // 750.0
-
-        assertEquals(0, totalAmount.compareTo(testOrder.getExecutedAmountBase()));
-        assertEquals(0, totalQuote.compareTo(testOrder.getExecutedAmountQuote()));
-
-        assertEquals(0, new BigDecimal("0.75").compareTo(testOrder.getAverageExecutedPrice()));
-
-        assertEquals(InFlightOrder.State.PENDING_CREATE, testOrder.getCurrentState());
+        @Test
+        @DisplayName("TradeUpdate는 exchangeOrderId를 변경하지 않는다")
+        void doesNotChangeExchangeOrderId() {
+            assertThat(order.getExchangeOrderId()).isNull();
+            TradeUpdate fill = new TradeUpdate(
+                    "trade-1", "OID-123", "EX-IN-TRADE", "BTC-USDT",
+                    Instant.now(), new BigDecimal("50000.0"), new BigDecimal("1.0"),
+                    new BigDecimal("50000.0"), List.of(), true
+            );
+            order.updateWithTradeUpdate(fill);
+            assertThat(order.getExchangeOrderId()).isNull();
+        }
     }
 
-    @Test
-    @DisplayName("TradeUpdate는 Exchange Order ID를 절대 변경하지 않는다.")
-    void testTradeUpdateDoesNotChangeExchangeOrderId() {
-        assertNull(testOrder.getExchangeOrderId());
+    @Nested
+    @DisplayName("평균 체결가 계산")
+    class AveragePriceTest {
 
-        TradeFee zeroFee = TradeFee.newSpotFee(
-                testTradeFeeSchema, testOrder.getTradeType(), BigDecimal.ZERO, "USDT", Collections.emptyList()
-        );
-        
-        TradeUpdate tradeUpdate = new TradeUpdate(
-                "trade-id-X",
-                testOrder.getClientOrderId(),
-                "EX-IN-TRADE",
-                testOrder.getTradingPair(),
+        @Test
+        @DisplayName("체결이 없으면 null을 반환한다")
+        void returnsNullWhenNoFills() {
+            assertThat(order.getAverageExecutedPrice()).isNull();
+        }
+
+        @Test
+        @DisplayName("단일 체결 시 체결가와 동일하다")
+        void singleFill() {
+            order.updateWithTradeUpdate(createFill("t-1", "50000.0", "1.0", "50000.0", List.of()));
+            assertThat(order.getAverageExecutedPrice()).isEqualByComparingTo(new BigDecimal("50000.0"));
+        }
+
+        @Test
+        @DisplayName("두 번 분할 체결 시 가중 평균이 정확하다")
+        void weightedAverageWithTwoFills() {
+            // 0.5 BTC @ 50000.50 = 25000.25
+            order.updateWithTradeUpdate(createFill("t-1", "50000.50", "0.5", "25000.25", List.of()));
+            // 0.5 BTC @ 50001.00 = 25000.50
+            order.updateWithTradeUpdate(createFill("t-2", "50001.00", "0.5", "25000.50", List.of()));
+            // 총 50000.75 / 1.0 = 50000.75
+            assertThat(order.getAverageExecutedPrice()).isEqualByComparingTo(new BigDecimal("50000.75"));
+        }
+    }
+
+    @Nested
+    @DisplayName("수수료 계산")
+    class FeeTest {
+
+        @Test
+        @DisplayName("체결이 없으면 수수료는 0이다")
+        void zeroFeeWhenNoFills() {
+            assertThat(order.getCumulativeFeePaid()).isEqualByComparingTo(BigDecimal.ZERO);
+        }
+
+        @Test
+        @DisplayName("단일 토큰 수수료가 정확히 합산된다")
+        void singleTokenFee() {
+            List<TokenAmount> fee1 = List.of(new TokenAmount("USDT", new BigDecimal("25.0")));
+            List<TokenAmount> fee2 = List.of(new TokenAmount("USDT", new BigDecimal("25.0")));
+
+            order.updateWithTradeUpdate(createFill("t-1", "50000.0", "0.5", "25000.0", fee1));
+            order.updateWithTradeUpdate(createFill("t-2", "50000.0", "0.5", "25000.0", fee2));
+
+            assertThat(order.getCumulativeFeePaid()).isEqualByComparingTo(new BigDecimal("50.0"));
+        }
+
+        @Test
+        @DisplayName("한 체결에 여러 토큰 수수료가 있으면 전부 합산된다")
+        void multiTokenFee() {
+            List<TokenAmount> fee = List.of(
+                    new TokenAmount("BNB", new BigDecimal("0.001")),
+                    new TokenAmount("USDT", new BigDecimal("5.0"))
+            );
+            order.updateWithTradeUpdate(createFill("t-1", "50000.0", "1.0", "50000.0", fee));
+            assertThat(order.getCumulativeFeePaid()).isEqualByComparingTo(new BigDecimal("5.001"));
+        }
+
+        @Test
+        @DisplayName("수수료가 빈 리스트이면 0이다")
+        void emptyFeeList() {
+            order.updateWithTradeUpdate(createFill("t-1", "50000.0", "1.0", "50000.0", List.of()));
+            assertThat(order.getCumulativeFeePaid()).isEqualByComparingTo(BigDecimal.ZERO);
+        }
+    }
+
+    @Nested
+    @DisplayName("주문 완전 체결 판정")
+    class OrderFilledTest {
+
+        @Test
+        @DisplayName("체결량이 주문량과 같으면 체결 완료이다")
+        void filledWhenAmountMatches() {
+            order.updateWithTradeUpdate(createFill("t-1", "50000.0", "1.0", "50000.0", List.of()));
+            assertThat(order.isOrderFilled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("체결량이 허용 오차 이내이면 체결 완료로 판정한다")
+        void filledWithinTolerance() {
+            order.updateWithTradeUpdate(createFill("t-1", "50000.0", "0.99999999", "49999.9995", List.of()));
+            assertThat(order.isOrderFilled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("체결량이 부족하면 미체결이다")
+        void notFilledWhenShort() {
+            order.updateWithTradeUpdate(createFill("t-1", "50000.0", "0.5", "25000.0", List.of()));
+            assertThat(order.isOrderFilled()).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("LimitOrder 변환")
+    class ToLimitOrderTest {
+        @Test
+        @DisplayName("InFlightOrder의 필드가 LimitOrder로 정확히 매핑된다")
+        void mapsFieldsCorrectly() {
+            LimitOrder limitOrder = order.toLimitOrder();
+
+            assertThat(limitOrder.clientOrderId()).isEqualTo("OID-123");
+            assertThat(limitOrder.tradingPair()).isEqualTo("BTC-USDT");
+            assertThat(limitOrder.orderType()).isEqualTo(OrderType.LIMIT);
+            assertThat(limitOrder.price()).isEqualByComparingTo(new BigDecimal("50000.0"));
+            assertThat(limitOrder.amount()).isEqualByComparingTo(new BigDecimal("1.0"));
+            assertThat(limitOrder.filledAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        }
+    }
+
+    // === 헬퍼 ===
+
+    private TradeUpdate createFill(String tradeId, String price, String baseAmount, String quoteAmount, List<TokenAmount> fee) {
+        return new TradeUpdate(
+                tradeId, "OID-123", "EX-1", "BTC-USDT",
                 Instant.now(),
-                new BigDecimal("1.0"),
-                new BigDecimal("100.0"),
-                new BigDecimal("100.0"),
-                zeroFee,
+                new BigDecimal(price),
+                new BigDecimal(baseAmount),
+                new BigDecimal(quoteAmount),
+                fee,
                 true
         );
-        
-        testOrder.updateWithTradeUpdate(tradeUpdate);
-
-        assertNull(testOrder.getExchangeOrderId());
-        assertFalse(testOrder.getProcessedByExchangeEvent().isDone());
     }
 }

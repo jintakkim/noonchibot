@@ -102,7 +102,7 @@ public class OrderTracker {
                 triggerCompletedEvent(order);
             }
             if(currentState == InFlightOrder.State.FAILED) {
-                triggerFailureEvent(order, orderUpdate);;
+                triggerFailureEvent(order, orderUpdate);
             }
             stopTrackingOrder(order.getClientOrderId());
         }
@@ -166,7 +166,7 @@ public class OrderTracker {
                 new OrderFilledEvent(
                         order.getLastUpdateTimestamp(), order.getClientOrderId(), order.getTradingPair(),
                         order.getTradeType(), order.getOrderType(), tradeUpdate.fillBaseAmount(), tradeUpdate.fillPrice(),
-                        tradeUpdate.tradeFee(), tradeUpdate.tradeId(), tradeUpdate.exchangeOrderId()
+                        tradeUpdate.fee(), tradeUpdate.tradeId(), tradeUpdate.exchangeOrderId()
                 )
         );
     }
