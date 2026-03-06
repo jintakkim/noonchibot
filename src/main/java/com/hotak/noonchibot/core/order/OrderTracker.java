@@ -33,6 +33,14 @@ public class OrderTracker {
         return fillable;
     }
 
+    public Map<String, InFlightOrder> getActiveOrders() {
+        return new HashMap<>(activeOrders);
+    }
+
+    public Map<String, InFlightOrder> getLostOrders() {
+        return new HashMap<>(lostOrders);
+    }
+
     public void startTrackingOrder(InFlightOrder order) {
         activeOrders.put(order.getClientOrderId(), order);
     }
