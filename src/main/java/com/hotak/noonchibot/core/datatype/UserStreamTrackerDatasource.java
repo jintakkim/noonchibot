@@ -1,5 +1,7 @@
 package com.hotak.noonchibot.core.datatype;
 
+import tools.jackson.databind.JsonNode;
+
 import java.time.Instant;
 import java.util.concurrent.BlockingQueue;
 
@@ -9,7 +11,7 @@ public interface UserStreamTrackerDatasource {
      *
      * @param queue 수신된 메시지를 넣을 큐
      */
-    void listenForUserStream(BlockingQueue<Object> queue);
+    void listenForUserStream(BlockingQueue<JsonNode> queue);
 
     /**
      * 마지막 메시지 수신 시간

@@ -2,6 +2,7 @@ package com.hotak.noonchibot.core.datatype;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
 import java.util.concurrent.BlockingQueue;
@@ -12,7 +13,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class UserStreamTracker {
     private final UserStreamTrackerDatasource datasource;
 
-    public final BlockingQueue<Object> userStream = new LinkedBlockingQueue<>();
+    public final BlockingQueue<JsonNode> userStream = new LinkedBlockingQueue<>();
 
     private volatile boolean running = false;
 
