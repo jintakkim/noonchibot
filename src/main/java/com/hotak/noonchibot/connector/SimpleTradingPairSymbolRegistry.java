@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector;
 import lombok.RequiredArgsConstructor;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -10,6 +11,15 @@ import java.util.Map;
 public class SimpleTradingPairSymbolRegistry implements TradingPairSymbolRegistry {
     private final Map<String, String> symbolTradingPairMap;
     private final Map<String, String> tradingPairSymbolMap;
+
+    public SimpleTradingPairSymbolRegistry(Map<String, String> tradingPairToSymbol) {
+        Map<String, String> symbolToTp = new HashMap<>();
+        for (Map.Entry<String, String> entry : tradingPairToSymbol.entrySet()) {
+            symbolToTp.put(entry.getValue(), entry.getKey());
+        }
+        this.tradingPairSymbolMap = Map.copyOf(tradingPairToSymbol);
+        this.symbolTradingPairMap = Map.copyOf(symbolToTp);
+    }
 
     @Override
     public String convertTradingPairToExchangeSymbol(String tradingPair) {
