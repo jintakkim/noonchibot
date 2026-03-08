@@ -14,4 +14,4 @@ public record SellOrderCompletedEvent(
         String orderId,
         Instant creationTimestamp,
         String exchangeOrderId
-) {}
+) implements ExchangeEvent {}

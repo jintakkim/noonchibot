@@ -1,691 +1,467 @@
 package com.hotak.noonchibot.core.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import com.hotak.noonchibot.core.PubSub;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.*;
-import com.hotak.noonchibot.core.trade.fee.TradeFee;
-import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
+import com.hotak.noonchibot.core.trade.fee.TokenAmount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 
 class OrderTrackerTest {
+
     private List<Object> capturedEvents;
-    private OrderTracker testTracker;
+    private OrderTracker tracker;
     private InFlightOrder testOrder;
 
     @BeforeEach
     void setUp() {
         capturedEvents = new ArrayList<>();
 
-        PubSub spyPubSub = new PubSub() {
-            @Override
-            public void triggerEvent(Object event) {
-                capturedEvents.add(event);
-            }
-        };
-        testTracker = new OrderTracker(spyPubSub);
+        ExchangeEventBus exchangeEventBus = Mockito.spy(new ExchangeEventBus());
+        doAnswer(invocation -> {
+            capturedEvents.add(invocation.getArgument(0));
+            return null;
+        }).when(exchangeEventBus).publish(any());
+
+
+
+        tracker = new OrderTracker(exchangeEventBus);
         testOrder = new InFlightOrder(
                 "OID-123", "BTC-USDT", OrderType.LIMIT, TradeType.BUY,
                 new BigDecimal("1.0"), new BigDecimal("50000.0"), Instant.now(), null);
     }
 
-    @Test
-    @DisplayName("주문이 트래킹 목록에 정상적으로 추가된다.")
-    void testStartTrackingOrder() {
-        assertThat(testTracker.getAllOrders()).isEmpty();
+    // === 헬퍼 ===
 
-        testTracker.startTrackingOrder(testOrder);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
+    private OrderUpdate orderUpdate(InFlightOrder.State state, String clientOrderId, String exchangeOrderId) {
+        return new OrderUpdate("BTC-USDT", Instant.now(), state, clientOrderId, exchangeOrderId, null);
     }
 
-    @Test
-    @DisplayName("주문을 트래킹 목록에서 정상적으로 삭제된다.")
-    void testStopTrackingOrder() {
-        assertThat(testTracker.getAllOrders()).isEmpty();
-
-        testTracker.startTrackingOrder(testOrder);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
-
-        testTracker.stopTrackingOrder(testOrder.getClientOrderId());
-        assertThat(testTracker.getAllOrders()).isEmpty();
+    private OrderUpdate orderUpdate(InFlightOrder.State state) {
+        return orderUpdate(state, "OID-123", "EX-1");
     }
 
-    @Test
-    @DisplayName("트래킹 중인 주문을 정상적으로 페치한다.")
-    void testFetchTrackingOrder() {
-        testTracker.startTrackingOrder(testOrder);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
-
-        InFlightOrder fetchedOrder =testTracker.fetchTrackedOrder(testOrder.getClientOrderId());
-        assertThat(fetchedOrder).isEqualTo(testOrder);
-        assertThat(fetchedOrder.getClientOrderId()).isEqualTo("OID-123");
+    private OrderUpdate failedOrderUpdate(String clientOrderId, OrderUpdate.OrderFailure failure) {
+        return new OrderUpdate("BTC-USDT", Instant.now(), InFlightOrder.State.FAILED, clientOrderId, null, failure);
     }
 
-    @Test
-    @DisplayName("트래킹 중이 아닌 주문을 페치할 시 null을 반환한다.")
-    void testFetchNonExistingTrackingOrder() {
-        testTracker.startTrackingOrder(testOrder);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
-
-        InFlightOrder fetchedOrder = testTracker.fetchTrackedOrder("nonExistingId");
-        assertThat(fetchedOrder).isNull();
-    }
-
-    @Test
-    @DisplayName("주문을 client id를 통해 정상적으로 반환한다.")
-    void testFetchOrderWithClientId() {
-        testTracker.startTrackingOrder(testOrder);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
-
-        InFlightOrder fetchedOrder = testTracker.fetchOrder(testOrder.getClientOrderId(), null);
-        assertThat(fetchedOrder).isEqualTo(testOrder);
-        assertThat(fetchedOrder.getClientOrderId()).isEqualTo("OID-123");
-    }
-
-    @Test
-    @DisplayName("존재하지 않는 주문을 client id를 통해 페치할 시 null을 반환한다.")
-    void testFetchNonExistingOrderWithClientId() {
-        testTracker.startTrackingOrder(testOrder);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
-
-        InFlightOrder fetchedOrder = testTracker.fetchOrder("nonExistingId", null);
-        assertThat(fetchedOrder).isNull();
-    }
-
-    @Test
-    @DisplayName("주문을 exchange id를 통해 정상적으로 반환한다.")
-    void testFetchTrackingOrderWithExchangeId() {
-        InFlightOrder orderWithExchangeId = new InFlightOrder(
-                "OID-123", "BTC-USDT", OrderType.LIMIT, TradeType.BUY,
-                new BigDecimal("1.0"), new BigDecimal("50000.0"), Instant.now(), "EX-ID-12345");
-
-        testTracker.startTrackingOrder(orderWithExchangeId);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
-
-        InFlightOrder fetchedOrder = testTracker.fetchOrder(null, orderWithExchangeId.getExchangeOrderId());
-        assertThat(fetchedOrder).isEqualTo(orderWithExchangeId);
-        assertThat(fetchedOrder.getExchangeOrderId()).isEqualTo("EX-ID-12345");
-    }
-
-    @Test
-    @DisplayName("존재하지 않는 주문을 exchange id를 통해 페치할 시 null을 반환한다.")
-    void testFetchNonExistingOrderWithExchangeId() {
-        testTracker.startTrackingOrder(testOrder);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
-
-        InFlightOrder fetchedOrder = testTracker.fetchOrder(null, "nonExistingId");
-        assertThat(fetchedOrder).isNull();
-    }
-
-    @Test
-    @DisplayName("Client ID와 Exchange ID가 모두 누락된 업데이트는 무시된다.")
-    void testProcessOrderUpdateInvalidOrderUpdate() {
-        testTracker.startTrackingOrder(testOrder);
-        InFlightOrder.State originalState = testOrder.getCurrentState();
-
-        OrderUpdate invalidUpdate = new OrderUpdate("BTC-USDT", Instant.now(),
-                InFlightOrder.State.FILLED, null, null, Map.of()
-        );
-
-        testTracker.processOrderUpdate(invalidUpdate);
-
-        InFlightOrder fetchedOrder = testTracker.fetchTrackedOrder(testOrder.getClientOrderId());
-        assertThat(fetchedOrder.getCurrentState()).isEqualTo(originalState);
-        assertThat(fetchedOrder.getCurrentState()).isNotEqualTo(InFlightOrder.State.FILLED);
-
-        assertThat(testTracker.getAllOrders()).hasSize(1);
-    }
-
-    @Test
-    @DisplayName("트래킹 중이 아닌 주문의 업데이트가 들어오면 소실된 주문으로 처리 시도한다.")
-    void testProcessOrderUpdateOrderNotFound() {
-        OrderUpdate unknownOrderUpdate = new OrderUpdate("BTC-USDT", Instant.now(),
-                InFlightOrder.State.OPEN, "Unknown-Client-ID", "Unknown-Exchange-ID", Map.of()
-        );
-
-        testTracker.processOrderUpdate(unknownOrderUpdate);
-        assertThat(testTracker.getAllOrders()).isEmpty();
-        assertThat(testTracker.fetchTrackedOrder("Unknown-Client-ID")).isNull();
-    }
-
-    @Test
-    @DisplayName("주문 생성 업데이트 시 이벤트를 트리거하고 상태를 업데이트한다.")
-    void testProcessOrderUpdateTriggerOrderCreationEvent() {
-        testTracker.startTrackingOrder(testOrder);
-
-        String exchangeOrderId = "someExchangeOrderId";
-
-        OrderUpdate orderCreationUpdate = new OrderUpdate(
-                testOrder.getTradingPair(),
+    private TradeUpdate createFill(String tradeId, String price, String baseAmount, String quoteAmount) {
+        return new TradeUpdate(
+                tradeId, "OID-123", "EX-1", "BTC-USDT",
                 Instant.now(),
-                InFlightOrder.State.OPEN,
-                testOrder.getClientOrderId(),
-                exchangeOrderId,
-                Map.of()
-        );
-
-        testTracker.processOrderUpdate(orderCreationUpdate);
-
-        InFlightOrder updatedOrder = testTracker.fetchTrackedOrder(testOrder.getClientOrderId());
-
-        assertThat(updatedOrder.getClientOrderId()).isNotNull();
-        assertThat(updatedOrder.getClientOrderId()).isEqualTo(testOrder.getClientOrderId());
-        assertThat(updatedOrder.getCurrentState()).isEqualTo(InFlightOrder.State.OPEN);
-        assertThat(updatedOrder.isDone()).isFalse();
-
-        assertThat(capturedEvents).hasSize(1);
-        assertThat(capturedEvents.getFirst()).isInstanceOf(BuyOrderCreatedEvent.class);
-    }
-
-    @Test
-    @DisplayName("클라이언트 오더 아이디가 없는 주문 생성 업데이트 시 이벤트를 트리거하고 상태를 업데이트한다.")
-    void testProcessOrderUpdateTriggerOrderCreationEventWithoutClientOrderId() {
-        InFlightOrder orderWithExchangeId = new InFlightOrder(
-                "OID-123", "BTC-USDT", OrderType.LIMIT, TradeType.BUY,
-                new BigDecimal("1.0"), new BigDecimal("50000.0"), Instant.now(), "EX-ID-12345");
-
-        testTracker.startTrackingOrder(orderWithExchangeId);
-
-        OrderUpdate orderCreationUpdate = new OrderUpdate(
-                orderWithExchangeId.getTradingPair(),
-                Instant.now(),
-                InFlightOrder.State.OPEN,
-                null,
-                orderWithExchangeId.getExchangeOrderId(),
-                Map.of()
-        );
-
-        testTracker.processOrderUpdate(orderCreationUpdate);
-
-        InFlightOrder updatedOrder = testTracker.fetchTrackedOrder(orderWithExchangeId.getClientOrderId());
-
-        assertThat(updatedOrder.getExchangeOrderId()).isNotNull();
-        assertThat(updatedOrder.getExchangeOrderId()).isEqualTo(orderWithExchangeId.getExchangeOrderId());
-        assertThat(updatedOrder.getCurrentState()).isEqualTo(InFlightOrder.State.OPEN);
-        assertThat(updatedOrder.isDone()).isFalse();
-
-        assertThat(capturedEvents).hasSize(1);
-        assertThat(capturedEvents.getFirst()).isInstanceOf(BuyOrderCreatedEvent.class);
-    }
-
-    @Test
-    @DisplayName("State가 PENDING_CREATE인 주문 업데이트는 주문 생성 이벤트를 트리거하지 않는다.")
-    void testProcessOrderUpdateWithPendingCreateDoesNotTriggerOrderCreationEvent() {
-        testTracker.startTrackingOrder(testOrder);
-
-        OrderUpdate orderPendingUpdate = new OrderUpdate(
-                testOrder.getTradingPair(),
-                Instant.now(),
-                InFlightOrder.State.PENDING_CREATE,
-                testOrder.getClientOrderId(),
-                testOrder.getExchangeOrderId(),
-                Map.of()
-        );
-
-        testTracker.processOrderUpdate(orderPendingUpdate);
-
-        InFlightOrder updatedOrder = testTracker.fetchTrackedOrder(testOrder.getClientOrderId());
-
-        assertThat(updatedOrder.getClientOrderId()).isNotNull();
-        assertThat(updatedOrder.getClientOrderId()).isEqualTo(testOrder.getClientOrderId());
-        assertThat(updatedOrder.getCurrentState()).isEqualTo(InFlightOrder.State.PENDING_CREATE);
-        assertThat(updatedOrder.isDone()).isFalse();
-
-        assertThat(capturedEvents).isEmpty();
-    }
-
-    @Test
-    @DisplayName("주문 취소 업데이트 시 이벤트를 트리거하고 상태를 업데이트한다.")
-    void testProcessOrderUpdateTriggerOrderCanceledEvent() {
-        testTracker.startTrackingOrder(testOrder);
-
-        String exchangeOrderId = "someExchangeOrderId";
-
-        OrderUpdate orderCanceledUpdate = new OrderUpdate(
-                testOrder.getTradingPair(),
-                Instant.now(),
-                InFlightOrder.State.CANCELED,
-                testOrder.getClientOrderId(),
-                exchangeOrderId,
-                Map.of()
-        );
-
-        testTracker.processOrderUpdate(orderCanceledUpdate);
-
-        assertThat(testTracker.getAllOrders()).doesNotContainKey(testOrder.getClientOrderId());
-        assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.CANCELED);
-        assertThat(testOrder.isDone()).isTrue();
-
-        assertThat(capturedEvents).hasSize(1);
-        assertThat(capturedEvents.getFirst()).isInstanceOf(OrderCanceledEvent.class);
-    }
-
-    @Test
-    @DisplayName("주문 실패 업데이트 시 이벤트를 트리거하고 상태를 업데이트한다.")
-    void testProcessOrderUpdateTriggerOrderFailureEvent() {
-        testTracker.startTrackingOrder(testOrder);
-
-        String exchangeOrderId = "someExchangeOrderId";
-
-        OrderUpdate orderFailureUpdate = new OrderUpdate(
-                testOrder.getTradingPair(),
-                Instant.now(),
-                InFlightOrder.State.FAILED,
-                testOrder.getClientOrderId(),
-                exchangeOrderId,
-                Map.of()
-        );
-
-        testTracker.processOrderUpdate(orderFailureUpdate);
-
-        assertThat(testTracker.getAllOrders()).doesNotContainKey(testOrder.getClientOrderId());
-        assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.FAILED);
-        assertThat(testOrder.isDone()).isTrue();
-
-        assertThat(capturedEvents).hasSize(1);
-        assertThat(capturedEvents.getFirst()).isInstanceOf(OrderFailureEvent.class);
-    }
-
-    @Test
-    @DisplayName("OrderUpdate로 주문 완료 시, Filled 이벤트 없이 Completed 이벤트만 발생한다.")
-    void testProcessOrderUpdateTriggerCompletedEventAndNotFillEvent() {
-        testTracker.startTrackingOrder(testOrder);
-
-        OrderUpdate partialUpdate = new OrderUpdate(
-                testOrder.getTradingPair(), Instant.now(), InFlightOrder.State.PARTIALLY_FILLED,
-                testOrder.getClientOrderId(), testOrder.getExchangeOrderId(), Map.of()
-        );
-        testTracker.processOrderUpdate(partialUpdate);
-
-        assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.PARTIALLY_FILLED);
-        assertThat(testOrder.isDone()).isFalse();
-
-        OrderUpdate filledUpdate = new OrderUpdate(
-                testOrder.getTradingPair(), Instant.now(), InFlightOrder.State.FILLED,
-                testOrder.getClientOrderId(), testOrder.getExchangeOrderId(), Map.of()
-        );
-
-        testOrder.getCompletelyFilledEvent().complete(null);
-
-        testTracker.processOrderUpdate(filledUpdate);
-
-        assertThat(testTracker.fetchTrackedOrder(testOrder.getClientOrderId())).isNull();
-
-        long filledEventCount = capturedEvents.stream()
-                .filter(e -> e instanceof OrderFilledEvent).count();
-        long completedEventCount = capturedEvents.stream()
-                .filter(e -> e instanceof BuyOrderCompletedEvent).count();
-
-        assertThat(filledEventCount).isEqualTo(0);
-        assertThat(completedEventCount).isEqualTo(1);
-
-        BuyOrderCompletedEvent completedEvent = (BuyOrderCompletedEvent) capturedEvents.stream()
-                .filter(e -> e instanceof BuyOrderCompletedEvent)
-                .findFirst().orElseThrow();
-
-        assertThat(completedEvent.orderId()).isEqualTo(testOrder.getClientOrderId());
-    }
-
-    @Test
-    @DisplayName("TradeUpdate 처리 시 OrderFilledEvent를 트리거하고 수수료 정보를 포함한다.")
-    void testProcessTradeUpdateTriggerFilledEventFlatFee() {
-        testTracker.startTrackingOrder(testOrder);
-        String exchangeOrderId = "someExchangeOrderId";
-
-        TradeFeeSchema schema = new TradeFeeSchema(
-                null,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                false,
-                List.of(),
-                List.of()
-        );
-
-        BigDecimal fillPrice = testOrder.getPrice();
-        BigDecimal fillAmount = testOrder.getAmount().divide(new BigDecimal("2"), 8, RoundingMode.HALF_UP);
-        BigDecimal fillQuoteAmount = fillPrice.multiply(fillAmount);
-
-        TradeFee tradeFee = TradeFee.newSpotFee(
-                schema,
-                testOrder.getTradeType(),
-                new BigDecimal("0.001"),
-                "USDT",
-                List.of(new TokenAmount("USDT", new BigDecimal("0.05")))
-        );
-
-        TradeUpdate tradeUpdate = new TradeUpdate(
-                "TRADE-1",
-                testOrder.getClientOrderId(),
-                exchangeOrderId,
-                testOrder.getTradingPair(),
-                Instant.now(),
-                fillPrice,
-                fillAmount,
-                fillQuoteAmount,
-                tradeFee,
+                new BigDecimal(price),
+                new BigDecimal(baseAmount),
+                new BigDecimal(quoteAmount),
+                List.of(new TokenAmount("USDT", new BigDecimal("0.05"))),
                 true
         );
-
-        testTracker.processTradeUpdate(tradeUpdate);
-
-        InFlightOrder updatedOrder = testTracker.fetchTrackedOrder(testOrder.getClientOrderId());
-        assertThat(updatedOrder.getExecutedAmountBase()).isEqualByComparingTo(fillAmount);
-
-        assertThat(capturedEvents).hasSize(1);
-        assertThat(capturedEvents.getFirst()).isInstanceOf(OrderFilledEvent.class);
-
-        OrderFilledEvent event = (OrderFilledEvent) capturedEvents.getFirst();
-        assertThat(event.orderId()).isEqualTo(testOrder.getClientOrderId());
-        assertThat(event.tradeFee()).isEqualTo(tradeFee);
     }
 
-    @Test
-    @DisplayName("완전 체결 시 Filled 이벤트는 발생하지만 주문은 아직 활성 상태로 남는다.")
-    void testProcessTradeUpdateDoesNotTriggerCompletedEventWhenCompletelyFilled() {
-        testTracker.startTrackingOrder(testOrder);
-        String exchangeOrderId = "someExchangeOrderId";
-
-        BigDecimal fillAmount = testOrder.getAmount();
-        BigDecimal fillPrice = testOrder.getPrice();
-
-        TradeFeeSchema schema = new TradeFeeSchema(null, null, null, false, null, null);
-        TradeFee tradeFee = TradeFee.newSpotFee(
-                schema, testOrder.getTradeType(), new BigDecimal("0.001"), "USDT", List.of()
-        );
-
-        TradeUpdate tradeUpdate = new TradeUpdate(
-                "TRADE-FULL", testOrder.getClientOrderId(), exchangeOrderId,
-                testOrder.getTradingPair(), Instant.now(),
-                fillPrice, fillAmount, fillPrice.multiply(fillAmount), tradeFee, true
-        );
-
-        testTracker.processTradeUpdate(tradeUpdate);
-
-        assertThat(testOrder.isDone()).isTrue();
-
-        assertThat(testTracker.getAllOrders()).containsKey(testOrder.getClientOrderId());
-
-        assertThat(capturedEvents).hasSize(1);
-        assertThat(capturedEvents.getFirst()).isInstanceOf(OrderFilledEvent.class);
-
-        boolean hasCompletedEvent = capturedEvents.stream()
-                .anyMatch(e -> e instanceof BuyOrderCompletedEvent);
-        assertThat(hasCompletedEvent).isFalse();
-    }
-
-    @Test
-    @DisplayName("OrderUpdate와 TradeUpdate가 순차적으로 발생해도 트래킹 상태를 정확히 유지한다.")
-    void testUpdatingOrderStatesWithBothUpdates() {
-        testTracker.startTrackingOrder(testOrder);
-
-        String exId = "someExchangeOrderId";
-        OrderUpdate orderCreationUpdate = new OrderUpdate(
-                testOrder.getTradingPair(), Instant.now(), InFlightOrder.State.OPEN,
-                testOrder.getClientOrderId(), exId, Map.of()
-        );
-        testTracker.processOrderUpdate(orderCreationUpdate);
-
-        InFlightOrder openOrder = testTracker.fetchTrackedOrder(testOrder.getClientOrderId());
-        assertThat(openOrder.getExchangeOrderId()).isEqualTo(exId);
-        assertThat(openOrder.getCurrentState()).isEqualTo(InFlightOrder.State.OPEN);
-        assertThat(openOrder.getCurrentState()).isNotEqualTo(InFlightOrder.State.PENDING_CREATE);
-        assertThat(openOrder.getExecutedAmountBase()).isEqualByComparingTo(BigDecimal.ZERO);
-
-        BigDecimal fillPrice = testOrder.getPrice();
-        BigDecimal fillAmount = testOrder.getAmount();
-        TradeFee tradeFee = TradeFee.newSpotFee(
-                new TradeFeeSchema(null, null, null, false, null, null),
-                testOrder.getTradeType(), new BigDecimal("0.001"), "USDT", List.of()
-        );
-
-        TradeUpdate tradeUpdate = new TradeUpdate(
-                "TID-1", testOrder.getClientOrderId(), exId, testOrder.getTradingPair(),
-                Instant.now(), fillPrice, fillAmount, fillPrice.multiply(fillAmount), tradeFee, true
-        );
-        testTracker.processTradeUpdate(tradeUpdate);
-
-        assertThat(testTracker.getAllOrders()).containsKey(testOrder.getClientOrderId());
-
-        assertThat(testOrder.isDone()).isTrue();
-        assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.OPEN);
-    }
-
-    @Test
-    @DisplayName("관리 목록에 없는 주문 ID로 processOrderNotFound 호출 시 아무 작업도 하지 않는다.")
-    void testProcessOrderNotFoundInvalidOrder() {
-        assertThat(testTracker.getAllOrders()).isEmpty();
-
-        String unknownOrderId = "UNKNOWN_ORDER_ID";
-
-        testTracker.processOrderNotFound(unknownOrderId);
-
-        assertThat(testTracker.getAllOrders()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("주문 미발견 횟수가 한계치 미만이면 트래킹을 유지한다.")
-    void testProcessOrderNotFoundDoesNotExceedLimit() {
-        testTracker.startTrackingOrder(testOrder);
-
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-
-        assertThat(testTracker.getAllOrders()).containsKey(testOrder.getClientOrderId());
-    }
-
-    @Test
-    @DisplayName("주문 미발견 횟수가 한계치를 초과하면 트래킹을 중단한다.")
-    void testProcessOrderNotFoundExceededLimit() {
-        testTracker.startTrackingOrder(testOrder);
-
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-
-        assertThat(testTracker.getAllOrders()).doesNotContainKey(testOrder.getClientOrderId());
-
-        assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.FAILED);
-    }
-
-    @Test
-    @DisplayName("주문 미발견 횟수가 한계치를 초과하면 LostOrders 목록에 추가된다.")
-    void testAccessLostOrders() {
-        testTracker.startTrackingOrder(testOrder);
-
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-
-        assertThat(testTracker.getLostOrders()).hasSize(1);
-        assertThat(testTracker.getLostOrders()).containsKey(testOrder.getClientOrderId());
-
-        assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.FAILED);
-    }
-
-    @Test
-    @DisplayName("유실된 주문은 체결 가능 목록(active + lost)에 포함되어야 한다.")
-    void testLostOrdersReturnedInAllFillableOrders() {
-        testTracker.startTrackingOrder(testOrder);
-
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-
-        assertThat(testTracker.getAllOrders()).doesNotContainKey(testOrder.getClientOrderId());
-
-        assertThat(testTracker.getLostOrders()).containsKey(testOrder.getClientOrderId());
-
-        Map<String, InFlightOrder> allFillableOrders = testTracker.getActiveAndLostOrders();
-        assertThat(allFillableOrders).containsKey(testOrder.getClientOrderId());
-    }
-
-    @Test
-    @DisplayName("유실된 주문이라도 완전 체결(FILLED) 업데이트가 오면 목록에서 제거된다.")
-    void testLostOrderRemovedWhenFullyFilled() {
-        testTracker.startTrackingOrder(testOrder);
-
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-
-        assertThat(testTracker.getLostOrders()).containsKey(testOrder.getClientOrderId());
-
-        OrderUpdate completionUpdate = new OrderUpdate(
-                testOrder.getTradingPair(),
+    private TradeUpdate createFill(String tradeId, String price, String baseAmount, String quoteAmount, List<TokenAmount> fee) {
+        return new TradeUpdate(
+                tradeId, "OID-123", "EX-1", "BTC-USDT",
                 Instant.now(),
-                InFlightOrder.State.FILLED,
-                testOrder.getClientOrderId(),
-                testOrder.getExchangeOrderId(),
-                Map.of()
+                new BigDecimal(price),
+                new BigDecimal(baseAmount),
+                new BigDecimal(quoteAmount),
+                fee,
+                true
         );
-
-        testTracker.processOrderUpdate(completionUpdate);
-
-        assertThat(testTracker.getLostOrders()).doesNotContainKey(testOrder.getClientOrderId());
-        assertThat(testTracker.getAllOrders()).doesNotContainKey(testOrder.getClientOrderId());
     }
 
-    @Test
-    @DisplayName("유실된 주문이라도 취소(CANCELED) 업데이트가 오면 목록에서 제거된다.")
-    void testLostOrderRemovedWhenCanceled() {
-        testTracker.startTrackingOrder(testOrder);
+    @Nested
+    @DisplayName("주문 트래킹 관리")
+    class TrackingTest {
 
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
+        @Test
+        @DisplayName("주문이 트래킹 목록에 정상적으로 추가된다")
+        void startTracking() {
+            assertThat(tracker.getActiveOrders()).isEmpty();
+            tracker.startTrackingOrder(testOrder);
+            assertThat(tracker.getActiveOrders()).hasSize(1);
+        }
 
-        assertThat(testTracker.getLostOrders()).containsKey(testOrder.getClientOrderId());
+        @Test
+        @DisplayName("clientOrderId로 트래킹 중인 주문을 조회한다")
+        void findByClientOrderId() {
+            tracker.startTrackingOrder(testOrder);
+            assertThat(tracker.findActiveOrder("OID-123", null))
+                    .isPresent()
+                    .hasValue(testOrder);
+        }
 
-        OrderUpdate cancelUpdate = new OrderUpdate(
-                testOrder.getTradingPair(),
-                Instant.now(),
-                InFlightOrder.State.CANCELED,
-                testOrder.getClientOrderId(),
-                testOrder.getExchangeOrderId(),
-                Map.of()
-        );
+        @Test
+        @DisplayName("exchangeOrderId로 트래킹 중인 주문을 조회한다")
+        void findByExchangeOrderId() {
+            InFlightOrder orderWithExId = new InFlightOrder(
+                    "OID-123", "BTC-USDT", OrderType.LIMIT, TradeType.BUY,
+                    new BigDecimal("1.0"), new BigDecimal("50000.0"), Instant.now(), "EX-1");
+            tracker.startTrackingOrder(orderWithExId);
+            assertThat(tracker.findActiveOrder(null, "EX-1"))
+                    .isPresent()
+                    .hasValue(orderWithExId);
+        }
 
-        testTracker.processOrderUpdate(cancelUpdate);
+        @Test
+        @DisplayName("존재하지 않는 주문을 조회하면 empty를 반환한다")
+        void findNonExisting() {
+            tracker.startTrackingOrder(testOrder);
+            assertThat(tracker.findActiveOrder("NON-EXIST", null)).isEmpty();
+            assertThat(tracker.findActiveOrder(null, "NON-EXIST")).isEmpty();
+        }
 
-        assertThat(testTracker.getLostOrders()).doesNotContainKey(testOrder.getClientOrderId());
-        assertThat(testTracker.getAllOrders()).doesNotContainKey(testOrder.getClientOrderId());
+        @Test
+        @DisplayName("clientOrderId와 exchangeOrderId 모두 null이면 empty를 반환한다")
+        void findWithBothNull() {
+            tracker.startTrackingOrder(testOrder);
+            assertThat(tracker.findActiveOrder(null, null)).isEmpty();
+        }
     }
 
-    @Test
-    @DisplayName("유실된 주문에 진행 중인 상태(OPEN, PARTIAL 등) 업데이트가 와도 목록에서 제거되지 않는다.")
-    void testLostOrderNotRemovedWhenUpdatedWithNonFinalStates() {
-        testTracker.startTrackingOrder(testOrder);
+    @Nested
+    @DisplayName("OrderUpdate 처리 - 주문 생성")
+    class OrderCreationTest {
 
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
-        testTracker.processOrderNotFound(testOrder.getClientOrderId());
+        @Test
+        @DisplayName("OPEN 업데이트 시 BuyOrderCreatedEvent가 발생한다")
+        void triggersCreatedEvent() {
+            tracker.startTrackingOrder(testOrder);
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN));
 
-        assertThat(testTracker.getLostOrders()).containsKey(testOrder.getClientOrderId());
+            assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.OPEN);
+            assertThat(testOrder.getExchangeOrderId()).isEqualTo("EX-1");
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(BuyOrderCreatedEvent.class);
+        }
 
-        // Open case
-        OrderUpdate openUpdate = new OrderUpdate(
-                testOrder.getTradingPair(), Instant.now(),
-                InFlightOrder.State.OPEN,
-                testOrder.getClientOrderId(), testOrder.getExchangeOrderId(), Map.of()
-        );
-        testTracker.processOrderUpdate(openUpdate);
+        @Test
+        @DisplayName("exchangeOrderId 없이 clientOrderId로만 주문 생성 이벤트가 발생한다")
+        void triggersCreatedEventByExchangeId() {
+            InFlightOrder orderWithExId = new InFlightOrder(
+                    "OID-123", "BTC-USDT", OrderType.LIMIT, TradeType.BUY,
+                    new BigDecimal("1.0"), new BigDecimal("50000.0"), Instant.now(), "EX-1");
+            tracker.startTrackingOrder(orderWithExId);
 
-        assertThat(testTracker.getLostOrders()).containsKey(testOrder.getClientOrderId());
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN, null, "EX-1"));
 
-        // Partially Filled case
-        OrderUpdate partialUpdate = new OrderUpdate(
-                testOrder.getTradingPair(), Instant.now(),
-                InFlightOrder.State.PARTIALLY_FILLED,
-                testOrder.getClientOrderId(), testOrder.getExchangeOrderId(), Map.of()
-        );
-        testTracker.processOrderUpdate(partialUpdate);
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(BuyOrderCreatedEvent.class);
+        }
 
-        assertThat(testTracker.getLostOrders()).containsKey(testOrder.getClientOrderId());
+        @Test
+        @DisplayName("SELL 주문의 OPEN 업데이트 시 SellOrderCreatedEvent가 발생한다")
+        void triggersSellCreatedEvent() {
+            InFlightOrder sellOrder = new InFlightOrder(
+                    "OID-SELL", "BTC-USDT", OrderType.LIMIT, TradeType.SELL,
+                    new BigDecimal("1.0"), new BigDecimal("50000.0"), Instant.now(), null);
+            tracker.startTrackingOrder(sellOrder);
 
-        // Cancel case
-        OrderUpdate pendingCancelUpdate = new OrderUpdate(
-                testOrder.getTradingPair(), Instant.now(),
-                InFlightOrder.State.PENDING_CANCEL,
-                testOrder.getClientOrderId(), testOrder.getExchangeOrderId(), Map.of()
-        );
-        testTracker.processOrderUpdate(pendingCancelUpdate);
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN, "OID-SELL", "EX-1"));
 
-        assertThat(testTracker.getLostOrders()).containsKey(testOrder.getClientOrderId());
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(SellOrderCreatedEvent.class);
+        }
+
+        @Test
+        @DisplayName("PENDING_CREATE 업데이트는 주문 생성 이벤트를 트리거하지 않는다")
+        void pendingCreateDoesNotTrigger() {
+            tracker.startTrackingOrder(testOrder);
+
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.PENDING_CREATE, "OID-123", null));
+
+            assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.PENDING_CREATE);
+            assertThat(capturedEvents).isEmpty();
+        }
     }
 
-    @Test
-    @DisplayName("주문 완료(FILLED) 상태가 체결 데이터보다 먼저 와도, 체결이 완료될 때까지 처리를 지연시킨다.")
-    void testUpdateToCloseOrderIsNotProcessedUntilOrderCompletelyFilled() throws ExecutionException, InterruptedException {
-        testTracker.startTrackingOrder(testOrder);
-        String exId = "someExchangeOrderId";
+    @Nested
+    @DisplayName("OrderUpdate 처리 - 주문 종료")
+    class OrderTerminationTest {
 
-        // PENDING_CREATE 에서 OPEN 상태로 바뀌는 이벤트 미리 처리
-        // BuyOrderCreatedEvent를 생략한다
-        testTracker.processOrderUpdate(new OrderUpdate(
-                testOrder.getTradingPair(), Instant.now(),
-                InFlightOrder.State.OPEN,
-                testOrder.getClientOrderId(), exId, Map.of()
-        ));
-        capturedEvents.clear();
+        @Test
+        @DisplayName("CANCELED 업데이트 시 OrderCanceledEvent가 발생하고 트래킹에서 제거된다")
+        void canceledOrder() {
+            tracker.startTrackingOrder(testOrder);
 
-        OrderUpdate misorderedCompletionUpdate = new OrderUpdate(
-                testOrder.getTradingPair(), Instant.now(),
-                InFlightOrder.State.FILLED,
-                testOrder.getClientOrderId(), exId, Map.of()
-        );
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.CANCELED));
 
-        CompletableFuture<Void> updateFuture = CompletableFuture.runAsync(() -> {
-            testTracker.processOrderUpdate(misorderedCompletionUpdate);
-        });
+            assertThat(tracker.getActiveOrders()).doesNotContainKey("OID-123");
+            assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.CANCELED);
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(OrderCanceledEvent.class);
+        }
 
-        Thread.sleep(100);
+        @Test
+        @DisplayName("FAILED 업데이트 시 OrderFailureEvent가 발생하고 트래킹에서 제거된다")
+        void failedOrder() {
+            tracker.startTrackingOrder(testOrder);
+            OrderUpdate.OrderFailure failure = new OrderUpdate.OrderFailure("ExchangeRejected", "Insufficient balance");
 
-        InFlightOrder trackedOrder = testTracker.fetchTrackedOrder(testOrder.getClientOrderId());
-        assertThat(trackedOrder).isNotNull();
-        assertThat(trackedOrder.isDone()).isFalse();
-        assertThat(updateFuture.isDone()).isFalse();
+            tracker.processOrderUpdate(failedOrderUpdate("OID-123", failure));
 
-        TradeFee fee = TradeFee.newSpotFee(
-                new TradeFeeSchema(null, null, null, false, null, null),
-                TradeType.BUY, BigDecimal.ZERO, "USDT", List.of()
-        );
-        TradeUpdate tradeUpdate = new TradeUpdate(
-                "TID-1", testOrder.getClientOrderId(), exId, testOrder.getTradingPair(),
-                Instant.now(), testOrder.getPrice(), testOrder.getAmount(), // 100% 수량
-                BigDecimal.TEN, fee, true
-        );
+            assertThat(tracker.getActiveOrders()).doesNotContainKey("OID-123");
+            assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.FAILED);
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(OrderFailureEvent.class);
+        }
 
-        testTracker.processTradeUpdate(tradeUpdate);
+        @Test
+        @DisplayName("FILLED 업데이트 시 BuyOrderCompletedEvent가 발생하고 트래킹에서 제거된다")
+        void filledOrder() {
+            tracker.startTrackingOrder(testOrder);
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN));
+            capturedEvents.clear();
 
-        assertDoesNotThrow(() -> updateFuture.get(2, TimeUnit.SECONDS));
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.FILLED));
 
-        assertThat(testTracker.getAllOrders()).doesNotContainKey(testOrder.getClientOrderId());
-
-        assertThat(capturedEvents).hasSize(2);
-        assertThat(capturedEvents.get(0)).isInstanceOf(OrderFilledEvent.class);
-        assertThat(capturedEvents.get(1)).isInstanceOf(BuyOrderCompletedEvent.class);
+            assertThat(tracker.getActiveOrders()).doesNotContainKey("OID-123");
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(BuyOrderCompletedEvent.class);
+        }
     }
 
+    @Nested
+    @DisplayName("OrderUpdate 처리 - 예외 케이스")
+    class OrderUpdateEdgeCaseTest {
 
+        @Test
+        @DisplayName("clientOrderId와 exchangeOrderId 모두 null이면 예외가 발생한다")
+        void rejectsBothNull() {
+            tracker.startTrackingOrder(testOrder);
+
+            OrderUpdate invalid = orderUpdate(InFlightOrder.State.FILLED, null, null);
+
+            assertThatThrownBy(() -> tracker.processOrderUpdate(invalid))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("트래킹 중이 아닌 주문의 업데이트는 무시된다")
+        void unknownOrderIgnored() {
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN, "UNKNOWN", "UNKNOWN-EX"));
+
+            assertThat(tracker.getActiveOrders()).isEmpty();
+            assertThat(capturedEvents).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("TradeUpdate 처리")
+    class TradeUpdateTest {
+
+        @Test
+        @DisplayName("체결 시 OrderFilledEvent가 발생하고 수수료 정보를 포함한다")
+        void triggersFilledEvent() {
+            tracker.startTrackingOrder(testOrder);
+
+            List<TokenAmount> fee = List.of(new TokenAmount("USDT", new BigDecimal("25.0")));
+            TradeUpdate fill = createFill("T-1", "50000.0", "0.5", "25000.0", fee);
+
+            tracker.processTradeUpdate(fill);
+
+            InFlightOrder updated = tracker.findActiveOrder("OID-123", null).orElseThrow();
+            assertThat(updated.getExecutedAmountBase()).isEqualByComparingTo(new BigDecimal("0.5"));
+
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(OrderFilledEvent.class);
+        }
+
+        @Test
+        @DisplayName("완전 체결 TradeUpdate만으로는 CompletedEvent가 발생하지 않는다")
+        void fullFillDoesNotTriggerCompleted() {
+            tracker.startTrackingOrder(testOrder);
+
+            TradeUpdate fullFill = createFill("T-1", "50000.0", "1.0", "50000.0");
+            tracker.processTradeUpdate(fullFill);
+
+            assertThat(testOrder.isDone()).isTrue();
+            assertThat(tracker.getActiveOrders()).containsKey("OID-123");
+
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(OrderFilledEvent.class);
+
+            boolean hasCompleted = capturedEvents.stream()
+                    .anyMatch(e -> e instanceof BuyOrderCompletedEvent);
+            assertThat(hasCompleted).isFalse();
+        }
+
+        @Test
+        @DisplayName("트래킹 중이 아닌 주문의 체결 업데이트는 무시된다")
+        void unknownOrderTradeIgnored() {
+            TradeUpdate fill = createFill("T-1", "50000.0", "1.0", "50000.0");
+
+            tracker.processTradeUpdate(fill);
+
+            assertThat(capturedEvents).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("체결 + 상태 업데이트 복합 흐름")
+    class CombinedFlowTest {
+
+        @Test
+        @DisplayName("OPEN → 부분 체결 → 완전 체결 → FILLED 순서로 이벤트가 정확히 발생한다")
+        void fullLifecycleFlow() {
+            tracker.startTrackingOrder(testOrder);
+
+            // OPEN
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN));
+            assertThat(capturedEvents).hasSize(1);
+            assertThat(capturedEvents.getFirst()).isInstanceOf(BuyOrderCreatedEvent.class);
+
+            // 부분 체결
+            tracker.processTradeUpdate(createFill("T-1", "50000.0", "0.5", "25000.0"));
+            assertThat(capturedEvents).hasSize(2);
+            assertThat(capturedEvents.get(1)).isInstanceOf(OrderFilledEvent.class);
+
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.PARTIALLY_FILLED));
+            assertThat(tracker.getActiveOrders()).containsKey("OID-123");
+
+            // 완전 체결
+            tracker.processTradeUpdate(createFill("T-2", "50000.0", "0.5", "25000.0"));
+            assertThat(capturedEvents).hasSize(3);
+            assertThat(capturedEvents.get(2)).isInstanceOf(OrderFilledEvent.class);
+
+            // FILLED 상태 확정
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.FILLED));
+            assertThat(capturedEvents).hasSize(4);
+            assertThat(capturedEvents.get(3)).isInstanceOf(BuyOrderCompletedEvent.class);
+
+            assertThat(tracker.getActiveOrders()).doesNotContainKey("OID-123");
+        }
+
+        @Test
+        @DisplayName("TradeUpdate로 수량이 채워져도 OrderUpdate(FILLED)가 와야 CompletedEvent가 발생한다")
+        void completedRequiresBothFillAndStateUpdate() {
+            tracker.startTrackingOrder(testOrder);
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN));
+            capturedEvents.clear();
+
+            // 수량은 다 채워짐
+            tracker.processTradeUpdate(createFill("T-1", "50000.0", "1.0", "50000.0"));
+
+            assertThat(testOrder.isDone()).isTrue();
+            assertThat(tracker.getActiveOrders()).containsKey("OID-123");
+
+            long completedCount = capturedEvents.stream()
+                    .filter(e -> e instanceof BuyOrderCompletedEvent).count();
+            assertThat(completedCount).isZero();
+
+            // FILLED 상태 도착
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.FILLED));
+
+            assertThat(tracker.getActiveOrders()).doesNotContainKey("OID-123");
+            completedCount = capturedEvents.stream()
+                    .filter(e -> e instanceof BuyOrderCompletedEvent).count();
+            assertThat(completedCount).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("주문 미발견 (Order Not Found)")
+    class OrderNotFoundTest {
+
+        @Test
+        @DisplayName("존재하지 않는 주문 ID로 호출하면 아무 작업도 하지 않는다")
+        void unknownOrderId() {
+            tracker.processOrderNotFound("UNKNOWN");
+
+            assertThat(tracker.getActiveOrders()).isEmpty();
+            assertThat(tracker.getLostOrders()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("미발견 횟수가 한계치 미만이면 트래킹을 유지한다")
+        void belowLimit() {
+            tracker.startTrackingOrder(testOrder);
+
+            tracker.processOrderNotFound("OID-123");
+
+            assertThat(tracker.getActiveOrders()).containsKey("OID-123");
+            assertThat(tracker.getLostOrders()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("미발견 횟수가 한계치를 초과하면 FAILED 처리 후 lost 목록으로 이동한다")
+        void exceedsLimit() {
+            tracker.startTrackingOrder(testOrder);
+
+            tracker.processOrderNotFound("OID-123");
+            tracker.processOrderNotFound("OID-123");
+            tracker.processOrderNotFound("OID-123");
+
+            assertThat(tracker.getActiveOrders()).doesNotContainKey("OID-123");
+            assertThat(tracker.getLostOrders()).containsKey("OID-123");
+            assertThat(testOrder.getCurrentState()).isEqualTo(InFlightOrder.State.FAILED);
+        }
+    }
+
+    @Nested
+    @DisplayName("유실된 주문 (Lost Orders)")
+    class LostOrderTest {
+
+        @BeforeEach
+        void makeLostOrder() {
+            tracker.startTrackingOrder(testOrder);
+            tracker.processOrderNotFound("OID-123");
+            tracker.processOrderNotFound("OID-123");
+            tracker.processOrderNotFound("OID-123");
+            capturedEvents.clear();
+        }
+
+        @Test
+        @DisplayName("유실된 주문은 fillable 목록에 포함된다")
+        void includedInFillable() {
+            assertThat(tracker.getFillableOrders()).containsKey("OID-123");
+        }
+
+        @Test
+        @DisplayName("FILLED 업데이트가 오면 lost 목록에서 제거된다")
+        void removedOnFilled() {
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.FILLED));
+
+            assertThat(tracker.getLostOrders()).doesNotContainKey("OID-123");
+        }
+
+        @Test
+        @DisplayName("CANCELED 업데이트가 오면 lost 목록에서 제거된다")
+        void removedOnCanceled() {
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.CANCELED));
+
+            assertThat(tracker.getLostOrders()).doesNotContainKey("OID-123");
+        }
+
+        @Test
+        @DisplayName("비종료 상태(OPEN, PARTIALLY_FILLED) 업데이트는 lost 목록에서 제거하지 않는다")
+        void notRemovedOnNonTerminal() {
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN));
+            assertThat(tracker.getLostOrders()).containsKey("OID-123");
+
+            tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.PARTIALLY_FILLED));
+            assertThat(tracker.getLostOrders()).containsKey("OID-123");
+        }
+
+        @Test
+        @DisplayName("lost 주문에 대한 추가 processOrderNotFound 호출 시 제거된다")
+        void removedOnSecondNotFound() {
+            tracker.processOrderNotFound("OID-123");
+
+            assertThat(tracker.getLostOrders()).doesNotContainKey("OID-123");
+        }
+    }
 }

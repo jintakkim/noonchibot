@@ -9,5 +9,5 @@ public record OrderFailureEvent (
         Instant timestamp,
         String orderId,
         OrderType orderType,
-        OrderUpdate.OrderFailure orderFailure
-) {}
+        OrderUpdate.OrderFailure orderFailure //nullable
+) implements ExchangeEvent {}

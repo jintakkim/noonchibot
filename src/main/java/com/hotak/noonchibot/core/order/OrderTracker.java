@@ -11,16 +11,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class OrderTracker {
-    private static final int TRADE_FILLS_WAIT_TIMEOUT = 5;
     private static final int LOST_ORDER_COUNT_LIMIT = 2;
 
-    private final PubSub eventPublisher;
+    private final ExchangeEventPublisher eventPublisher;
 
     private final Map<String, InFlightOrder> activeOrders = new ConcurrentHashMap<>();
     private final Map<String, InFlightOrder> lostOrders = new ConcurrentHashMap<>();
     private final Map<String, Integer> orderNotFoundRecords = new ConcurrentHashMap<>();
 
-    public OrderTracker(PubSub eventPublisher) {
+    public OrderTracker(ExchangeEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
     }
 
@@ -145,7 +144,7 @@ public class OrderTracker {
                     order.getAmount(), order.getPrice(), order.getClientOrderId(),
                     order.getCreationTimestamp(), order.getExchangeOrderId()
             );
-            eventPublisher.triggerEvent(event);
+            eventPublisher.publish(event);
 
         } else {
             SellOrderCreatedEvent event = new SellOrderCreatedEvent(
@@ -153,16 +152,16 @@ public class OrderTracker {
                     order.getAmount(), order.getPrice(), order.getClientOrderId(),
                     order.getCreationTimestamp(), order.getExchangeOrderId()
             );
-            eventPublisher.triggerEvent(event);
+            eventPublisher.publish(event);
         }
     }
 
     private void triggerCanceledEvent(InFlightOrder order) {
-        eventPublisher.triggerEvent(new OrderCanceledEvent(order.getLastUpdateTimestamp(), order.getClientOrderId(), order.getExchangeOrderId()));
+        eventPublisher.publish(new OrderCanceledEvent(order.getLastUpdateTimestamp(), order.getClientOrderId(), order.getExchangeOrderId()));
     }
 
     private void triggerOrderFilledEvent(InFlightOrder order, TradeUpdate tradeUpdate) {
-        eventPublisher.triggerEvent(
+        eventPublisher.publish(
                 new OrderFilledEvent(
                         order.getLastUpdateTimestamp(), order.getClientOrderId(), order.getTradingPair(),
                         order.getTradeType(), order.getOrderType(), tradeUpdate.fillBaseAmount(), tradeUpdate.fillPrice(),
@@ -178,7 +177,7 @@ public class OrderTracker {
                     order.getAmount(), order.getPrice(), order.getClientOrderId(),
                     order.getCreationTimestamp(), order.getExchangeOrderId()
             );
-            eventPublisher.triggerEvent(event);
+            eventPublisher.publish(event);
 
         } else {
             SellOrderCompletedEvent event = new SellOrderCompletedEvent(
@@ -186,7 +185,7 @@ public class OrderTracker {
                     order.getAmount(), order.getPrice(), order.getClientOrderId(),
                     order.getCreationTimestamp(), order.getExchangeOrderId()
             );
-            eventPublisher.triggerEvent(event);
+            eventPublisher.publish(event);
         }
     }
 
@@ -197,7 +196,7 @@ public class OrderTracker {
                 order.getOrderType(),
                 orderUpdate.orderFailure()
         );
-        eventPublisher.triggerEvent(event);
+        eventPublisher.publish(event);
     }
 
 
