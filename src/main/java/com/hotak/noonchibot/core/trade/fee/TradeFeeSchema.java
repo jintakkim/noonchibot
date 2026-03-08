@@ -22,7 +22,7 @@ public record TradeFeeSchema(
          */
         BigDecimal takerPercentFee,
         /*
-         * 매수(Buy) 시 수수료를 나중에 수익에서 차감할지 여부.
+         * 매수(Buy) 시 수수료를 나중에 리턴에서 차감할지 여부.
          */
         boolean buyPercentFeeDeductedFromReturns,
         /*
