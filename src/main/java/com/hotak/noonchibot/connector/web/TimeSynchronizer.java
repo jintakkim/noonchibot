@@ -24,6 +24,9 @@ public class TimeSynchronizer {
     private final ServerTimeProvider serverTimeProvider;
     private final TaskScheduler taskScheduler;
 
+    /**
+     * @return ms 단위 반환
+     */
     public long serverTime() {
         return (long) (getSystemMs() + timeOffsetMs());
     }
