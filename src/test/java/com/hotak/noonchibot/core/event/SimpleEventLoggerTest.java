@@ -200,9 +200,7 @@ public class SimpleEventLoggerTest {
                 BigDecimal.ONE,
                 null,
                 "1",
-                "1",
-                null,
-                PositionAction.NIL
+                "1"
         );
     }
 }

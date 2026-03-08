@@ -3,22 +3,16 @@ package com.hotak.noonchibot.core.order;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
 import com.hotak.noonchibot.core.trade.fee.TokenAmount;
-import com.hotak.noonchibot.core.trade.fee.TradeFee;
-import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.*;
 
 class InFlightOrderTest {
 

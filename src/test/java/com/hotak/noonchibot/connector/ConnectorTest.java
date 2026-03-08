@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.connector;
 
+import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.datatype.TradeUpdate;
@@ -23,11 +24,9 @@ public abstract class ConnectorTest {
     abstract void setOrderPriceQuantum(Connector connector, String tradingPair, BigDecimal quantum);
     abstract void setOrderSizeQuantum(Connector connector, String tradingPair, BigDecimal quantum);
 
-
     InFlightOrder createInFlightOrder(String orderId, String tradingPair, TradeType tradeType,  BigDecimal amount, BigDecimal price, Instant creationTimestamp) {
         return new InFlightOrder(orderId, tradingPair, OrderType.LIMIT, tradeType, amount, price, creationTimestamp);
     }
-
 
     @Test
     @DisplayName("제한 없으면 실제 잔고 반환")
@@ -80,7 +79,7 @@ public abstract class ConnectorTest {
         Connector connector = getConnector(balanceLimit);
         setAvailableBalance(connector, "USDT", new BigDecimal("10000"));
         EventLogger eventLogger = getEventLogger(connector);
-        eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "ETH-USDT", TradeType.SELL, OrderType.MARKET, BigDecimal.valueOf(1000), BigDecimal.ONE, null, null, null, null, null));
+        eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "ETH-USDT", TradeType.SELL, OrderType.MARKET, BigDecimal.valueOf(1000), BigDecimal.ONE, null, null, null));
         // 1000 USDT 매도로 획득
         BigDecimal result = connector.getAvailableBalance("USDT");
         // 제한 1000 + 체결 1000 = 2000, 실제 잔고 10000 -> min = 2000
@@ -98,7 +97,7 @@ public abstract class ConnectorTest {
         InFlightOrder buyOrder = createInFlightOrder("1", "BTC-USDT", TradeType.BUY, new BigDecimal("0.01"), BigDecimal.valueOf(30000), Instant.parse("2022-12-04T08:07:00Z"));
         addInFlightOrder(connector, buyOrder);
         EventLogger eventLogger = getEventLogger(connector);
-        eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "ETH-USDT", TradeType.SELL, OrderType.MARKET, BigDecimal.valueOf(500), BigDecimal.ONE, null, null, null, null, null));
+        eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "ETH-USDT", TradeType.SELL, OrderType.MARKET, BigDecimal.valueOf(500), BigDecimal.ONE, null, null, null));
         // 500 USDT 매도로 획득
         BigDecimal result = connector.getAvailableBalance("USDT");
         assertThat(result).isEqualByComparingTo("1200");
@@ -219,7 +218,7 @@ public abstract class ConnectorTest {
         void buyFillIncreasesBaseDecreasesQuote() {
             Connector connector = getConnector(null);
             EventLogger eventLogger = getEventLogger(connector);
-            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.BUY, OrderType.MARKET, BigDecimal.valueOf(50000), BigDecimal.ONE, null, null, null, null, null));
+            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.BUY, OrderType.MARKET, BigDecimal.valueOf(50000), BigDecimal.ONE, null, null, null));
             Map<String, BigDecimal> balances = connector.getOrderFilledBalances();
 
             assertThat(balances.get("BTC")).isEqualByComparingTo("1");
@@ -231,7 +230,7 @@ public abstract class ConnectorTest {
         void sellFillDecreasesBaseIncreasesQuote() {
             Connector connector = getConnector(null);
             EventLogger eventLogger = getEventLogger(connector);
-            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.SELL, OrderType.MARKET, BigDecimal.valueOf(50000), BigDecimal.ONE, null, null, null, null, null));
+            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.SELL, OrderType.MARKET, BigDecimal.valueOf(50000), BigDecimal.ONE, null, null, null));
             Map<String, BigDecimal> balances = connector.getOrderFilledBalances();
 
             assertThat(balances.get("BTC")).isEqualByComparingTo("-1");
@@ -243,9 +242,9 @@ public abstract class ConnectorTest {
         void accumulatesMultipleFills() {
             Connector connector = getConnector(null);
             EventLogger eventLogger = getEventLogger(connector);
-            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.BUY, OrderType.MARKET, BigDecimal.valueOf(50000), BigDecimal.ONE, null, null, null, null, null));
-            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.BUY, OrderType.MARKET, BigDecimal.valueOf(51000), new BigDecimal("0.5"), null, null, null, null, null));
-            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.BUY, OrderType.MARKET, BigDecimal.valueOf(52000), new BigDecimal("0.3"), null, null, null, null, null));
+            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.BUY, OrderType.MARKET, BigDecimal.valueOf(50000), BigDecimal.ONE, null, null, null));
+            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.BUY, OrderType.MARKET, BigDecimal.valueOf(51000), new BigDecimal("0.5"), null, null, null));
+            eventLogger.onEvent(new OrderFilledEvent(Instant.parse("2022-12-04T08:07:00Z"), "1", "BTC-USDT", TradeType.BUY, OrderType.MARKET, BigDecimal.valueOf(52000), new BigDecimal("0.3"), null, null, null));
             Map<String, BigDecimal> balances = connector.getOrderFilledBalances();
             // BTC: 1 + 0.5 - 0.3 = 1.2
             assertThat(balances.get("BTC")).isEqualByComparingTo("1.2");
