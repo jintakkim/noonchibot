@@ -1,8 +1,10 @@
 package com.hotak.noonchibot.core.order;
 
+import com.hotak.noonchibot.core.event.ExchangeEvent;
+
 import java.time.Instant;
 
-public record OrderUpdate(
+public record OrderUpdateEvent(
         String tradingPair,
         Instant updateTimestamp,
         InFlightOrder.State newState,
@@ -10,10 +12,9 @@ public record OrderUpdate(
         String exchangeOrderId,
         //nullable
         OrderFailure orderFailure
+) implements ExchangeEvent {
 
-) {
-
-    public OrderUpdate(
+    public OrderUpdateEvent(
             String tradingPair,
             Instant updateTimestamp,
             InFlightOrder.State newState,

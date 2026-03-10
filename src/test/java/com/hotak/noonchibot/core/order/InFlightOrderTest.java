@@ -81,19 +81,19 @@ class InFlightOrderTest {
             assertThat(order.isOrderFilled()).isTrue();
         }
 
-        private OrderUpdate orderUpdate(InFlightOrder.State state, String exchangeOrderId) {
-            return new OrderUpdate("BTC-USDT", Instant.now(), state, "OID-123", exchangeOrderId, null);
+        private OrderUpdateEvent orderUpdate(InFlightOrder.State state, String exchangeOrderId) {
+            return new OrderUpdateEvent("BTC-USDT", Instant.now(), state, "OID-123", exchangeOrderId, null);
         }
     }
 
     @Nested
-    @DisplayName("OrderUpdate 적용")
-    class OrderUpdateTest {
+    @DisplayName("OrderUpdateEvent 적용")
+    class OrderUpdateEventTest {
 
         @Test
         @DisplayName("clientOrderId가 일치하면 exchangeOrderId와 상태가 갱신된다")
         void validUpdate() {
-            OrderUpdate update = new OrderUpdate(
+            OrderUpdateEvent update = new OrderUpdateEvent(
                     "BTC-USDT", Instant.now(), InFlightOrder.State.PARTIALLY_FILLED,
                     "OID-123", "EX-1", null
             );
@@ -107,7 +107,7 @@ class InFlightOrderTest {
         @Test
         @DisplayName("clientOrderId가 불일치하면 예외가 발생한다")
         void rejectsClientOrderIdMismatch() {
-            OrderUpdate mismatch = new OrderUpdate(
+            OrderUpdateEvent mismatch = new OrderUpdateEvent(
                     "BTC-USDT", Instant.now(), InFlightOrder.State.FILLED,
                     "WRONG-ID", "WRONG-EX", null
             );
@@ -118,13 +118,13 @@ class InFlightOrderTest {
     }
 
     @Nested
-    @DisplayName("TradeUpdate 적용")
-    class TradeUpdateTest {
+    @DisplayName("TradeUpdateEvent 적용")
+    class TradeUpdateEventTest {
 
         @Test
         @DisplayName("체결 수량과 금액이 누적된다")
         void accumulatesFills() {
-            TradeUpdate fill = createFill("trade-1", "50000.0", "0.6", "30000.0", List.of());
+            TradeUpdateEvent fill = createFill("trade-1", "50000.0", "0.6", "30000.0", List.of());
             order.updateWithTradeUpdate(fill);
 
             assertThat(order.getExecutedAmountBase()).isEqualByComparingTo(new BigDecimal("0.6"));
@@ -134,7 +134,7 @@ class InFlightOrderTest {
         @Test
         @DisplayName("중복 tradeId는 무시되고 체결량이 중복 누적되지 않는다")
         void ignoresDuplicateTradeId() {
-            TradeUpdate fill = createFill("dup-trade", "50000.0", "0.5", "25000.0", List.of());
+            TradeUpdateEvent fill = createFill("dup-trade", "50000.0", "0.5", "25000.0", List.of());
             order.updateWithTradeUpdate(fill);
             order.updateWithTradeUpdate(fill);
             assertThat(order.getExecutedAmountBase()).isEqualByComparingTo(new BigDecimal("0.5"));
@@ -144,7 +144,7 @@ class InFlightOrderTest {
         @DisplayName("TradeUpdate는 exchangeOrderId를 변경하지 않는다")
         void doesNotChangeExchangeOrderId() {
             assertThat(order.getExchangeOrderId()).isNull();
-            TradeUpdate fill = new TradeUpdate(
+            TradeUpdateEvent fill = new TradeUpdateEvent(
                     "trade-1", "OID-123", "EX-IN-TRADE", "BTC-USDT",
                     Instant.now(), new BigDecimal("50000.0"), new BigDecimal("1.0"),
                     new BigDecimal("50000.0"), List.of(), true
@@ -269,8 +269,8 @@ class InFlightOrderTest {
 
     // === 헬퍼 ===
 
-    private TradeUpdate createFill(String tradeId, String price, String baseAmount, String quoteAmount, List<TokenAmount> fee) {
-        return new TradeUpdate(
+    private TradeUpdateEvent createFill(String tradeId, String price, String baseAmount, String quoteAmount, List<TokenAmount> fee) {
+        return new TradeUpdateEvent(
                 tradeId, "OID-123", "EX-1", "BTC-USDT",
                 Instant.now(),
                 new BigDecimal(price),

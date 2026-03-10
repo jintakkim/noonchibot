@@ -1,12 +1,13 @@
 package com.hotak.noonchibot.core.datatype;
 
+import com.hotak.noonchibot.core.event.ExchangeEvent;
 import com.hotak.noonchibot.core.trade.fee.TokenAmount;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-public record TradeUpdate(
+public record TradeUpdateEvent(
         String tradeId,
         String clientOrderId,
         String exchangeOrderId,
@@ -18,5 +19,5 @@ public record TradeUpdate(
         List<TokenAmount> fee,
         //nullable if dex
         Boolean isMaker
-) {
+) implements ExchangeEvent {
 }

@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.core.order;
 
 import com.hotak.noonchibot.core.datatype.TradeType;
-import com.hotak.noonchibot.core.datatype.TradeUpdate;
+import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
 import com.hotak.noonchibot.core.trade.fee.TokenAmount;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +47,7 @@ public class InFlightOrder {
     private BigDecimal executedAmountBase = BigDecimal.ZERO;
     private BigDecimal executedAmountQuote = BigDecimal.ZERO;
     private Instant lastUpdateTimestamp;
-    private final Map<String, TradeUpdate> orderFills = new HashMap<>();
+    private final Map<String, TradeUpdateEvent> orderFills = new HashMap<>();
 
     public InFlightOrder(String clientOrderId, String tradingPair, OrderType orderType, TradeType tradeType,
                          BigDecimal amount, BigDecimal price, Instant creationTimestamp, String exchangeOrderId) {
@@ -91,46 +91,46 @@ public class InFlightOrder {
         return executedAmountBase.compareTo(amount.abs()) >= 0;
     }
 
-    public synchronized void updateWithTradeUpdate(TradeUpdate tradeUpdate) {
-        String tradeId = tradeUpdate.tradeId();
+    public synchronized void updateWithTradeUpdate(TradeUpdateEvent tradeUpdateEvent) {
+        String tradeId = tradeUpdateEvent.tradeId();
 
         if (orderFills.containsKey(tradeId)) {
             log.warn("이미 처리된 tradeId: {} 입니다.", tradeId);
             return;
         }
 
-        boolean clientIdMatch = Objects.equals(tradeUpdate.clientOrderId(), this.clientOrderId);
-        boolean exchangeIdMatch = Objects.equals(tradeUpdate.exchangeOrderId(), this.exchangeOrderId);
+        boolean clientIdMatch = Objects.equals(tradeUpdateEvent.clientOrderId(), this.clientOrderId);
+        boolean exchangeIdMatch = Objects.equals(tradeUpdateEvent.exchangeOrderId(), this.exchangeOrderId);
 
         if (!clientIdMatch && !exchangeIdMatch) {
             throw new InFlightUpdateFailedException("주문 ID가 일치하지 않습니다.");
         }
 
-        orderFills.put(tradeId, tradeUpdate);
-        executedAmountBase = executedAmountBase.add(tradeUpdate.fillBaseAmount());
-        executedAmountQuote = executedAmountQuote.add(tradeUpdate.fillQuoteAmount());
-        this.lastUpdateTimestamp = tradeUpdate.fillTimestamp();
+        orderFills.put(tradeId, tradeUpdateEvent);
+        executedAmountBase = executedAmountBase.add(tradeUpdateEvent.fillBaseAmount());
+        executedAmountQuote = executedAmountQuote.add(tradeUpdateEvent.fillQuoteAmount());
+        this.lastUpdateTimestamp = tradeUpdateEvent.fillTimestamp();
     }
 
-    public synchronized void updateWithOrderUpdate(OrderUpdate orderUpdate) {
-        if (!Objects.equals(orderUpdate.clientOrderId(), this.clientOrderId) &&
-                !Objects.equals(orderUpdate.exchangeOrderId(), this.exchangeOrderId)) {
+    public synchronized void updateWithOrderUpdate(OrderUpdateEvent orderUpdateEvent) {
+        if (!Objects.equals(orderUpdateEvent.clientOrderId(), this.clientOrderId) &&
+                !Objects.equals(orderUpdateEvent.exchangeOrderId(), this.exchangeOrderId)) {
             throw new InFlightUpdateFailedException("주문 아이디가 일치하지 않습니다.");
         }
 
         String prevExchangeOrderId = this.exchangeOrderId;
         State prevCurrentState = this.currentState;
 
-        if (this.exchangeOrderId == null && orderUpdate.exchangeOrderId() != null) {
-            this.exchangeOrderId = orderUpdate.exchangeOrderId();
+        if (this.exchangeOrderId == null && orderUpdateEvent.exchangeOrderId() != null) {
+            this.exchangeOrderId = orderUpdateEvent.exchangeOrderId();
         }
 
-        this.currentState = orderUpdate.newState();
+        this.currentState = orderUpdateEvent.newState();
 
         boolean isChanged = !Objects.equals(prevExchangeOrderId, this.exchangeOrderId) || prevCurrentState != this.currentState;
 
         if (isChanged) {
-            this.lastUpdateTimestamp = orderUpdate.updateTimestamp();
+            this.lastUpdateTimestamp = orderUpdateEvent.updateTimestamp();
         }
     }
 

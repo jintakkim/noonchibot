@@ -16,10 +16,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
-public class PollingTradingRuleRegistry implements TradingRuleRegistry {
+public abstract class PollingTradingRuleRegistry implements TradingRuleRegistry {
     private final RestAssistant restAssistant;
-    private final TradingPairSymbolRegistry symbolRegistry;
-    private final String requestPath;
     private final TradingRuleParser parser;
     private final TaskScheduler scheduler;
     private final Duration pollingInterval;
@@ -37,14 +35,10 @@ public class PollingTradingRuleRegistry implements TradingRuleRegistry {
     }
 
     public void update() {
-        JsonNode body = restAssistant.executeRequestAndGetJsonBody(
-                RestRequest.builder()
-                        .method(HttpMethod.GET)
-                        .pathUrl(requestPath)
-                        .params(Map.of("symbols", symbolRegistry.getAllExchangeSymbols()))
-                        .build()
-        );
+        JsonNode body = restAssistant.executeRequestAndGetJsonBody(createRequest());
         this.tradingRules = parser.parse(body).stream()
                 .collect(Collectors.toMap(TradingRule::tradingPair, Function.identity()));
     }
+
+    protected abstract RestRequest createRequest();
 }

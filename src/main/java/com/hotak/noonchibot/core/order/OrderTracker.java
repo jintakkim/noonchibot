@@ -1,6 +1,5 @@
 package com.hotak.noonchibot.core.order;
 
-import com.hotak.noonchibot.core.PubSub;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.*;
 import lombok.extern.slf4j.Slf4j;
@@ -14,13 +13,22 @@ public class OrderTracker {
     private static final int LOST_ORDER_COUNT_LIMIT = 2;
 
     private final ExchangeEventPublisher eventPublisher;
+    private final ExchangeEventSubscriber eventSubscriber;
 
     private final Map<String, InFlightOrder> activeOrders = new ConcurrentHashMap<>();
     private final Map<String, InFlightOrder> lostOrders = new ConcurrentHashMap<>();
     private final Map<String, Integer> orderNotFoundRecords = new ConcurrentHashMap<>();
 
-    public OrderTracker(ExchangeEventPublisher eventPublisher) {
+    public OrderTracker(ExchangeEventPublisher eventPublisher, ExchangeEventSubscriber eventSubscriber) {
         this.eventPublisher = eventPublisher;
+        this.eventSubscriber = eventSubscriber;
+        subscribeEvents();
+    }
+
+    private void subscribeEvents() {
+        eventSubscriber.subscribe(OrderRequestSentEvent.class, event -> startTrackingOrder(event.inFlightOrder()));
+        eventSubscriber.subscribe(OrderUpdateEvent.class, this::processOrderUpdate);
+        eventSubscriber.subscribe(TradeUpdateEvent.class, this::processTradeUpdate);
     }
 
     /**
@@ -69,28 +77,28 @@ public class OrderTracker {
                 .findAny();
     }
 
-    public void processTradeUpdate(TradeUpdate tradeUpdate) {
-        InFlightOrder trackedOrder = getFillableOrders().get(tradeUpdate.clientOrderId());
+    public void processTradeUpdate(TradeUpdateEvent tradeUpdateEvent) {
+        InFlightOrder trackedOrder = getFillableOrders().get(tradeUpdateEvent.clientOrderId());
         if (trackedOrder == null) {
-            log.error("can't find tracked order for client order id: {}", tradeUpdate.clientOrderId());
+            log.error("can't find tracked order for client order id: {}", tradeUpdateEvent.clientOrderId());
             return;
         }
-        trackedOrder.updateWithTradeUpdate(tradeUpdate);
-        triggerOrderFilledEvent(trackedOrder, tradeUpdate);
+        trackedOrder.updateWithTradeUpdate(tradeUpdateEvent);
+        triggerOrderFilledEvent(trackedOrder, tradeUpdateEvent);
     }
 
-    public void processOrderUpdate(OrderUpdate orderUpdate) {
-        if (orderUpdate.clientOrderId() == null && orderUpdate.exchangeOrderId() == null) {
+    public void processOrderUpdate(OrderUpdateEvent orderUpdateEvent) {
+        if (orderUpdateEvent.clientOrderId() == null && orderUpdateEvent.exchangeOrderId() == null) {
             throw new IllegalArgumentException("OrderUpdate에 오더 아이디 정보가 없습니다.");
         }
-        Optional<InFlightOrder> optTrackedOrder = findActiveOrder(orderUpdate.clientOrderId(), orderUpdate.exchangeOrderId());
+        Optional<InFlightOrder> optTrackedOrder = findActiveOrder(orderUpdateEvent.clientOrderId(), orderUpdateEvent.exchangeOrderId());
         if(optTrackedOrder.isEmpty()) {
-            handleLostOrder(orderUpdate);
+            handleLostOrder(orderUpdateEvent);
             return;
         }
         InFlightOrder order = optTrackedOrder.get();
         InFlightOrder.State prevState = order.getCurrentState();
-        order.updateWithOrderUpdate(orderUpdate);
+        order.updateWithOrderUpdate(orderUpdateEvent);
         if(isOrderCreation(prevState, order)) triggerCreatedEvent(order);
         if(order.isDone()) {
             InFlightOrder.State currentState = order.getCurrentState();
@@ -101,7 +109,7 @@ public class OrderTracker {
                 triggerCompletedEvent(order);
             }
             if(currentState == InFlightOrder.State.FAILED) {
-                triggerFailureEvent(order, orderUpdate);
+                triggerFailureEvent(order, orderUpdateEvent);
             }
             stopTrackingOrder(order.getClientOrderId());
         }
@@ -117,7 +125,7 @@ public class OrderTracker {
             orderNotFoundRecords.merge(clientOrderId, 1, Integer::sum);
             if (orderNotFoundRecords.get(clientOrderId) > LOST_ORDER_COUNT_LIMIT && !trackedOrder.getCurrentState().isTerminal()) {
                 log.warn("주문 {}({})을 소실된 주문으로 처리합니다.", clientOrderId, trackedOrder.getExchangeOrderId());
-                processOrderUpdate(new OrderUpdate(
+                processOrderUpdate(new OrderUpdateEvent(
                         trackedOrder.getTradingPair(),
                         Instant.now(),
                         InFlightOrder.State.FAILED,
@@ -160,12 +168,12 @@ public class OrderTracker {
         eventPublisher.publish(new OrderCanceledEvent(order.getLastUpdateTimestamp(), order.getClientOrderId(), order.getExchangeOrderId()));
     }
 
-    private void triggerOrderFilledEvent(InFlightOrder order, TradeUpdate tradeUpdate) {
+    private void triggerOrderFilledEvent(InFlightOrder order, TradeUpdateEvent tradeUpdateEvent) {
         eventPublisher.publish(
                 new OrderFilledEvent(
                         order.getLastUpdateTimestamp(), order.getClientOrderId(), order.getTradingPair(),
-                        order.getTradeType(), order.getOrderType(), tradeUpdate.fillBaseAmount(), tradeUpdate.fillPrice(),
-                        tradeUpdate.fee(), tradeUpdate.tradeId(), tradeUpdate.exchangeOrderId()
+                        order.getTradeType(), order.getOrderType(), tradeUpdateEvent.fillBaseAmount(), tradeUpdateEvent.fillPrice(),
+                        tradeUpdateEvent.fee(), tradeUpdateEvent.tradeId(), tradeUpdateEvent.exchangeOrderId()
                 )
         );
     }
@@ -189,12 +197,12 @@ public class OrderTracker {
         }
     }
 
-    private void triggerFailureEvent(InFlightOrder order, OrderUpdate orderUpdate) {
+    private void triggerFailureEvent(InFlightOrder order, OrderUpdateEvent orderUpdateEvent) {
         OrderFailureEvent event = new OrderFailureEvent(
                 order.getLastUpdateTimestamp(),
                 order.getClientOrderId(),
                 order.getOrderType(),
-                orderUpdate.orderFailure()
+                orderUpdateEvent.orderFailure()
         );
         eventPublisher.publish(event);
     }
@@ -203,11 +211,11 @@ public class OrderTracker {
     /**
      * 네트워크 문제등의 이유로 트레킹에 실패한 오더가 뒤늦게 오는 경우 완전히 제거
      */
-    private void handleLostOrder(OrderUpdate orderUpdate) {
-        Optional<InFlightOrder> optLostOrder = findLostOrder(orderUpdate.clientOrderId(), orderUpdate.exchangeOrderId());
+    private void handleLostOrder(OrderUpdateEvent orderUpdateEvent) {
+        Optional<InFlightOrder> optLostOrder = findLostOrder(orderUpdateEvent.clientOrderId(), orderUpdateEvent.exchangeOrderId());
         if (optLostOrder.isEmpty()) return;
         InFlightOrder lostOrder = optLostOrder.get();
-        InFlightOrder.State state = orderUpdate.newState();
+        InFlightOrder.State state = orderUpdateEvent.newState();
         if (state.isTerminal()) {
             lostOrders.remove(lostOrder.getClientOrderId());
             log.debug("종료된 lost order를 목록에서 제거했습니다: {}", lostOrder.getClientOrderId());
