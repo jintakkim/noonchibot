@@ -2,7 +2,6 @@ package com.hotak.noonchibot.core.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.hotak.noonchibot.core.PubSub;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.trade.fee.TokenAmount;
@@ -39,7 +38,7 @@ class OrderTrackerTest {
 
 
 
-        tracker = new OrderTracker(exchangeEventBus);
+        tracker = new OrderTracker(exchangeEventBus, exchangeEventBus);
         testOrder = new InFlightOrder(
                 "OID-123", "BTC-USDT", OrderType.LIMIT, TradeType.BUY,
                 new BigDecimal("1.0"), new BigDecimal("50000.0"), Instant.now(), null);
@@ -47,20 +46,20 @@ class OrderTrackerTest {
 
     // === 헬퍼 ===
 
-    private OrderUpdate orderUpdate(InFlightOrder.State state, String clientOrderId, String exchangeOrderId) {
-        return new OrderUpdate("BTC-USDT", Instant.now(), state, clientOrderId, exchangeOrderId, null);
+    private OrderUpdateEvent orderUpdate(InFlightOrder.State state, String clientOrderId, String exchangeOrderId) {
+        return new OrderUpdateEvent("BTC-USDT", Instant.now(), state, clientOrderId, exchangeOrderId, null);
     }
 
-    private OrderUpdate orderUpdate(InFlightOrder.State state) {
+    private OrderUpdateEvent orderUpdate(InFlightOrder.State state) {
         return orderUpdate(state, "OID-123", "EX-1");
     }
 
-    private OrderUpdate failedOrderUpdate(String clientOrderId, OrderUpdate.OrderFailure failure) {
-        return new OrderUpdate("BTC-USDT", Instant.now(), InFlightOrder.State.FAILED, clientOrderId, null, failure);
+    private OrderUpdateEvent failedOrderUpdate(String clientOrderId, OrderUpdateEvent.OrderFailure failure) {
+        return new OrderUpdateEvent("BTC-USDT", Instant.now(), InFlightOrder.State.FAILED, clientOrderId, null, failure);
     }
 
-    private TradeUpdate createFill(String tradeId, String price, String baseAmount, String quoteAmount) {
-        return new TradeUpdate(
+    private TradeUpdateEvent createFill(String tradeId, String price, String baseAmount, String quoteAmount) {
+        return new TradeUpdateEvent(
                 tradeId, "OID-123", "EX-1", "BTC-USDT",
                 Instant.now(),
                 new BigDecimal(price),
@@ -71,8 +70,8 @@ class OrderTrackerTest {
         );
     }
 
-    private TradeUpdate createFill(String tradeId, String price, String baseAmount, String quoteAmount, List<TokenAmount> fee) {
-        return new TradeUpdate(
+    private TradeUpdateEvent createFill(String tradeId, String price, String baseAmount, String quoteAmount, List<TokenAmount> fee) {
+        return new TradeUpdateEvent(
                 tradeId, "OID-123", "EX-1", "BTC-USDT",
                 Instant.now(),
                 new BigDecimal(price),
@@ -133,7 +132,7 @@ class OrderTrackerTest {
     }
 
     @Nested
-    @DisplayName("OrderUpdate 처리 - 주문 생성")
+    @DisplayName("OrderUpdateEvent 처리 - 주문 생성")
     class OrderCreationTest {
 
         @Test
@@ -189,7 +188,7 @@ class OrderTrackerTest {
     }
 
     @Nested
-    @DisplayName("OrderUpdate 처리 - 주문 종료")
+    @DisplayName("OrderUpdateEvent 처리 - 주문 종료")
     class OrderTerminationTest {
 
         @Test
@@ -209,7 +208,7 @@ class OrderTrackerTest {
         @DisplayName("FAILED 업데이트 시 OrderFailureEvent가 발생하고 트래킹에서 제거된다")
         void failedOrder() {
             tracker.startTrackingOrder(testOrder);
-            OrderUpdate.OrderFailure failure = new OrderUpdate.OrderFailure("ExchangeRejected", "Insufficient balance");
+            OrderUpdateEvent.OrderFailure failure = new OrderUpdateEvent.OrderFailure("ExchangeRejected", "Insufficient balance");
 
             tracker.processOrderUpdate(failedOrderUpdate("OID-123", failure));
 
@@ -235,15 +234,15 @@ class OrderTrackerTest {
     }
 
     @Nested
-    @DisplayName("OrderUpdate 처리 - 예외 케이스")
-    class OrderUpdateEdgeCaseTest {
+    @DisplayName("OrderUpdateEvent 처리 - 예외 케이스")
+    class OrderUpdateEventEdgeCaseTest {
 
         @Test
         @DisplayName("clientOrderId와 exchangeOrderId 모두 null이면 예외가 발생한다")
         void rejectsBothNull() {
             tracker.startTrackingOrder(testOrder);
 
-            OrderUpdate invalid = orderUpdate(InFlightOrder.State.FILLED, null, null);
+            OrderUpdateEvent invalid = orderUpdate(InFlightOrder.State.FILLED, null, null);
 
             assertThatThrownBy(() -> tracker.processOrderUpdate(invalid))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -260,8 +259,8 @@ class OrderTrackerTest {
     }
 
     @Nested
-    @DisplayName("TradeUpdate 처리")
-    class TradeUpdateTest {
+    @DisplayName("TradeUpdateEvent 처리")
+    class TradeUpdateEventTest {
 
         @Test
         @DisplayName("체결 시 OrderFilledEvent가 발생하고 수수료 정보를 포함한다")
@@ -269,7 +268,7 @@ class OrderTrackerTest {
             tracker.startTrackingOrder(testOrder);
 
             List<TokenAmount> fee = List.of(new TokenAmount("USDT", new BigDecimal("25.0")));
-            TradeUpdate fill = createFill("T-1", "50000.0", "0.5", "25000.0", fee);
+            TradeUpdateEvent fill = createFill("T-1", "50000.0", "0.5", "25000.0", fee);
 
             tracker.processTradeUpdate(fill);
 
@@ -285,7 +284,7 @@ class OrderTrackerTest {
         void fullFillDoesNotTriggerCompleted() {
             tracker.startTrackingOrder(testOrder);
 
-            TradeUpdate fullFill = createFill("T-1", "50000.0", "1.0", "50000.0");
+            TradeUpdateEvent fullFill = createFill("T-1", "50000.0", "1.0", "50000.0");
             tracker.processTradeUpdate(fullFill);
 
             assertThat(testOrder.isDone()).isTrue();
@@ -302,7 +301,7 @@ class OrderTrackerTest {
         @Test
         @DisplayName("트래킹 중이 아닌 주문의 체결 업데이트는 무시된다")
         void unknownOrderTradeIgnored() {
-            TradeUpdate fill = createFill("T-1", "50000.0", "1.0", "50000.0");
+            TradeUpdateEvent fill = createFill("T-1", "50000.0", "1.0", "50000.0");
 
             tracker.processTradeUpdate(fill);
 
@@ -346,7 +345,7 @@ class OrderTrackerTest {
         }
 
         @Test
-        @DisplayName("TradeUpdate로 수량이 채워져도 OrderUpdate(FILLED)가 와야 CompletedEvent가 발생한다")
+        @DisplayName("TradeUpdate로 수량이 채워져도 OrderUpdateEvent(FILLED)가 와야 CompletedEvent가 발생한다")
         void completedRequiresBothFillAndStateUpdate() {
             tracker.startTrackingOrder(testOrder);
             tracker.processOrderUpdate(orderUpdate(InFlightOrder.State.OPEN));
