@@ -41,7 +41,7 @@ public record RestRequest(
         private String pathUrl;
         private Map<String, Object> params;
         private Object body;
-        private HttpHeaders headers;
+        private HttpHeaders headers = new HttpHeaders();
         private boolean authRequired = false;
         private String throttlerLimitId;
         private Map<String, Integer> weightOverrides = Collections.emptyMap();
