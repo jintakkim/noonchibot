@@ -41,10 +41,25 @@ class WsAssistantTest {
     }
 
     @Test
+    @DisplayName("connect 호출 시 새로운 WsConnection을 반환한다")
+    void connectReturnsNewConnection() {
+        WsConnection conn = connectWithMockSession();
+        assertThat(conn).isNotNull();
+        assertThat(conn.isConnected()).isTrue();
+    }
+
+    @Test
+    @DisplayName("connect를 두 번 호출하면 서로 다른 WsConnection을 반환한다")
+    void connectReturnsDifferentConnections() {
+        WsConnection first = connectWithMockSession();
+        WsConnection second = connectWithMockSession();
+        assertThat(second).isNotSameAs(first);
+    }
+
+    @Test
     @DisplayName("연결 후 메시지를 수신할 수 있다")
     void receivesMessageAfterConnect() throws InterruptedException {
         WsConnection conn = connectWithMockSession();
-        // 서버에서 메시지 수신 시뮬레이션
         conn.handleTextMessage(null, new TextMessage("message"));
         WsResponse response = conn.take();
         assertThat(response.data()).contains("message");
@@ -65,13 +80,6 @@ class WsAssistantTest {
         WsConnection conn = connectWithMockSession();
         conn.afterConnectionClosed(null, CloseStatus.GOING_AWAY);
         assertThatThrownBy(conn::take).isInstanceOf(WebsocketDisconnectedException.class);
-    }
-
-    @Test
-    @DisplayName("연결되지 않은 상태에서 send 시 예외가 발생한다")
-    void throwsWhenSendingWithoutConnection() {
-        WsRequest request = new WsRequest(Map.of("method", "SUBSCRIBE"), false);
-        assertThatThrownBy(() -> wsAssistant.send(request)).isInstanceOf(WebSocketNotConnectedException.class);
     }
 
     @Test
@@ -107,8 +115,8 @@ class WsAssistantTest {
 
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
-        connectWithMockSession(session);
-        wsAssistant.send(new WsRequest(Map.of("method", "SUBSCRIBE"), true));
+        WsConnection conn = connectWithMockSession(session);
+        conn.send(new WsRequest(Map.of("method", "SUBSCRIBE"), true));
         verify(authenticator).wsAuthenticate(any());
     }
 
@@ -132,14 +140,6 @@ class WsAssistantTest {
     }
 
     @Test
-    @DisplayName("이미 연결된 상태에서 connect 호출 시 기존 연결을 반환한다")
-    void returnsExistingConnectionWhenAlreadyConnected() {
-        WsConnection first = connectWithMockSession();
-        WsConnection second = wsAssistant.connect(URI.create("wss://test.com"));
-        assertThat(second).isSameAs(first);
-    }
-
-    @Test
     @DisplayName("여러 메시지를 순서대로 수신한다")
     void receivesMessagesInOrder() throws InterruptedException {
         WsConnection conn = connectWithMockSession();
@@ -160,11 +160,12 @@ class WsAssistantTest {
     }
 
     private WsConnection connectWithMockSession(WebSocketSession session) {
-        when(webSocketClient.execute(any(WsConnection.class), any(WebSocketHttpHeaders.class), any(URI.class))).thenAnswer(invocation -> {
-            WsConnection conn = invocation.getArgument(0);
-            conn.afterConnectionEstablished(session);
-            return CompletableFuture.completedFuture(null);
-        });
+        when(webSocketClient.execute(any(WsConnection.class), any(WebSocketHttpHeaders.class), any(URI.class)))
+                .thenAnswer(invocation -> {
+                    WsConnection conn = invocation.getArgument(0);
+                    conn.afterConnectionEstablished(session);
+                    return CompletableFuture.completedFuture(null);
+                });
         return wsAssistant.connect(URI.create("wss://test.com"));
     }
 }
