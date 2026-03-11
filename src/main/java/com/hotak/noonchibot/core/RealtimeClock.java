@@ -1,20 +1,22 @@
 package com.hotak.noonchibot.core;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.SmartLifecycle;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public class RealtimeClock implements Clock {
-    private static final Logger log = LoggerFactory.getLogger(RealtimeClock.class);
+@Slf4j
+public class RealtimeClock implements Clock, SmartLifecycle {
     private final List<TimeIterator> iterators;
     private final Duration tickSize;
     private volatile boolean started = false;
-    //반드시 runUntil에서만 업데이트되어야 한다.
+
     private volatile Instant currentTimestamp;
+    private volatile Thread clockThread;
+
 
     public RealtimeClock(List<TimeIterator> iterators, Duration tickSize) {
         this.iterators = new CopyOnWriteArrayList<>(iterators);
@@ -38,7 +40,6 @@ public class RealtimeClock implements Clock {
      * 지정된 시간까지 실행 (블로킹)
      * @param endTime 종료 시간, null이면 무한 실행
      */
-    @SuppressWarnings("BusyWait")
     @Override
     public void run(Instant endTime) {
         long tickMillis = tickSize.toMillis();
@@ -62,12 +63,18 @@ public class RealtimeClock implements Clock {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                //realtime mode 이기 떄문에 예외가 발생하더라도 무시하고 루프문 수행
-                //따라서 별도로 timeIterator 에서 예외처리가 필요하다.
-                log.error("예외 발생", e);
+                log.error("처리되지 못한 예외 발생", e);
             }
         }
-        stop();
+        try {
+            for (TimeIterator iterator : iterators) {
+                iterator.onStop();
+            }
+        } catch (Exception e) {
+            log.error("종료 작업중 예외 발생", e);
+        } finally {
+            started = false;
+        }
     }
 
     private void executeTick(Instant timestamp) {
@@ -76,10 +83,21 @@ public class RealtimeClock implements Clock {
         }
     }
 
-    private void stop() {
-        for (TimeIterator iterator : iterators) {
-            iterator.onStop();
+    @Override
+    public void start() {
+        clockThread = Thread.ofPlatform().name("realtime-clock").start(() -> run(null));
+    }
+
+    @Override
+    public void stop() {
+        if (clockThread != null) {
+            clockThread.interrupt();
         }
+    }
+
+    @Override
+    public boolean isRunning() {
+        return clockThread != null && clockThread.isAlive();
     }
 
     private void updateCurrentTimestamp() {
