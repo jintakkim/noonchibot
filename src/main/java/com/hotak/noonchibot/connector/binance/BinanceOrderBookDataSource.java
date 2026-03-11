@@ -3,27 +3,23 @@ package com.hotak.noonchibot.connector.binance;
 import com.hotak.noonchibot.connector.OrderBookMessageStream;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
+import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBook;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
-import java.net.URI;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-public class BinanceOrderBookDataSource implements OrderBookDataSource, SmartLifecycle {
+public class BinanceOrderBookDataSource extends AbstractOrderBookDataSource {
     @RequiredArgsConstructor
     @Getter
     private enum MessageMethod {
@@ -32,52 +28,30 @@ public class BinanceOrderBookDataSource implements OrderBookDataSource, SmartLif
     }
 
     private final RestAssistant restAssistant;
-    private final WsAssistant wsAssistant;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
-    private final Map<String, Set<OrderBookMessageStream>> orderBookMessageStreams;
-    private final ObjectMapper objectMapper;
-    private final TaskScheduler taskScheduler;
 
-    private volatile boolean running = false;
-    private volatile Thread connectionThread;
-    private volatile WsConnection wsConnection;
-
-    public BinanceOrderBookDataSource(RestAssistant restAssistant, WsAssistant wsAssistant, TradingPairSymbolRegistry tradingPairSymbolRegistry, ObjectMapper objectMapper, TaskScheduler taskScheduler) {
+    public BinanceOrderBookDataSource(
+            TaskScheduler taskScheduler,
+            WsAssistant wsAssistant,
+            String publicWsUrl,
+            ObjectMapper objectMapper,
+            String connectionThreadName,
+            TradingPairSymbolRegistry tradingPairSymbolRegistry,
+            RestAssistant restAssistant
+    ) {
+        super(taskScheduler, wsAssistant, publicWsUrl, objectMapper, connectionThreadName);
         this.restAssistant = restAssistant;
-        this.wsAssistant = wsAssistant;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
-        orderBookMessageStreams = new ConcurrentHashMap<>();
-        this.objectMapper = objectMapper;
-        this.taskScheduler = taskScheduler;
-        Thread.ofVirtual().start(this::processConnectionLoop);
+    }
+
+
+    @Override
+    protected OrderBook createOrderBook() {
+        return new BinanceOrderBook();
     }
 
     @Override
-    public OrderBook getNewOrderBook(String tradingPair) {
-         BinanceOrderBook orderBook = new BinanceOrderBook();
-         OrderBookMessage.SnapshotMessage msg = getOrderBookSnapshot(tradingPair);
-         orderBook.applySnapshot(msg.getBids(), msg.getAsks(), msg.getUpdateId());
-         return orderBook;
-    }
-
-    @Override
-    public OrderBookMessageStream subscribe(String tradingPair) {
-        Set<OrderBookMessageStream> streams = orderBookMessageStreams.computeIfAbsent(tradingPair, k -> ConcurrentHashMap.newKeySet());
-        boolean firstForPair = streams.isEmpty();
-        OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        streams.add(stream);
-        if (firstForPair) {
-            sendSubscribe(tradingPair);
-            taskScheduler.scheduleAtFixedRate(
-                    () -> castMessageToStream(tradingPair, getOrderBookSnapshot(tradingPair)),
-                    Instant.now().plus(Duration.ofHours(1)),
-                    Duration.ofHours(1)
-            );
-        }
-        return stream;
-    }
-
-    private OrderBookMessage.SnapshotMessage getOrderBookSnapshot(String tradingPair) {
+    protected OrderBookMessage.SnapshotMessage getOrderBookSnapshot(String tradingPair) {
         String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
@@ -89,92 +63,24 @@ public class BinanceOrderBookDataSource implements OrderBookDataSource, SmartLif
     }
 
     @Override
-    public void unsubscribe(OrderBookMessageStream stream) {
-        Set<OrderBookMessageStream> streams = orderBookMessageStreams.get(stream.tradingPair);
-        if(streams == null) return;
-        streams.remove(stream);
-        if (streams.isEmpty()) {
-            orderBookMessageStreams.remove(stream.tradingPair);
-            sendUnsubscribe(stream.tradingPair);
-        }
+    protected void sendSubscribe(String tradingPair) {
+        sendSubscribe(Set.of(tradingPair));
     }
 
-    private void sendSubscribe(String tradingPair) {
-        sendTradeRequest(MessageMethod.SUBSCRIBE, List.of(tradingPair));
-        sendDiffRequest(MessageMethod.SUBSCRIBE, List.of(tradingPair));
+    @Override
+    protected void sendSubscribe(Set<String> tradingPairs) {
+        sendTradeRequest(MessageMethod.SUBSCRIBE, tradingPairs);
+        sendDiffRequest(MessageMethod.SUBSCRIBE, tradingPairs);
     }
 
-    private void sendUnsubscribe(String tradingPair) {
+    @Override
+    protected void sendUnsubscribe(String tradingPair) {
         sendTradeRequest(MessageMethod.UNSUBSCRIBE, List.of(tradingPair));
         sendDiffRequest(MessageMethod.UNSUBSCRIBE, List.of(tradingPair));
     }
 
-    private void processConnectionLoop() {
-        while (running && !Thread.currentThread().isInterrupted()) {
-            try {
-                this.wsConnection = wsAssistant.connect(URI.create(BinanceApiSpec.WSS_URL));
-                resubscribeIfStreamExist();
-                while (true) {
-                    processWebsocketMessages();
-                }
-            } catch (WebsocketDisconnectedException wde) {
-                log.warn("websocket disconnected, try reconnect after 1 seconds");
-                try {
-                    Thread.sleep(Duration.ofSeconds(1));
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-            } catch (Exception e) {
-                log.error("unexpected exception", e);
-            } finally {
-                wsConnection.disconnect();
-                this.wsConnection = null;
-            }
-        }
-    }
-
-    /**
-     * 끊김으로 인한 재연결 상황 등 일때 기존 구독분을 재구독한다.
-     */
-    private void resubscribeIfStreamExist() {
-        Set<String> tradingPairs = this.orderBookMessageStreams.keySet();
-        if(tradingPairs.isEmpty()) return;
-        sendDiffRequest(MessageMethod.SUBSCRIBE, tradingPairs);
-        sendTradeRequest(MessageMethod.SUBSCRIBE, tradingPairs);
-    }
-
-    private void processWebsocketMessages() throws InterruptedException {
-        WsResponse response = wsConnection.take();  // disconnect 시 WebsocketDisconnectedException 발생
-        if(response.messageType() != WsResponse.MessageType.TEXT) throw new IllegalStateException("cant handle non-text message");
-        JsonNode msg = objectMapper.readTree(response.data());
-
-        if (msg.has("error")) {
-            throw new WebsocketSubscriptionFailedException(msg.get("error").toString());
-        }
-
-        //구독/해제 응답 무시
-        if (msg.has("id") && msg.has("result")) {
-            return;
-        }
-
-        OrderBookMessage.Type type = parseMessageType(msg);
-        if(type == null) {
-            processUnknownMessage(msg);
-            return;
-        }
-        if(type == OrderBookMessage.Type.DIFF) {
-            processDiffMessage(msg);
-            return;
-        }
-        if(type == OrderBookMessage.Type.TRADE) {
-            processTradeMessage(msg);
-        }
-    }
-
-    private OrderBookMessage.Type parseMessageType(JsonNode msg) {
-        log.info("{}", msg.toString());
+    @Override
+    protected OrderBookMessage.Type parseMessageType(JsonNode msg) {
         String eventType = msg.path("e").asString();
         return switch (eventType) {
             case "depthUpdate" -> OrderBookMessage.Type.DIFF;
@@ -183,32 +89,18 @@ public class BinanceOrderBookDataSource implements OrderBookDataSource, SmartLif
         };
     }
 
-    private void processTradeMessage(JsonNode msg) {
+    protected OrderBookMessage.TradeMessage parseTradeMessage(JsonNode msg) {
         String exchangeSymbol = msg.get("s").asString();
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
-        OrderBookMessage.TradeMessage tradeMessage = BinanceOrderBook.tradeMessageFromExchange(msg, tradingPair);
-        castMessageToStream(tradingPair, tradeMessage);
+        return BinanceOrderBook.tradeMessageFromExchange(msg, tradingPair);
     }
 
-    private void processDiffMessage(JsonNode msg) {
+    protected OrderBookMessage.DiffMessage parseDiffMessage(JsonNode msg) {
         String exchangeSymbol = msg.get("s").asString();
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
-        OrderBookMessage.DiffMessage diffMessage = BinanceOrderBook.diffMessageFromExchange(msg, tradingPair);
-        castMessageToStream(tradingPair, diffMessage);
+        return BinanceOrderBook.diffMessageFromExchange(msg, tradingPair);
     }
 
-    private void processUnknownMessage(JsonNode msg) {
-        //default noop
-    }
-
-    private <T extends OrderBookMessage> void castMessageToStream(String tradingPair, T message) {
-        Set<OrderBookMessageStream> streams = orderBookMessageStreams.get(tradingPair);
-        if(streams == null) {
-            log.warn("no streams found for trading pair {}, possibly need to send unsubscribe message to exchange server", tradingPair);
-            return;
-        }
-        streams.forEach(stream -> stream.add(message));
-    }
 
     private void sendDiffRequest(MessageMethod method, Collection<String> tradingPairs) {
         List<String> diffMessage = tradingPairs.stream()
@@ -276,24 +168,5 @@ public class BinanceOrderBookDataSource implements OrderBookDataSource, SmartLif
                 .params(Map.of("symbol", exchangeSymbol))
                 .build();
         return restAssistant.executeRequestAndGetJsonBody(request).get("lastPrice").asDecimal();
-    }
-
-
-    @Override
-    public void start() {
-        running = true;
-        connectionThread = Thread.ofVirtual().name("binance-ws").start(this::processConnectionLoop);
-    }
-
-    @Override
-    public void stop() {
-        running = false;
-        wsConnection.disconnect();
-        connectionThread.interrupt();
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }

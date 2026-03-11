@@ -77,7 +77,12 @@ public class BinanceConfig {
     }
 
     @Bean
-    public WsAssistant binanceWsAssistant(WebSocketClient webSocketClient, ObjectMapper objectMapper, BinanceAuthenticator binanceAuthenticator) {
+    public WsAssistant binanceWsAssistant(
+            WebSocketClient webSocketClient,
+            ObjectMapper objectMapper,
+            @Qualifier("binanceAuthenticator")
+            BinanceAuthenticator binanceAuthenticator
+    ) {
         return new WsAssistant(
                 webSocketClient,
                 new WebSocketHttpHeaders(),
@@ -103,6 +108,7 @@ public class BinanceConfig {
 
     @Bean
     public TimeSynchronizer binanceTimeSynchronizer(
+            @Qualifier("binanceRestClient")
             RestClient restClient,
             @Qualifier("binanceAsyncThrottler")
             AsyncThrottler asyncThrottler,
@@ -132,11 +138,13 @@ public class BinanceConfig {
            TaskScheduler taskScheduler
     ) {
         return new BinanceOrderBookDataSource(
-                restAssistant,
+                taskScheduler,
                 wsAssistant,
-                tradingPairSymbolRegistry,
+                BinanceApiSpec.WSS_URL,
                 objectMapper,
-                taskScheduler
+                "binance-order-book-update-thread",
+                tradingPairSymbolRegistry,
+                restAssistant
         );
     }
 
