@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
+
 @Slf4j
 public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
     private final String platformName;
@@ -151,11 +152,17 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
         InFlightOrder trackedOrder = orderTracker.findActiveOrder(clientOrderId, null).orElse(null);
         if (trackedOrder == null) {
             log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
+            return;
         }
         try {
             placeCancel(clientOrderId, trackedOrder);
             InFlightOrder.State newState = isCancelRequestInExchangeSynchronous ? InFlightOrder.State.CANCELED : InFlightOrder.State.PENDING_CANCEL;
             OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), newState, clientOrderId, null, null);
+            log.info("주문 취소 요청이 완료되었습니다. | {} | orderId: {} | exchangeOrderId: {}",
+                    tradingPair,
+                    clientOrderId,
+                    trackedOrder.getExchangeOrderId() != null ? trackedOrder.getExchangeOrderId() : "N/A"
+            );
             exchangeEventPublisher.publish(orderUpdateEvent);
         } catch (Exception e) {
             if(isOrderNotFoundDuringCancellationException(e)) {
@@ -170,6 +177,15 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
     private void placeOrderAndProcessUpdate(InFlightOrder order, Object... args) {
         OrderPlacedDto placedOrder = placeOrder(order.getClientOrderId(), order.getTradingPair(), order.getAmount(), order.getTradeType(), order.getOrderType(), order.getPrice(), args);
         OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(order.getTradingPair(), placedOrder.timestamp(), InFlightOrder.State.OPEN, order.getClientOrderId(), placedOrder.exchangeOrderId());
+        log.info("주문이 성공적으로 생성되었습니다. | {} {} {} | 수량: {} | 가격: {} | orderId: {} | exchangeOrderId: {}",
+                order.getTradeType(),
+                order.getTradingPair(),
+                order.getOrderType(),
+                order.getAmount().toPlainString(),
+                order.getPrice() != null ? order.getPrice().toPlainString() : "MARKET",
+                order.getClientOrderId(),
+                order.getExchangeOrderId()
+        );
         exchangeEventPublisher.publish(orderUpdateEvent);
     }
 
@@ -181,6 +197,7 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
     private void updateOrderAfterFailure(String orderId, String tradingPair, Exception exception) {
         OrderUpdateEvent.OrderFailure failure = new OrderUpdateEvent.OrderFailure(exception.getClass().getSimpleName(), exception.getMessage());
         OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), InFlightOrder.State.FAILED, orderId, null, failure);
+        log.error("주문에 실패했습니다", exception);
         exchangeEventPublisher.publish(orderUpdateEvent);
     }
 
