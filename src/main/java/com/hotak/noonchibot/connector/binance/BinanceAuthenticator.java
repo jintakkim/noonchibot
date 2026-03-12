@@ -63,7 +63,7 @@ public class BinanceAuthenticator implements Authenticator {
         String payload = params.entrySet().stream()
                 .map(e -> e.getKey() + "=" + e.getValue())
                 .collect(Collectors.joining("&"));
-        byte[] digest = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+        byte[] digest = getMac().doFinal(payload.getBytes(StandardCharsets.UTF_8));
         return HexFormat.of().formatHex(digest);
     }
 
@@ -76,7 +76,7 @@ public class BinanceAuthenticator implements Authenticator {
 
     private String generateSignature(Map<String, Object> params)  {
         String queryString = encode(params);
-        byte[] digest = mac.doFinal(queryString.getBytes(StandardCharsets.UTF_8));
+        byte[] digest = getMac().doFinal(queryString.getBytes(StandardCharsets.UTF_8));
         return HexFormat.of().formatHex(digest);
     }
 
@@ -91,5 +91,13 @@ public class BinanceAuthenticator implements Authenticator {
         if (value instanceof Number n) return n.toString();
         if (value instanceof List<?> list) return objectMapper.writeValueAsString(list);
         throw new IllegalArgumentException("Unsupported param type: " + value.getClass().getSimpleName());
+    }
+
+    private Mac getMac() {
+        try {
+            return (Mac) mac.clone();
+        } catch (CloneNotSupportedException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
