@@ -50,23 +50,23 @@ public class BinanceTradePoller extends AbstractExchangeDataPoller {
         );
     }
 
-    private void updateOrdersFills(InFlightOrder order) {
-        List<TradeUpdateEvent> tradeUpdateEvents = fetchAllTradeUpdatesForOrder(order);
+    private void updateOrdersFills(InFlightOrder inFlightOrder) {
+        List<TradeUpdateEvent> tradeUpdateEvents = fetchAllTradeUpdatesForOrder(inFlightOrder);
         tradeUpdateEvents.forEach(orderTracker::processTradeUpdate);
     }
 
-    private List<TradeUpdateEvent> fetchAllTradeUpdatesForOrder(InFlightOrder order) {
-        if (order.getExchangeOrderId() == null || order.getExchangeOrderId().equals("UNKNOWN")) {
+    private List<TradeUpdateEvent> fetchAllTradeUpdatesForOrder(InFlightOrder inFlightOrder) {
+        if (inFlightOrder.getExchangeOrderId() == null || inFlightOrder.getExchangeOrderId().equals("UNKNOWN")) {
             log.warn("exchangeOrderId가 없습니다, trade를 조회할 수 없습니다.");
             return List.of();
         }
-        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(order.getTradingPair());
+        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(inFlightOrder.getTradingPair());
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
                 .pathUrl(BinanceApiSpec.MY_TRADES_PATH_URL)
                 .params(Map.of(
                         "symbol", symbol,
-                        "orderId", order.getExchangeOrderId()
+                        "orderId", inFlightOrder.getExchangeOrderId()
                 ))
                 .authRequired(true)
                 .throttlerLimitId(BinanceApiSpec.MY_TRADES_PATH_URL)
@@ -77,7 +77,7 @@ public class BinanceTradePoller extends AbstractExchangeDataPoller {
 
         List<TradeUpdateEvent> tradeUpdateEvents = new ArrayList<>();
         for (JsonNode trade : trades) {
-            tradeUpdateEvents.add(parseTradeUpdate(trade, order.getClientOrderId(), order.getTradingPair()));
+            tradeUpdateEvents.add(parseTradeUpdate(trade, inFlightOrder.getClientOrderId(), inFlightOrder.getTradingPair()));
         }
         return tradeUpdateEvents;
     }
@@ -100,10 +100,10 @@ public class BinanceTradePoller extends AbstractExchangeDataPoller {
         );
     }
 
-    private void executeParallel(Collection<InFlightOrder> orders, Consumer<InFlightOrder> task) {
+    private void executeParallel(Collection<InFlightOrder> inFlightOrders, Consumer<InFlightOrder> task) {
         List<Future<?>> futures = new ArrayList<>();
-        for (InFlightOrder order : orders) {
-            futures.add(taskExecutor.submit(() -> task.accept(order)));
+        for (InFlightOrder inFlightOrder : inFlightOrders) {
+            futures.add(taskExecutor.submit(() -> task.accept(inFlightOrder)));
         }
         for (Future<?> future : futures) {
             try {

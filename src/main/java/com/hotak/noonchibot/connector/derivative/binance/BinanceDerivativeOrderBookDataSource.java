@@ -1,7 +1,11 @@
-package com.hotak.noonchibot.connector.binance;
+package com.hotak.noonchibot.connector.derivative.binance;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.*;
+import com.hotak.noonchibot.connector.binance.BinanceApiSpec;
+import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBook;
@@ -9,7 +13,7 @@ import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
@@ -20,35 +24,32 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 
-@Slf4j
-public class BinanceOrderBookDataSource extends AbstractOrderBookDataSource {
+public class BinanceDerivativeOrderBookDataSource extends AbstractOrderBookDataSource {
     @RequiredArgsConstructor
     @Getter
     private enum MessageMethod {
         SUBSCRIBE("SUBSCRIBE"), UNSUBSCRIBE("UNSUBSCRIBE");
         private final String apiValue;
     }
+
     public static final int DIFF_SUBSCRIPTION_ID = 1;
     public static final int TRADE_SUBSCRIPTION_ID = 2;
 
-    private final RestAssistant restAssistant;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
-    private final TimeSynchronizer timeSynchronizer;
+    private final RestAssistant restAssistant;
 
-    public BinanceOrderBookDataSource(
+    public BinanceDerivativeOrderBookDataSource(
             WsAssistant wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
-            AsyncTaskExecutor taskExecutor,
+            @Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor,
             TaskScheduler taskScheduler,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant,
-            TimeSynchronizer timeSynchronizer
+            RestAssistant restAssistant
     ) {
         super(wsAssistant, publicWsUrl, objectMapper, taskExecutor, taskScheduler, false);
-        this.restAssistant = restAssistant;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
-        this.timeSynchronizer = timeSynchronizer;
+        this.restAssistant = restAssistant;
     }
 
     @Override
@@ -56,14 +57,16 @@ public class BinanceOrderBookDataSource extends AbstractOrderBookDataSource {
         String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
-                .pathUrl(BinanceApiSpec.SNAPSHOT_PATH_URL)
+                .pathUrl(BinanceDerivativeApiSpec.SNAPSHOT_PATH_URL)
                 .params(Map.of("symbol", exchangeSymbol, "limit", "1000"))
                 .build();
         JsonNode msg = restAssistant.executeRequestAndGetJsonBody(request);
         long updateId = msg.get("lastUpdateId").asLong();
+        Instant eventTime = Instant.ofEpochSecond(msg.get("T").asLong());
         List<OrderBookEntry> bids = parseEntries(msg.get("bids"));
         List<OrderBookEntry> asks = parseEntries(msg.get("asks"));
-        return new OrderBookMessage.SnapshotMessage(Instant.ofEpochMilli(timeSynchronizer.serverTime()), tradingPair, updateId, bids, asks);
+
+        return new OrderBookMessage.SnapshotMessage(eventTime, tradingPair, updateId, bids, asks);
     }
 
     @Override
@@ -93,45 +96,65 @@ public class BinanceOrderBookDataSource extends AbstractOrderBookDataSource {
         return msg.has("id") && msg.has("result");
     }
 
+
     @Override
     protected OrderBookMessage.Type parseMessageType(JsonNode msg) {
-        String eventType = msg.path("e").asString();
+        String eventType = msg.get("data").get("e").asString();
         return switch (eventType) {
             case "depthUpdate" -> OrderBookMessage.Type.DIFF;
-            case "trade" -> OrderBookMessage.Type.TRADE;
+            case "aggTrade" -> OrderBookMessage.Type.TRADE;
             default -> null;
         };
     }
 
-    protected OrderBookMessage.TradeMessage parseTradeMessage(JsonNode msg) {
-        String exchangeSymbol = msg.get("s").asString();
-        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
-        Instant eventTime = Instant.ofEpochMilli(msg.get("E").asLong());
-        // m=true → maker가 buyer → taker는 seller (SELL), m=false → BUY
-        TradeType tradeType = msg.get("m").asBoolean() ? TradeType.SELL : TradeType.BUY;
-        long tradeId = msg.get("t").asLong();
-        BigDecimal price = msg.get("p").asDecimal();
-        BigDecimal amount = msg.get("q").asDecimal();
-        return new OrderBookMessage.TradeMessage(eventTime, tradingPair, tradeId, price, amount, tradeType);
+    @Override
+    protected OrderBookMessage.DiffMessage parseDiffMessage(JsonNode msg) {
+        JsonNode data = msg.get("data");
+        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(data.get("s").asString());
+        long firstUpdateId = data.get("U").asLong();
+        long updateId = data.get("u").asLong();
+        Instant eventTime = Instant.ofEpochMilli(data.get("E").asLong());
+        List<OrderBookEntry> bids = parseEntries(data.get("b"));
+        List<OrderBookEntry> asks = parseEntries(data.get("a"));
+        return new OrderBookMessage.DiffMessage(eventTime, tradingPair, updateId, bids, asks);
     }
 
-    protected OrderBookMessage.DiffMessage parseDiffMessage(JsonNode msg) {
-        String exchangeSymbol = msg.get("s").asString();
-        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
-        long firstUpdateId = msg.get("U").asLong();
-        long updateId = msg.get("u").asLong();
-        Instant eventTime = Instant.ofEpochMilli(msg.get("E").asLong());
-        List<OrderBookEntry> bids = parseEntries(msg.get("b"));
-        List<OrderBookEntry> asks = parseEntries(msg.get("a"));
+    @Override
+    protected OrderBookMessage.TradeMessage parseTradeMessage(JsonNode msg) {
+        JsonNode data = msg.get("data");
+        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(data.get("s").asString());
+        TradeType tradeType = msg.get("m").asBoolean() ? TradeType.SELL : TradeType.BUY;
+        return new OrderBookMessage.TradeMessage(
+                Instant.ofEpochMilli(data.get("T").asLong()),
+                tradingPair,
+                data.get("a").asLong(),         // aggregate trade id
+                data.get("p").asDecimal(),         // price
+                data.get("q").asDecimal(),         // quantity
+                tradeType
+        );
+    }
 
-        return new OrderBookMessage.DiffMessage(eventTime, tradingPair, updateId, bids, asks);
+    @Override
+    public Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs) {
+        throw new UnsupportedOperationException("binance derivative does not support multiple symbols query option");
+    }
+
+    @Override
+    public BigDecimal getLastTradedPrice(String tradingPair) {
+        String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
+        RestRequest request = RestRequest.builder()
+                .method(HttpMethod.GET)
+                .pathUrl(BinanceDerivativeApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
+                .params(Map.of("symbol", exchangeSymbol))
+                .build();
+        return restAssistant.executeRequestAndGetJsonBody(request).get("lastPrice").asDecimal();
     }
 
     private void sendDiffRequest(MessageMethod method, Collection<String> tradingPairs) {
         List<String> diffMessage = tradingPairs.stream()
                 .map(tradingPairSymbolRegistry::convertTradingPairToExchangeSymbol)
                 .map(String::toLowerCase) //websocket need lowercase
-                .map(symbol -> symbol + "@depth@100ms")
+                .map(symbol -> symbol + "@depth")
                 .toList();
         wsConnection.send(new WsRequest(Map.of(
                 "method", method.getApiValue(),
@@ -144,55 +167,13 @@ public class BinanceOrderBookDataSource extends AbstractOrderBookDataSource {
         List<String> tradeMessage = tradingPairs.stream()
                 .map(tradingPairSymbolRegistry::convertTradingPairToExchangeSymbol)
                 .map(String::toLowerCase) //websocket need lowercase
-                .map(symbol -> symbol + "@trade")
+                .map(symbol -> symbol + "@aggTrade")
                 .toList();
         wsConnection.send(new WsRequest(Map.of(
                 "method", method.getApiValue(),
                 "params", tradeMessage,
                 "id", TRADE_SUBSCRIPTION_ID
         ), false));
-    }
-
-    /**
-     * using rest api
-     */
-    @Override
-    public Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs) {
-        if(tradingPairs == null || tradingPairs.isEmpty()) throw new IllegalArgumentException("한개 이상의 tradingPair가 전달되어야 합니다.");
-        List<String> symbols = tradingPairs.stream()
-                .map(tradingPairSymbolRegistry::convertTradingPairToExchangeSymbol)
-                .toList();
-
-        RestRequest request = RestRequest.builder()
-                .method(HttpMethod.GET)
-                .pathUrl(BinanceApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
-                .params(Map.of("symbols", symbols))
-                .weightOverrides(Map.of("REQUEST_WEIGHT", BinanceApiSpec.getTickerPriceChangeDynamicWeight(symbols.size())))
-                .build();
-
-        JsonNode response = restAssistant.executeRequestAndGetJsonBody(request);
-
-        Map<String, BigDecimal> result = new HashMap<>();
-        for (JsonNode ticker : response) {
-            String exchangeSymbol = ticker.get("symbol").asString();
-            String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
-            result.put(tradingPair, ticker.get("price").asDecimal());
-        }
-        return result;
-    }
-
-    /**
-     * using rest api
-     */
-    @Override
-    public BigDecimal getLastTradedPrice(String tradingPair) {
-        String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
-        RestRequest request = RestRequest.builder()
-                .method(HttpMethod.GET)
-                .pathUrl(BinanceApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
-                .params(Map.of("symbol", exchangeSymbol))
-                .build();
-        return restAssistant.executeRequestAndGetJsonBody(request).get("lastPrice").asDecimal();
     }
 
     private static List<OrderBookEntry> parseEntries(JsonNode arrayNode) {

@@ -10,7 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class OrderBookPairMetricsTest {
+class InFlightOrderBookPairMetricsTest {
     @Test
     @DisplayName("초기화 시 기본값들이 올바르게 설정되어야 한다")
     void testInitialization() {

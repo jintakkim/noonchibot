@@ -11,16 +11,12 @@ import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.order.executor.AbstractExchangeOrderExecutor;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
-import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
-import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -134,8 +130,8 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
     }
 
     @Override
-    protected boolean placeCancel(String orderId, InFlightOrder trackedOrder) {
-        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(trackedOrder.getTradingPair());
+    protected boolean placeCancel(String orderId, InFlightOrder trackedInFlightOrder) {
+        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(trackedInFlightOrder.getTradingPair());
 
         Map<String, Object> apiParams = new HashMap<>();
         apiParams.put("symbol", symbol);

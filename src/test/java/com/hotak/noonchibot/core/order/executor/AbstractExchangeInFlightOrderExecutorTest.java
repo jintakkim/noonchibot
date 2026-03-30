@@ -34,7 +34,7 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-public abstract class AbstractExchangeOrderExecutorTest {
+public abstract class AbstractExchangeInFlightOrderExecutorTest {
     public static final ObjectMapper objectMapper = new ObjectMapper();
     protected final String orderStatusPath;
     protected final String accountBalancePath;
@@ -78,7 +78,7 @@ public abstract class AbstractExchangeOrderExecutorTest {
 
     public static final Map<String, TradingRule> TRADING_RULES = Map.of("BTC-USDT", BTC_USDT_RULE, "ETH-USDT", ETH_USDT_RULE);
 
-    public AbstractExchangeOrderExecutorTest(String orderStatusPath, String accountBalancePath, String tradesPath) {
+    public AbstractExchangeInFlightOrderExecutorTest(String orderStatusPath, String accountBalancePath, String tradesPath) {
         this.orderStatusPath = orderStatusPath;
         this.accountBalancePath = accountBalancePath;
         this.tradesPath = tradesPath;
@@ -160,7 +160,7 @@ public abstract class AbstractExchangeOrderExecutorTest {
 
     @Nested
     @DisplayName("주문 테스트")
-    class OrderTest {
+    class InFlightOrderTest {
         @Test
         @DisplayName("TradingRule이 없는 거래쌍이면 예외가 발생한다")
         void noTradingRule() {
@@ -183,12 +183,12 @@ public abstract class AbstractExchangeOrderExecutorTest {
             stubOrderPlacementResponse("12345");
             exchangeConnector.buy("BTC-USDT", new BigDecimal("0.01"), OrderType.LIMIT, new BigDecimal("50000"));
             List<OrderRequestSentEvent> events = testExchangeEventPublisher.getEventsOfType(OrderRequestSentEvent.class);
-            InFlightOrder order = events.getFirst().inFlightOrder();
-            assertThat(order.getTradingPair()).isEqualTo("BTC-USDT");
-            assertThat(order.getTradeType()).isEqualTo(TradeType.BUY);
-            assertThat(order.getOrderType()).isEqualTo(OrderType.LIMIT);
-            assertThat(order.getAmount()).isEqualByComparingTo(new BigDecimal("0.01"));
-            assertThat(order.getPrice()).isEqualByComparingTo(new BigDecimal("50000"));
+            InFlightOrder inFlightOrder = events.getFirst().inFlightOrder();
+            assertThat(inFlightOrder.getTradingPair()).isEqualTo("BTC-USDT");
+            assertThat(inFlightOrder.getTradeType()).isEqualTo(TradeType.BUY);
+            assertThat(inFlightOrder.getOrderType()).isEqualTo(OrderType.LIMIT);
+            assertThat(inFlightOrder.getAmount()).isEqualByComparingTo(new BigDecimal("0.01"));
+            assertThat(inFlightOrder.getPrice()).isEqualByComparingTo(new BigDecimal("50000"));
         }
 
         @Test
@@ -271,7 +271,7 @@ public abstract class AbstractExchangeOrderExecutorTest {
         void cancelUntrackedOrder() {
             stubCancelResponse("12345");
             assertThatNoException().isThrownBy(() ->
-                    exchangeConnector.cancel("BTC-USDT", "non-existent-order")
+                    exchangeConnector.cancel("BTC-USDT", "non-existent-inFlightOrder")
             );
         }
 
@@ -296,11 +296,11 @@ public abstract class AbstractExchangeOrderExecutorTest {
     }
 
     private void stubFindActiveOrder() {
-        InFlightOrder trackedOrder = new InFlightOrder(
+        InFlightOrder trackedInFlightOrder = new InFlightOrder(
                 "BUY-BTC-USDT-1", "BTC-USDT", OrderType.LIMIT,
                 TradeType.BUY, new BigDecimal("0.01"), new BigDecimal("50000"), Instant.now()
         );
-        when(mockOrderTracker.findActiveOrder("BUY-BTC-USDT-1", null)).thenReturn(Optional.of(trackedOrder));
+        when(mockOrderTracker.findActiveOrder("BUY-BTC-USDT-1", null)).thenReturn(Optional.of(trackedInFlightOrder));
     }
 
     protected void stubOrderPlacementResponse(String exchangeOrderId) {

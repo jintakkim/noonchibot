@@ -49,40 +49,40 @@ public class BinanceOrderStatusPoller extends AbstractExchangeDataPoller {
         );
     }
 
-    private void updateOrderStatus(InFlightOrder order) {
+    private void updateOrderStatus(InFlightOrder inFlightOrder) {
         try {
-            OrderUpdateEvent orderUpdateEvent = fetchOrderStatus(order);
+            OrderUpdateEvent orderUpdateEvent = fetchOrderStatus(inFlightOrder);
             orderTracker.processOrderUpdate(orderUpdateEvent);
         } catch (Exception e) {
-            log.warn("order 상태 업데이트 중 예외 발생(not found order로 전환)", e);
-            orderTracker.processOrderNotFound(order.getClientOrderId());
+            log.warn("inFlightOrder 상태 업데이트 중 예외 발생(not found order로 전환)", e);
+            orderTracker.processOrderNotFound(inFlightOrder.getClientOrderId());
         }
     }
 
-    private OrderUpdateEvent fetchOrderStatus(InFlightOrder order) {
-        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(order.getTradingPair());
+    private OrderUpdateEvent fetchOrderStatus(InFlightOrder inFlightOrder) {
+        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(inFlightOrder.getTradingPair());
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
                 .pathUrl(BinanceApiSpec.ORDER_PATH_URL)
-                .params(Map.of("symbol", symbol, "origClientOrderId", order.getClientOrderId()))
+                .params(Map.of("symbol", symbol, "origClientOrderId", inFlightOrder.getClientOrderId()))
                 .authRequired(true)
                 .build();
         JsonNode updatedOrder = restAssistant.executeRequestAndGetJsonBody(request);
         InFlightOrder.State newState = BinanceApiSpec.ORDER_STATE.get(updatedOrder.get("status").asString());
         return new OrderUpdateEvent(
-                order.getTradingPair(),
+                inFlightOrder.getTradingPair(),
                 Instant.ofEpochMilli(updatedOrder.get("updateTime").asLong()),
                 newState,
-                order.getClientOrderId(),
+                inFlightOrder.getClientOrderId(),
                 updatedOrder.get("orderId").asString()
         );
     }
 
 
-    private void executeParallel(Collection<InFlightOrder> orders, Consumer<InFlightOrder> task) {
+    private void executeParallel(Collection<InFlightOrder> inFlightOrders, Consumer<InFlightOrder> task) {
         List<Future<?>> futures = new ArrayList<>();
-        for (InFlightOrder order : orders) {
-            futures.add(taskExecutor.submit(() -> task.accept(order)));
+        for (InFlightOrder inFlightOrder : inFlightOrders) {
+            futures.add(taskExecutor.submit(() -> task.accept(inFlightOrder)));
         }
         for (Future<?> future : futures) {
             try {

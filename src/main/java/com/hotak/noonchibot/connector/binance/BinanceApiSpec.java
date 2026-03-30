@@ -1,7 +1,6 @@
 package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.throttle.RateLimit;
-import com.hotak.noonchibot.connector.throttle.RateLimitPool;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -9,8 +8,6 @@ import lombok.NoArgsConstructor;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-
-import static com.hotak.noonchibot.connector.throttle.RateLimit.pool;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class BinanceApiSpec {
@@ -23,17 +20,15 @@ public final class BinanceApiSpec {
     public static final String REST_BASE_URL = "https://api.binance.com/api";
     public static final String WSS_URL = "wss://stream.binance.com:9443/ws";
     public static final String WSS_API_URL = "wss://ws-api.binance.com:443/ws-api/v3";
-    public static final String PUBLIC_API_VERSION = "/v3";
-    public static final String PRIVATE_API_VERSION = "/v3";
-    public static final String TICKER_PRICE_CHANGE_PATH_URL = "/ticker/24hr";
-    public static final String SNAPSHOT_PATH_URL = "/depth";
-    public static final String SERVER_TIME_PATH_URL = "/time";
-    public static final String EXCHANGE_INFO_PATH_URL = "/exchangeInfo";
-    public static final String ORDER_PATH_URL = "/order";
-    public static final String PING_PATH_URL = "/ping";
-    public static final String ACCOUNTS_PATH_URL = "/account";
-    public static final String MY_TRADES_PATH_URL = "/myTrades";
-    public static final String COMMISSION_RATE_PATH_URL = "/account/commission";
+    public static final String TICKER_PRICE_CHANGE_PATH_URL = "/v3/ticker/24hr";
+    public static final String SNAPSHOT_PATH_URL = "/v3/depth";
+    public static final String SERVER_TIME_PATH_URL = "/v3/time";
+    public static final String EXCHANGE_INFO_PATH_URL = "/v3/exchangeInfo";
+    public static final String ORDER_PATH_URL = "/v3/inFlightOrder";
+    public static final String PING_PATH_URL = "/v3/ping";
+    public static final String ACCOUNTS_PATH_URL = "/v3/account";
+    public static final String MY_TRADES_PATH_URL = "/v3/myTrades";
+    public static final String COMMISSION_RATE_PATH_URL = "/v3/account/commission";
 
     public static final String TIME_IN_FORCE_GTC = "GTC"; //limit 전용, 캔슬 전까지 주문 만료 없음.
 
@@ -119,9 +114,9 @@ public final class BinanceApiSpec {
 
 
     public static final int ORDER_NOT_EXIST_ERROR_CODE = -2013;
-    public static final String ORDER_NOT_EXIST_MESSAGE = "Order does not exist";
+    public static final String ORDER_NOT_EXIST_MESSAGE = "InFlightOrder does not exist";
     public static final int UNKNOWN_ORDER_ERROR_CODE = -2011;
-    public static final String UNKNOWN_ORDER_MESSAGE = "Unknown order sent";
+    public static final String UNKNOWN_ORDER_MESSAGE = "Unknown inFlightOrder sent";
     public static final int TIMESTAMP_ERROR_CODE = -1021;
     public static final String TIMESTAMP_ERROR_MESSAGE = "Timestamp for this request";
 

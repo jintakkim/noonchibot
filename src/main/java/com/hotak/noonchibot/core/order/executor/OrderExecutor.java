@@ -1,12 +1,9 @@
 package com.hotak.noonchibot.core.order.executor;
 
-import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderType;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 public interface OrderExecutor {

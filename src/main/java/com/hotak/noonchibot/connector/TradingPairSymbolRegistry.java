@@ -16,7 +16,11 @@ public interface TradingPairSymbolRegistry {
      * @return tradingPair
      * @throws NotRegisteredException 매칭되는 tradingPair이 없을때
      */
-    String convertExchangeSymbolToTradingPair(String exchangeSymbol);
+    String convertExchangeSymbolToTradingPair(String exchangeSymbol, boolean throwIfNotFound);
+
+    default String convertExchangeSymbolToTradingPair(String exchangeSymbol) {
+        return convertExchangeSymbolToTradingPair(exchangeSymbol, true);
+    }
 
     boolean isEmpty();
 

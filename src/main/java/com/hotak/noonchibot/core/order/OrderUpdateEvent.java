@@ -7,7 +7,7 @@ import java.time.Instant;
 public record OrderUpdateEvent(
         String tradingPair,
         Instant updateTimestamp,
-        InFlightOrder.State newState,
+        OrderState newState,
         String clientOrderId,
         String exchangeOrderId,
         //nullable
@@ -17,7 +17,7 @@ public record OrderUpdateEvent(
     public OrderUpdateEvent(
             String tradingPair,
             Instant updateTimestamp,
-            InFlightOrder.State newState,
+            OrderState newState,
             String clientOrderId,
             String exchangeOrderId
     ) {

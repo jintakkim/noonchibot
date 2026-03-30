@@ -122,8 +122,8 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
         }
         BigDecimal quantizedOrderAmount = quantizeOrderAmount(tradingPair, amount);
 
-        InFlightOrder order = new InFlightOrder(clientOrderId, tradingPair, orderType, tradeType, amount, price, Instant.now());
-        exchangeEventPublisher.publish(new OrderRequestSentEvent(order));
+        InFlightOrder inFlightOrder = new InFlightOrder(clientOrderId, tradingPair, orderType, tradeType, amount, price, Instant.now());
+        exchangeEventPublisher.publish(new OrderRequestSentEvent(inFlightOrder));
 
         if (!getSupportedOrderType(tradingPair).contains(orderType)) {
             updateOrderAfterFailure(clientOrderId, tradingPair, new OrderValidationException.UnsupportedOrderTypeException("해당 오더 타입은 지원하지 않습니다."));
@@ -141,7 +141,7 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
             return;
         }
         try {
-            placeOrderAndProcessUpdate(order, args);
+            placeOrderAndProcessUpdate(inFlightOrder, args);
         } catch (Exception e) {
             onOrderFailure(clientOrderId, tradingPair, e);
         }
@@ -149,19 +149,19 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
 
     @Override
     public void cancel(String tradingPair, String clientOrderId) {
-        InFlightOrder trackedOrder = orderTracker.findActiveOrder(clientOrderId, null).orElse(null);
-        if (trackedOrder == null) {
+        InFlightOrder trackedInFlightOrder = orderTracker.findActiveOrder(clientOrderId, null).orElse(null);
+        if (trackedInFlightOrder == null) {
             log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
             return;
         }
         try {
-            placeCancel(clientOrderId, trackedOrder);
+            placeCancel(clientOrderId, trackedInFlightOrder);
             InFlightOrder.State newState = isCancelRequestInExchangeSynchronous ? InFlightOrder.State.CANCELED : InFlightOrder.State.PENDING_CANCEL;
             OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), newState, clientOrderId, null, null);
             log.info("주문 취소 요청이 완료되었습니다. | {} | orderId: {} | exchangeOrderId: {}",
                     tradingPair,
                     clientOrderId,
-                    trackedOrder.getExchangeOrderId() != null ? trackedOrder.getExchangeOrderId() : "N/A"
+                    trackedInFlightOrder.getExchangeOrderId() != null ? trackedInFlightOrder.getExchangeOrderId() : "N/A"
             );
             exchangeEventPublisher.publish(orderUpdateEvent);
         } catch (Exception e) {
@@ -174,17 +174,17 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
         }
     }
 
-    private void placeOrderAndProcessUpdate(InFlightOrder order, Object... args) {
-        OrderPlacedDto placedOrder = placeOrder(order.getClientOrderId(), order.getTradingPair(), order.getAmount(), order.getTradeType(), order.getOrderType(), order.getPrice(), args);
-        OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(order.getTradingPair(), placedOrder.timestamp(), InFlightOrder.State.OPEN, order.getClientOrderId(), placedOrder.exchangeOrderId());
+    private void placeOrderAndProcessUpdate(InFlightOrder inFlightOrder, Object... args) {
+        OrderPlacedDto placedOrder = placeOrder(inFlightOrder.getClientOrderId(), inFlightOrder.getTradingPair(), inFlightOrder.getAmount(), inFlightOrder.getTradeType(), inFlightOrder.getOrderType(), inFlightOrder.getPrice(), args);
+        OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(inFlightOrder.getTradingPair(), placedOrder.timestamp(), InFlightOrder.State.OPEN, inFlightOrder.getClientOrderId(), placedOrder.exchangeOrderId());
         log.info("주문이 성공적으로 생성되었습니다. | {} {} {} | 수량: {} | 가격: {} | orderId: {} | exchangeOrderId: {}",
-                order.getTradeType(),
-                order.getTradingPair(),
-                order.getOrderType(),
-                order.getAmount().toPlainString(),
-                order.getPrice() != null ? order.getPrice().toPlainString() : "MARKET",
-                order.getClientOrderId(),
-                order.getExchangeOrderId()
+                inFlightOrder.getTradeType(),
+                inFlightOrder.getTradingPair(),
+                inFlightOrder.getOrderType(),
+                inFlightOrder.getAmount().toPlainString(),
+                inFlightOrder.getPrice() != null ? inFlightOrder.getPrice().toPlainString() : "MARKET",
+                inFlightOrder.getClientOrderId(),
+                inFlightOrder.getExchangeOrderId()
         );
         exchangeEventPublisher.publish(orderUpdateEvent);
     }
@@ -210,7 +210,7 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
      * 동기적으로 취소 처리
      * @return 성공시 true 실패시 false
      */
-    protected abstract boolean placeCancel(String orderId, InFlightOrder trackedOrder);
+    protected abstract boolean placeCancel(String orderId, InFlightOrder trackedInFlightOrder);
 
     @Override
     public BigDecimal quantizeOrderPrice(String tradingPair, BigDecimal price) {

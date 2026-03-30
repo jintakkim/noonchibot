@@ -68,7 +68,7 @@ public class BinanceConfig {
     ) {
         return new RestAssistant(
                 restClient,
-                List.of(new ThrottlerLimitIdPreProcessor(), new BinanceApiVersionPrefixRestPreProcessor()),
+                List.of(new ThrottlerLimitIdPreProcessor()),
                 List.of(),
                 binanceAuthenticator,
                 asyncThrottler,
@@ -117,13 +117,13 @@ public class BinanceConfig {
     ) {
         RestAssistant publicRestAssistant = new RestAssistant(
                 restClient,
-                List.of(new ThrottlerLimitIdPreProcessor(), new BinanceApiVersionPrefixRestPreProcessor()),
+                List.of(new ThrottlerLimitIdPreProcessor()),
                 List.of(),
                 null,
                 asyncThrottler,
                 objectMapper
         );
-        TimeSynchronizer timeSynchronizer = new TimeSynchronizer(new BinanceServerTimeProvider(publicRestAssistant), taskScheduler);
+        TimeSynchronizer timeSynchronizer = new TimeSynchronizer(new BinanceServerTimeProvider(publicRestAssistant, BinanceApiSpec.SERVER_TIME_PATH_URL), taskScheduler);
         timeSynchronizer.scheduleUpdate();
         return timeSynchronizer;
     }
@@ -135,16 +135,19 @@ public class BinanceConfig {
            @Qualifier("binanceWsAssistant") WsAssistant wsAssistant,
            @Qualifier("binanceTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
            ObjectMapper objectMapper,
-           TaskScheduler taskScheduler
+           @Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor,
+           TaskScheduler taskScheduler,
+           @Qualifier("binanceTimeSynchronizer") TimeSynchronizer timeSynchronizer
     ) {
         return new BinanceOrderBookDataSource(
-                taskScheduler,
                 wsAssistant,
                 BinanceApiSpec.WSS_URL,
                 objectMapper,
-                "binance-order-book-update-thread",
+                taskExecutor,
+                taskScheduler,
                 tradingPairSymbolRegistry,
-                restAssistant
+                restAssistant,
+                timeSynchronizer
         );
     }
 

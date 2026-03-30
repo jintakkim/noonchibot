@@ -12,7 +12,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class OrderBookTrackerMetricsTest {
+class InFlightOrderBookTrackerMetricsTest {
     private OrderBookTrackerMetrics metrics;
 
     @BeforeEach

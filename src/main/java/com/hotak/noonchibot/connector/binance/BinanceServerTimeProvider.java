@@ -10,13 +10,14 @@ import tools.jackson.databind.JsonNode;
 @RequiredArgsConstructor
 public class BinanceServerTimeProvider implements ServerTimeProvider {
     private final RestAssistant restAssistant;
+    private final String pathUrl;
 
     @Override
     public long getServerTimeMs() {
         JsonNode body = restAssistant.executeRequestAndGetJsonBody(
                 RestRequest.builder()
                         .method(HttpMethod.GET)
-                        .pathUrl(BinanceApiSpec.SERVER_TIME_PATH_URL)
+                        .pathUrl(pathUrl)
                         .authRequired(false)
                         .build()
         );

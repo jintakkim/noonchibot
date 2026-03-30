@@ -27,7 +27,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-class BinanceOrderStatusPollerTest {
+class BinanceInFlightOrderEntryStatusPollerTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private RestAssistant mockRestAssistant;
     private OrderTracker mockOrderTracker;
@@ -59,8 +59,8 @@ class BinanceOrderStatusPollerTest {
     @Test
     @DisplayName("활성 주문의 상태가 업데이트된다")
     void updatesOrderStatus() {
-        InFlightOrder order = createActiveOrder("BUY-BTC-USDT-1", "12345");
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", order));
+        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", "12345");
+        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
         stubOrderStatusResponse("12345", "PARTIALLY_FILLED");
 
         poller.pollData();
@@ -74,10 +74,10 @@ class BinanceOrderStatusPollerTest {
     @Test
     @DisplayName("거래소에서 주문을 찾지 못하면 processOrderNotFound가 호출된다")
     void orderNotFound() {
-        InFlightOrder order = createActiveOrder("BUY-BTC-USDT-1", "12345");
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", order));
+        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", "12345");
+        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
         when(mockRestAssistant.executeRequestAndGetJsonBody(any(RestRequest.class)))
-                .thenThrow(new ExchangeApiException(HttpStatusCode.valueOf(400), "Unknown order sent"));
+                .thenThrow(new ExchangeApiException(HttpStatusCode.valueOf(400), "Unknown inFlightOrder sent"));
 
         poller.pollData();
 

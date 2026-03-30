@@ -59,8 +59,8 @@ class BinanceTradePollerTest {
     @Test
     @DisplayName("체결 내역이 OrderTracker에 전달된다")
     void processesTradeUpdates() {
-        InFlightOrder order = createActiveOrder("BUY-BTC-USDT-1", "12345");
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", order));
+        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", "12345");
+        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
         stubTradesResponse(List.of(
                 createTradeNode("t1", "12345", "50000", "0.005", "0.25", "USDT", true)
         ));
@@ -79,8 +79,8 @@ class BinanceTradePollerTest {
     @Test
     @DisplayName("여러 체결 내역이 모두 전달된다")
     void processesMultipleTradeUpdates() {
-        InFlightOrder order = createActiveOrder("BUY-BTC-USDT-1", "12345");
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", order));
+        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", "12345");
+        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
         stubTradesResponse(List.of(
                 createTradeNode("t1", "12345", "50000", "0.003", "0.15", "USDT", true),
                 createTradeNode("t2", "12345", "50100", "0.007", "0.35", "USDT", false)
@@ -94,8 +94,8 @@ class BinanceTradePollerTest {
     @Test
     @DisplayName("exchangeOrderId가 UNKNOWN이면 체결 내역을 조회하지 않는다")
     void skipsUnknownExchangeOrderId() {
-        InFlightOrder order = createActiveOrder("BUY-BTC-USDT-1", "UNKNOWN");
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", order));
+        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", "UNKNOWN");
+        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
 
         poller.pollData();
 
@@ -105,8 +105,8 @@ class BinanceTradePollerTest {
     @Test
     @DisplayName("exchangeOrderId가 null이면 체결 내역을 조회하지 않는다")
     void skipsNullExchangeOrderId() {
-        InFlightOrder order = createActiveOrder("BUY-BTC-USDT-1", null);
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", order));
+        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", null);
+        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
 
         poller.pollData();
 

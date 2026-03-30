@@ -6,8 +6,8 @@ import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderTracker;
+import com.hotak.noonchibot.core.order.executor.AbstractExchangeInFlightOrderExecutorTest;
 import com.hotak.noonchibot.core.order.executor.AbstractExchangeOrderExecutor;
-import com.hotak.noonchibot.core.order.executor.AbstractExchangeOrderExecutorTest;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
@@ -20,8 +20,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-public class BinanceOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
-    public BinanceOrderExecutorTest() {
+public class BinanceInFlightOrderExecutorTest extends AbstractExchangeInFlightOrderExecutorTest {
+    public BinanceInFlightOrderExecutorTest() {
         super(BinanceApiSpec.ORDER_PATH_URL, BinanceApiSpec.ACCOUNTS_PATH_URL, BinanceApiSpec.MY_TRADES_PATH_URL);
     }
 

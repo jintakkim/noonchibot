@@ -168,18 +168,18 @@ public class AsyncThrottlerTest {
             throttler = new AsyncThrottlerImpl(List.of(
                     RateLimit.pool("WEIGHT", 100, Duration.ofSeconds(2)),
                     RateLimit.pool("ORDERS", 2, Duration.ofSeconds(2)),
-                    RateLimit.endpoint("/api/order", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
+                    RateLimit.endpoint("/api/inFlightOrder", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
                             new RateLimit.LinkedLimitWeightPair("WEIGHT", 4),
                             new RateLimit.LinkedLimitWeightPair("ORDERS", 1)))
             ), executor, Duration.ofMillis(50), 0.0);
 
             // ORDERS 풀: 한도 2, weight 1 × 2번 = 소진
-            throttler.execute("/api/order", () -> "ok").get(1, TimeUnit.SECONDS);
-            throttler.execute("/api/order", () -> "ok").get(1, TimeUnit.SECONDS);
+            throttler.execute("/api/inFlightOrder", () -> "ok").get(1, TimeUnit.SECONDS);
+            throttler.execute("/api/inFlightOrder", () -> "ok").get(1, TimeUnit.SECONDS);
 
             // WEIGHT는 아직 여유(8/100)지만 ORDERS가 꽉 참 → 대기
             var start = System.currentTimeMillis();
-            throttler.execute("/api/order", () -> "ok").get(5, TimeUnit.SECONDS);
+            throttler.execute("/api/inFlightOrder", () -> "ok").get(5, TimeUnit.SECONDS);
             var elapsed = System.currentTimeMillis() - start;
 
             assertThat(elapsed).isGreaterThan(500);

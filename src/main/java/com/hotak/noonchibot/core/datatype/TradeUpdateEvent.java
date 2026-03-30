@@ -1,11 +1,10 @@
 package com.hotak.noonchibot.core.datatype;
 
 import com.hotak.noonchibot.core.event.ExchangeEvent;
-import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import com.hotak.noonchibot.core.order.Trade;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 
 public record TradeUpdateEvent(
         String tradeId,
@@ -16,8 +15,24 @@ public record TradeUpdateEvent(
         BigDecimal fillPrice,
         BigDecimal fillBaseAmount,
         BigDecimal fillQuoteAmount,
-        List<TokenAmount> fee,
-        //nullable if dex
+        String feeToken,
+        BigDecimal feeAmount,
         Boolean isMaker
 ) implements ExchangeEvent {
+
+    public Trade toTrade() {
+        return new Trade(
+                tradeId,
+                clientOrderId,
+                exchangeOrderId,
+                fillTimestamp,
+                fillPrice,
+                fillBaseAmount,
+                fillQuoteAmount,
+                feeToken,
+                feeAmount,
+                isMaker
+        );
+    }
+
 }

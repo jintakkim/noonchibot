@@ -1,8 +1,6 @@
 package com.hotak.noonchibot.core.orderbook;
 
-import com.hotak.noonchibot.connector.OrderBookMessageStream;
 import com.hotak.noonchibot.core.RetryableTrigger;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
@@ -15,7 +13,6 @@ import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
-@Getter
 public class OrderBookTracker {
     private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(1);
     private static final Duration ERROR_RETRY_INTERVAL = Duration.ofSeconds(30);
@@ -100,7 +97,7 @@ public class OrderBookTracker {
             log.warn("해당 페어는 이미 트래킹 중입니다.");
             return;
         }
-        OrderBookMessageStream stream = dataSource.subscribe(tradingPair);
+        OrderBookMessageStream stream = dataSource.subscribeOrderBookStream(tradingPair);
         streams.put(tradingPair, stream);
         executorTask.put(tradingPair, submitTaskToExecutor(() -> {
             while (!Thread.currentThread().isInterrupted()) {
@@ -148,7 +145,11 @@ public class OrderBookTracker {
         return lastTradeTime == null || lastTradeTime.isBefore(Instant.now().minus(Duration.ofMinutes(3)));
     }
 
-    public Map<String, ReadOnlyOrderBook> getReadOnlyOrderBooks() {
+    public Map<String, ReadOnlyOrderBook> getOrderBooks() {
         return new HashMap<>(orderBooks);
+    }
+
+    public Optional<ReadOnlyOrderBook> findOrderBook(String tradingPair) {
+        return Optional.ofNullable(orderBooks.get(tradingPair));
     }
 }

@@ -1,6 +1,5 @@
 package com.hotak.noonchibot.core.orderbook;
 
-import com.hotak.noonchibot.connector.OrderBookMessageStream;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import org.junit.jupiter.api.*;
 
@@ -19,7 +18,7 @@ import org.springframework.scheduling.TaskScheduler;
 
 import java.util.List;
 
-public class OrderBookTrackerTest {
+public class InFlightOrderBookTrackerTest {
 
     private OrderBookDataSource dataSource;
     private TaskScheduler scheduler;
@@ -44,9 +43,9 @@ public class OrderBookTrackerTest {
     @DisplayName("tradingPair 추가시 datasource에서 stream을 구독한다.")
     void subscribesToDataSourceWhenTradingPairAdded() {
         String tradingPair = "BTC-USDT";
-        when(dataSource.subscribe(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
+        when(dataSource.subscribeOrderBookStream(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
         tracker.addTradingPair(tradingPair);
-        verify(dataSource, times(1)).subscribe(tradingPair);
+        verify(dataSource, times(1)).subscribeOrderBookStream(tradingPair);
     }
 
     @Test
@@ -54,7 +53,7 @@ public class OrderBookTrackerTest {
     void unsubscribesFromDataSourceWhenTradingPairRemoved() {
         String tradingPair = "BTC-USDT";
         OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
+        when(dataSource.subscribeOrderBookStream(tradingPair)).thenReturn(stream);
         tracker.addTradingPair(tradingPair);
         tracker.removeTradingPair(tradingPair);
         verify(dataSource, times(1)).unsubscribe(stream);
@@ -64,7 +63,7 @@ public class OrderBookTrackerTest {
     @DisplayName("tradingPair 추가시 orderBook이 생성된다.")
     void createsOrderBookWhenTradingPairAdded() {
         String tradingPair = "BTC-USDT";
-        when(dataSource.subscribe(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
+        when(dataSource.subscribeOrderBookStream(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
         tracker.addTradingPair(tradingPair);
         verify(dataSource, times(1)).getNewOrderBook(tradingPair);
         assertThat(tracker.getOrderBooks()).containsEntry(tradingPair, orderBook);
@@ -74,7 +73,7 @@ public class OrderBookTrackerTest {
     @DisplayName("tradingPair를 해제하면 orderBook이 제거된다.")
     void removesOrderBookWhenTradingPairRemoved() {
         String tradingPair = "BTC-USDT";
-        when(dataSource.subscribe(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
+        when(dataSource.subscribeOrderBookStream(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
         tracker.addTradingPair(tradingPair);
         tracker.removeTradingPair(tradingPair);
         assertThat(tracker.getOrderBooks()).doesNotContainEntry(tradingPair, orderBook);
@@ -87,7 +86,7 @@ public class OrderBookTrackerTest {
         String tradingPair = "BTC-USDT";
         initOrderBook();
         OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
+        when(dataSource.subscribeOrderBookStream(tradingPair)).thenReturn(stream);
         tracker.addTradingPair(tradingPair);
         OrderBookMessage.DiffMessage diffMessage = createDiffMessage();
         stream.add(diffMessage);
@@ -101,7 +100,7 @@ public class OrderBookTrackerTest {
         String tradingPair = "BTC-USDT";
         initOrderBook();
         OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
+        when(dataSource.subscribeOrderBookStream(tradingPair)).thenReturn(stream);
         tracker.addTradingPair(tradingPair);
         OrderBookMessage.TradeMessage tradeMessage = createTradeMessage();
         stream.add(tradeMessage);
@@ -115,7 +114,7 @@ public class OrderBookTrackerTest {
         String tradingPair = "BTC-USDT";
         initOrderBook();
         OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
+        when(dataSource.subscribeOrderBookStream(tradingPair)).thenReturn(stream);
         tracker.addTradingPair(tradingPair);
 
         // diff를 먼저 처리해서 pastDiffsWindow에 쌓기
@@ -143,7 +142,7 @@ public class OrderBookTrackerTest {
         String tradingPair = "BTC-USDT";
         initOrderBook();
         OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
+        when(dataSource.subscribeOrderBookStream(tradingPair)).thenReturn(stream);
         tracker.addTradingPair(tradingPair);
         when(orderBook.getLastAppliedTradeTime()).thenReturn(Instant.now().minus(Duration.ofMinutes(4)));
         BigDecimal fallbackPrice = new BigDecimal("51000");

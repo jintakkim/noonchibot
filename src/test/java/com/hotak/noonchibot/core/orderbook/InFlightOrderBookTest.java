@@ -10,7 +10,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public abstract class OrderBookTest {
+public abstract class InFlightOrderBookTest {
     @Test
     @DisplayName("빈 오더북에 스냅샷 적용")
     void applySnapshotToEmptyBook() {

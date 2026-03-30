@@ -80,7 +80,7 @@ public class RestAssistantTest {
     @Test
     @DisplayName("POST 요청 - body를 전송하고 응답을 받는다")
     void post_sendsBodyAndReturnsResponse() {
-        stubFor(post("/api/order")
+        stubFor(post("/api/inFlightOrder")
                 .withRequestBody(containing("BUY"))
                 .willReturn(okJson("""
                         {"orderId":"123","status":"NEW"}
@@ -88,7 +88,7 @@ public class RestAssistantTest {
 
         RestResponse response = restAssistant.executeRequestAndGetResponse(
                 RestRequest.builder()
-                        .pathUrl("/api/order")
+                        .pathUrl("/api/inFlightOrder")
                         .method(HttpMethod.POST)
                         .authRequired(false)
                         .body(Map.of("side", "BUY"))
@@ -184,7 +184,7 @@ public class RestAssistantTest {
     @Test
     @DisplayName("4xx 에러 - throwError=true면 예외를 던진다")
     void clientError_throwErrorTrue_throwsException() {
-        stubFor(get("/api/order")
+        stubFor(get("/api/inFlightOrder")
                 .willReturn(aResponse()
                         .withStatus(400)
                         .withBody("{\"code\":-2010,\"msg\":\"Insufficient balance\"}")));
@@ -192,7 +192,7 @@ public class RestAssistantTest {
         assertThatThrownBy(() ->
                 restAssistant.executeRequestAndGetResponse(
                         RestRequest.builder()
-                                .pathUrl("/api/order")
+                                .pathUrl("/api/inFlightOrder")
                                 .method(HttpMethod.GET)
                                 .throwError(true)
                                 .build()
@@ -208,7 +208,7 @@ public class RestAssistantTest {
     @Test
     @DisplayName("5xx 에러 - throwError=true면 예외를 던진다")
     void serverError_throwErrorTrue_throwsException() {
-        stubFor(get("/api/order")
+        stubFor(get("/api/inFlightOrder")
                 .willReturn(aResponse()
                         .withStatus(503)
                         .withBody("Service Unavailable")));
@@ -216,7 +216,7 @@ public class RestAssistantTest {
         assertThatThrownBy(() ->
                 restAssistant.executeRequestAndGetResponse(
                         RestRequest.builder()
-                                .pathUrl("/api/order")
+                                .pathUrl("/api/inFlightOrder")
                                 .method(HttpMethod.GET)
                                 .throwError(true)
                                 .build()
@@ -231,14 +231,14 @@ public class RestAssistantTest {
     @Test
     @DisplayName("4xx 에러 - throwError=false면 예외 없이 응답을 반환한다")
     void clientError_throwErrorFalse_returnsResponse() {
-        stubFor(get("/api/order")
+        stubFor(get("/api/inFlightOrder")
                 .willReturn(aResponse()
                         .withStatus(400)
                         .withBody("{\"code\":-2010,\"msg\":\"Insufficient balance\"}")));
 
         RestResponse response = restAssistant.executeRequestAndGetResponse(
                 RestRequest.builder()
-                        .pathUrl("/api/order")
+                        .pathUrl("/api/inFlightOrder")
                         .method(HttpMethod.GET)
                         .throwError(false)
                         .build()
@@ -251,14 +251,14 @@ public class RestAssistantTest {
     @Test
     @DisplayName("5xx 에러 - throwError=false면 예외 없이 응답을 반환한다")
     void serverError_throwErrorFalse_returnsResponse() {
-        stubFor(get("/api/order")
+        stubFor(get("/api/inFlightOrder")
                 .willReturn(aResponse()
                         .withStatus(503)
                         .withBody("Service Unavailable")));
 
         RestResponse response = restAssistant.executeRequestAndGetResponse(
                 RestRequest.builder()
-                        .pathUrl("/api/order")
+                        .pathUrl("/api/inFlightOrder")
                         .method(HttpMethod.GET)
                         .throwError(false)
                         .build()
