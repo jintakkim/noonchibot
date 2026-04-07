@@ -4,7 +4,7 @@ import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
 import com.hotak.noonchibot.core.datatype.UserStreamEventParser;
 import com.hotak.noonchibot.core.event.ExchangeEvent;
-import com.hotak.noonchibot.core.order.OrderUpdateEvent;
+import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import com.hotak.noonchibot.core.trade.fee.TokenAmount;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
@@ -42,10 +42,10 @@ public class BinanceExecutionReportParser implements UserStreamEventParser {
                     fillPrice,
                     fillQty,
                     fillQty.multiply(fillPrice),
-                    List.of(new TokenAmount(
+                    new TokenAmount(
                             event.get("N").asString(),
                             event.get("n").asDecimal()
-                    )),
+                    ),
                     event.get("m").asBoolean()
             ));
         }

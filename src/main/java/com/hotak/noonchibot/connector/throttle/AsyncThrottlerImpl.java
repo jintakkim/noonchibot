@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector.throttle;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.TaskExecutor;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -20,16 +21,16 @@ public class AsyncThrottlerImpl implements AsyncThrottler {
     private final Duration retryInterval;
     private final double safetyMarginPct;
 
-    public AsyncThrottlerImpl(List<RateLimit> rateLimits, TaskExecutor executor, Duration retryInterval, double safetyMarginPct) {
+    public AsyncThrottlerImpl(List<RateLimit> rateLimits, TaskExecutor executor, Duration retryInterval, double safetyMarginPct, Clock clock) {
         this.executor = executor;
         this.retryInterval = retryInterval;
         this.safetyMarginPct = safetyMarginPct;
         // 전부 pool로
-        this.pools = rateLimits.stream().collect(toMap(RateLimit::limitId, RateLimitPool::new));
+        this.pools = rateLimits.stream().collect(toMap(RateLimit::limitId, rateLimit -> new RateLimitPool(rateLimit, clock)));
     }
 
     public AsyncThrottlerImpl(List<RateLimit> rateLimits, TaskExecutor executor) {
-        this(rateLimits, executor, DEFAULT_RETRY_INTERVAL, DEFAULT_SAFETY_MARGIN_PCT);
+        this(rateLimits, executor, DEFAULT_RETRY_INTERVAL, DEFAULT_SAFETY_MARGIN_PCT, Clock.systemUTC());
     }
 
     @Override

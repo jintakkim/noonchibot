@@ -3,6 +3,8 @@ package com.hotak.noonchibot.connector.web;
 import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
@@ -13,6 +15,7 @@ import java.util.List;
 
 @RequiredArgsConstructor
 public class RestAssistant {
+    private static final Logger log = LoggerFactory.getLogger(RestAssistant.class);
     private final RestClient restClient;
     private final List<RestPreProcessor> preProcessors;
     private final List<RestPostProcessor> postProcessors;
@@ -39,6 +42,7 @@ public class RestAssistant {
                 () -> {
                     RestResponse response = applyPostProcessors(call(finalRequest));
                     if (response.statusCode().isError() && request.throwError()) {
+                        log.error("네트워크 문제 발생, response: {}", response);
                         throw new ExchangeApiException(response.statusCode(), response.body());
                     }
                     return response;

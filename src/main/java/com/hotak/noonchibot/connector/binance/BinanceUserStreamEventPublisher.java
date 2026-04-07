@@ -3,7 +3,7 @@ package com.hotak.noonchibot.connector.binance;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.datatype.BalanceStreamStatus;
 import com.hotak.noonchibot.core.datatype.UserStreamEventParser;
-import com.hotak.noonchibot.core.datatype.OrderStreamStatus;
+import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +21,7 @@ import static java.lang.Thread.sleep;
 
 @Slf4j
 @RequiredArgsConstructor
-public class BinanceUserStreamEventPublisher implements OrderStreamStatus, BalanceStreamStatus, SmartLifecycle {
+public class BinanceUserStreamEventPublisher implements WebsocketStatus, BalanceStreamStatus, SmartLifecycle {
     private final WsAssistant wsAssistant;
     private final ObjectMapper objectMapper;
     private final BinanceAuthenticator binanceAuthenticator;

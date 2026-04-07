@@ -1,6 +1,8 @@
 package com.hotak.noonchibot.core.orderbook;
 
-import com.hotak.noonchibot.connector.OrderBookMessageStream;
+import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.TestMainExecutor;
+import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import org.junit.jupiter.api.*;
 
@@ -8,13 +10,13 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.VirtualThreadTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.util.List;
@@ -23,7 +25,8 @@ public class OrderBookTrackerTest {
 
     private OrderBookDataSource dataSource;
     private TaskScheduler scheduler;
-    private AsyncTaskExecutor executor;
+    private TestMainExecutor mainExecutor;
+    private IoExecutor ioExecutor;
     private OrderBook orderBook;
 
     private OrderBookTracker tracker;
@@ -32,163 +35,199 @@ public class OrderBookTrackerTest {
     void setUp() {
         dataSource = mock(OrderBookDataSource.class);
         scheduler = mock(TaskScheduler.class);
-        executor = mock(AsyncTaskExecutor.class);
+        mainExecutor = new TestMainExecutor();
+        ioExecutor = new VirtualThreadIoExecutor();
         orderBook = spy(new OrderBook(false));
-        tracker = new OrderBookTracker(dataSource, scheduler, executor);
-        when(executor.submit(any(Runnable.class))).thenReturn(CompletableFuture.completedFuture(null));
+        tracker = new OrderBookTracker(dataSource, scheduler, mainExecutor, ioExecutor);
+
         when(scheduler.scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class))).thenReturn(null);
         when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);
     }
 
     @Test
-    @DisplayName("tradingPair 추가시 datasource에서 stream을 구독한다.")
-    void subscribesToDataSourceWhenTradingPairAdded() {
-        String tradingPair = "BTC-USDT";
-        when(dataSource.subscribe(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
-        tracker.addTradingPair(tradingPair);
-        verify(dataSource, times(1)).subscribe(tradingPair);
+    @DisplayName("페어 추가 시 오더북이 생성되고 스트림이 구독된다")
+    void addTradingPairCreatesOrderBookAndSubscribesStream() {
+        String pair = "BTC-USDT";
+        OrderBookMessageStream stream = new OrderBookMessageStream(pair);
+        when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
+        when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);
+        tracker.addTradingPair(pair);
+
+        verify(dataSource).getNewOrderBook(pair);
+        verify(dataSource).subscribeOrderBookStream(pair);
+        assertThat(tracker.findOrderBook(pair)).isPresent();
     }
 
     @Test
-    @DisplayName("tradingPair를 해제하면 datasource에서 stream을 구독 해제한다.")
-    void unsubscribesFromDataSourceWhenTradingPairRemoved() {
-        String tradingPair = "BTC-USDT";
-        OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
-        tracker.addTradingPair(tradingPair);
-        tracker.removeTradingPair(tradingPair);
-        verify(dataSource, times(1)).unsubscribe(stream);
+    @DisplayName("이미 존재하는 페어를 추가하면 무시된다")
+    void addTradingPairIgnoresDuplicate() {
+        String pair = "BTC-USDT";
+        OrderBookMessageStream stream = new OrderBookMessageStream(pair);
+        when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
+        when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);
+
+        tracker.addTradingPair(pair);
+        tracker.addTradingPair(pair);
+        verify(dataSource, times(1)).getNewOrderBook(pair);
     }
 
     @Test
-    @DisplayName("tradingPair 추가시 orderBook이 생성된다.")
-    void createsOrderBookWhenTradingPairAdded() {
-        String tradingPair = "BTC-USDT";
-        when(dataSource.subscribe(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
-        tracker.addTradingPair(tradingPair);
-        verify(dataSource, times(1)).getNewOrderBook(tradingPair);
-        assertThat(tracker.getOrderBooks()).containsEntry(tradingPair, orderBook);
+    @DisplayName("페어 제거 시 오더북이 삭제되고 스트림이 구독 해제된다")
+    void removeTradingPairRemovesOrderBookAndUnsubscribes() {
+        String pair = "BTC-USDT";
+        OrderBookMessageStream stream = new OrderBookMessageStream(pair);
+        when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
+
+        tracker.addTradingPair(pair);
+        tracker.removeTradingPair(pair);
+
+        assertThat(tracker.findOrderBook(pair)).isEmpty();
+        verify(dataSource).unsubscribe(stream);
     }
+
 
     @Test
-    @DisplayName("tradingPair를 해제하면 orderBook이 제거된다.")
-    void removesOrderBookWhenTradingPairRemoved() {
-        String tradingPair = "BTC-USDT";
-        when(dataSource.subscribe(tradingPair)).thenReturn(new OrderBookMessageStream(tradingPair));
-        tracker.addTradingPair(tradingPair);
-        tracker.removeTradingPair(tradingPair);
-        assertThat(tracker.getOrderBooks()).doesNotContainEntry(tradingPair, orderBook);
-
+    @DisplayName("트래킹 중이 아닌 페어를 제거하면 무시된다")
+    void removeTradingPairIgnoresUnknownPair() {
+        tracker.removeTradingPair("ETH-USDT");
+        verify(dataSource, never()).unsubscribe(any());
     }
 
-    @Test
-    @DisplayName("stream에 diff 메시지가 전달되면 diff 메시지를 오더북에 반영한다.")
-    void appliesDiffMessageToOrderBook() throws InterruptedException {
-        String tradingPair = "BTC-USDT";
-        initOrderBook();
-        OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
-        tracker.addTradingPair(tradingPair);
-        OrderBookMessage.DiffMessage diffMessage = createDiffMessage();
-        stream.add(diffMessage);
-        tracker.processStream(stream);
-        verify(orderBook, times(1)).applyDiffs(diffMessage.getBids(), diffMessage.getAsks(), diffMessage.getUpdateId());
+    @Nested
+    @DisplayName("오더북 메시지 처리")
+    class MessageProcessing {
+
+        private OrderBookMessageStream stream;
+
+        @BeforeEach
+        void setUp() {
+            String pair = "BTC-USDT";
+            stream = new OrderBookMessageStream(pair);
+            when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
+            tracker.addTradingPair(pair);
+            when(orderBook.getSnapshotId()).thenReturn(1L);
+        }
+
+        @Test
+        @DisplayName("diff 메시지가 오더북에 반영된다")
+        void diffMessageAppliedToOrderBook() {
+            OrderBookMessage.DiffMessage diff = createDiffMessage(2L);
+            tracker.processMessage(diff);
+            verify(orderBook).applyDiffs(diff.getBids(), diff.getAsks(), diff.getUpdateId());
+        }
+
+        @Test
+        @DisplayName("스냅샷보다 오래된 diff는 무시된다")
+        void staleDiffIgnored() {
+            OrderBookMessage.DiffMessage staleDiff = createDiffMessage(0L);
+            tracker.processMessage(staleDiff);
+            verify(orderBook, never()).applyDiffs(any(), any(), anyLong());
+        }
+
+        @Test
+        @DisplayName("trade 메시지가 오더북에 반영된다")
+        void tradeMessageAppliedToOrderBook() {
+            OrderBookMessage.TradeMessage trade = createTradeMessage(0L);
+            tracker.processMessage(trade);
+            verify(orderBook).applyTrade(trade);
+        }
+
+        @Test
+        @DisplayName("스냅샷 메시지가 최근 diff 윈도우와 함께 복구된다")
+        void snapshotMessageRestoresWithPastDiffs() {
+            OrderBookMessage.DiffMessage diff1 = createDiffMessage(2L);
+            OrderBookMessage.DiffMessage diff2 = createDiffMessage(3L);
+            tracker.processMessage(diff1);
+            tracker.processMessage(diff2);
+            OrderBookMessage.SnapshotMessage snapshot = createSnapshotMessage(1L);
+            tracker.processMessage(snapshot);
+            verify(orderBook).restoreFromSnapshotAndDiffs(eq(snapshot), argThat(diffs ->
+                    diffs.size() == 2 && diffs.contains(diff1) && diffs.contains(diff2)
+            ));
+        }
+
+        @Test
+        @DisplayName("diff 윈도우가 최대 크기를 초과하면 오래된 것부터 제거된다")
+        void pastDiffsWindow_evictsOldEntries() {
+            for (int i = 0; i < 35; i++) {
+                tracker.processMessage(createDiffMessage(i + 2L));
+            }
+            Deque<OrderBookMessage.DiffMessage> window = tracker.getPastDiffsWindow("BTC-USDT");
+            assertThat(window).hasSize(30);
+            assertThat(window.getFirst().getUpdateId()).isEqualTo(7L);  // 2+5, 앞의 5개 제거됨
+            assertThat(window.getLast().getUpdateId()).isEqualTo(36L);
+        }
     }
 
-    @Test
-    @DisplayName("stream에 trade 메시지가 전달되면 trade 메시지를 오더북에 반영한다. ")
-    void appliesTradeMessageToOrderBook() throws InterruptedException {
-        String tradingPair = "BTC-USDT";
-        initOrderBook();
-        OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
-        tracker.addTradingPair(tradingPair);
-        OrderBookMessage.TradeMessage tradeMessage = createTradeMessage();
-        stream.add(tradeMessage);
-        tracker.processStream(stream);
-        verify(orderBook, times(1)).applyTrade(tradeMessage);
+
+    @Nested
+    @DisplayName("stale 가격 갱신")
+    class StalePriceRefresh {
+        @Test
+        @DisplayName("trade 수신이 3분 이상 없으면 REST로 가격을 갱신한다")
+        void refreshesStalePrices() {
+            String pair = "BTC-USDT";
+            OrderBookMessageStream stream = new OrderBookMessageStream(pair);
+            when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
+            tracker.addTradingPair(pair);
+
+            when(orderBook.getLastAppliedTradeTime())
+                    .thenReturn(Instant.now().minus(Duration.ofMinutes(4)));
+            BigDecimal fallbackPrice = new BigDecimal("51000");
+            when(dataSource.getLastTradedPrices(Set.of(pair)))
+                    .thenReturn(Map.of(pair, fallbackPrice));
+
+            tracker.refreshStalePrices().join();
+            verify(dataSource).getLastTradedPrices(Set.of(pair));
+            assertThat(orderBook.getLastTradePrice()).isEqualByComparingTo(fallbackPrice);
+        }
+
+        @Test
+        @DisplayName("최근 trade가 있으면 REST 호출하지 않는다")
+        void doesNotRefreshFreshPrices() {
+            String pair = "BTC-USDT";
+            OrderBookMessageStream stream = new OrderBookMessageStream(pair);
+            when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
+            tracker.addTradingPair(pair);
+
+            when(orderBook.getLastAppliedTradeTime())
+                    .thenReturn(Instant.now().minus(Duration.ofSeconds(30)));
+            tracker.refreshStalePrices().join();
+            verify(dataSource, never()).getLastTradedPrices(any());
+        }
     }
 
-    @Test
-    @DisplayName("stream에 snapshot 메시지가 전달되면 최근 저장해둔 diff와 함께 오더북을 복구한다.")
-    void restoresOrderBookFromSnapshotWithPastDiffs() throws InterruptedException {
-        String tradingPair = "BTC-USDT";
-        initOrderBook();
-        OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
-        tracker.addTradingPair(tradingPair);
-
-        // diff를 먼저 처리해서 pastDiffsWindow에 쌓기
-        OrderBookMessage.DiffMessage diff1 = createDiffMessage();
-        OrderBookMessage.DiffMessage diff2 = createDiffMessage();
-        stream.add(diff1);
-        stream.add(diff2);
-        tracker.processStream(stream);
-        tracker.processStream(stream);
-
-        // snapshot 처리
-        OrderBookMessage.SnapshotMessage snapshot = createSnapshotMessage();
-        stream.add(snapshot);
-        tracker.processStream(stream);
-
-        verify(orderBook).restoreFromSnapshotAndDiffs(eq(snapshot), argThat(diffs ->
-                diffs.size() == 2 && diffs.contains(diff1) && diffs.contains(diff2)
-        ));
-
-    }
-
-    @Test
-    @DisplayName("trade 메시지 수신이 지연되서 lastTradedPrice 업데이트가 지연되면 직접 데이터소스에서 가져와 업데이트한다.")
-    void fetchesLastTradedPriceWhenTradeMessageStale() {
-        String tradingPair = "BTC-USDT";
-        initOrderBook();
-        OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
-        when(dataSource.subscribe(tradingPair)).thenReturn(stream);
-        tracker.addTradingPair(tradingPair);
-        when(orderBook.getLastAppliedTradeTime()).thenReturn(Instant.now().minus(Duration.ofMinutes(4)));
-        BigDecimal fallbackPrice = new BigDecimal("51000");
-        when(dataSource.getLastTradedPrices(Set.of(tradingPair))).thenReturn(Map.of(tradingPair, fallbackPrice));
-        tracker.updateLastTradePrices();
-        verify(dataSource).getLastTradedPrices(Set.of(tradingPair));
-        assertThat(orderBook.getLastTradePrice()).isEqualByComparingTo(fallbackPrice);
-    }
-
-    private void initOrderBook() {
-        OrderBookMessage.SnapshotMessage snapshotMessage = createSnapshotMessage();
-        orderBook.applySnapshot(snapshotMessage.getBids(), snapshotMessage.getAsks(), snapshotMessage.getUpdateId());
-    }
-
-    private OrderBookMessage.SnapshotMessage createSnapshotMessage() {
+    private OrderBookMessage.SnapshotMessage createSnapshotMessage(Long updateId) {
         return new OrderBookMessage.SnapshotMessage(
                 Instant.now(),
                 "BTC-USDT",
-                1L,
+                updateId,
                 List.of(
-                        new OrderBookEntry(1L, new BigDecimal("50000"), new BigDecimal("1.0")),
-                        new OrderBookEntry(1L, new BigDecimal("49999"), new BigDecimal("0.5"))
+                        new OrderBookEntry(updateId, new BigDecimal("50000"), new BigDecimal("1.0")),
+                        new OrderBookEntry(updateId, new BigDecimal("49999"), new BigDecimal("0.5"))
                 ),
                 List.of(
-                        new OrderBookEntry(1L, new BigDecimal("50001"), new BigDecimal("2.0")),
-                        new OrderBookEntry(1L, new BigDecimal("50002"), new BigDecimal("1.5"))
+                        new OrderBookEntry(updateId, new BigDecimal("50001"), new BigDecimal("2.0")),
+                        new OrderBookEntry(updateId, new BigDecimal("50002"), new BigDecimal("1.5"))
                 )
         );
     }
 
-    private OrderBookMessage.DiffMessage createDiffMessage() {
+    private OrderBookMessage.DiffMessage createDiffMessage(Long updateId) {
         return new OrderBookMessage.DiffMessage(
                 Instant.now(),
                 "BTC-USDT",
-                1L,
-                List.of(new OrderBookEntry(1L, new BigDecimal("50000"), new BigDecimal("1.0"))),
-                List.of(new OrderBookEntry(1L, new BigDecimal("50001"), new BigDecimal("0.5")))
+                updateId,
+                List.of(new OrderBookEntry(updateId, new BigDecimal("50000"), new BigDecimal("1.0"))),
+                List.of(new OrderBookEntry(updateId, new BigDecimal("50001"), new BigDecimal("0.5")))
         );
     }
 
-    private OrderBookMessage.TradeMessage createTradeMessage() {
+    private OrderBookMessage.TradeMessage createTradeMessage(Long tradeId) {
         return new OrderBookMessage.TradeMessage(
                 Instant.now(),
                 "BTC-USDT",
-                1L,
+                tradeId,
                 new BigDecimal("50000"),
                 new BigDecimal("0.5"),
                 TradeType.BUY

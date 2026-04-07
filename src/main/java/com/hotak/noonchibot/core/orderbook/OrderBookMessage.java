@@ -3,6 +3,7 @@ package com.hotak.noonchibot.core.orderbook;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -24,6 +25,7 @@ public class OrderBookMessage {
     private final String tradingPair;
 
     @Getter
+    @ToString
     public static class DiffMessage extends OrderBookMessage {
         private final long updateId;
         private final List<OrderBookEntry> bids;
@@ -52,6 +54,7 @@ public class OrderBookMessage {
     }
 
     @Getter
+    @ToString
     public static class TradeMessage extends OrderBookMessage {
         private final long tradeId;
         private final BigDecimal price;

@@ -1,98 +1,127 @@
 package com.hotak.noonchibot.connector.binance;
 
-import com.hotak.noonchibot.connector.AbstractExchangeDataPoller;
+import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.PollScheduler;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.datatype.OrderStreamStatus;
-import com.hotak.noonchibot.core.order.InFlightOrder;
-import com.hotak.noonchibot.core.order.OrderTracker;
-import com.hotak.noonchibot.core.order.OrderUpdateEvent;
+import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.MainExecutor;
+import com.hotak.noonchibot.core.datatype.WebsocketStatus;
+import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
+import com.hotak.noonchibot.core.event.OrderLostEvent;
+import com.hotak.noonchibot.core.order.*;
+import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.http.HttpMethod;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.function.Consumer;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
-public class BinanceOrderStatusPoller extends AbstractExchangeDataPoller {
+public class BinanceOrderStatusPoller implements SmartLifecycle {
     private final RestAssistant restAssistant;
+    private final ExchangeEventPublisher eventPublisher;
     private final OrderTracker orderTracker;
+    private final MainExecutor mainExecutor;
+    private final IoExecutor ioExecutor;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
+    private final PollScheduler pollScheduler;
+    private volatile boolean running = false;
 
     public BinanceOrderStatusPoller(
             RestAssistant restAssistant,
+            ExchangeEventPublisher eventPublisher,
             OrderTracker orderTracker,
+            MainExecutor mainExecutor,
+            IoExecutor ioExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            OrderStreamStatus orderStreamStatus,
-            AsyncTaskExecutor taskExecutor
+            WebsocketStatus websocketStatus,
+            TaskScheduler scheduler
     ) {
-        super(orderStreamStatus, taskExecutor);
         this.restAssistant = restAssistant;
+        this.eventPublisher = eventPublisher;
         this.orderTracker = orderTracker;
+        this.mainExecutor = mainExecutor;
+        this.ioExecutor = ioExecutor;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
+        this.pollScheduler = new PollScheduler(websocketStatus, scheduler);
     }
 
-    @Override
-    protected void pollData() {
-        executeParallel(
-                orderTracker.getActiveOrders().values(),
-                this::updateOrderStatus
+    private record OrderPollRequest(String tradingPair, String clientOrderId) {}
+
+    @VisibleForTesting
+    void pollData() {
+        Collection<InFlightOrder> ordersToUpdate = orderTracker.getAll();
+        List<OrderPollRequest> requests = ordersToUpdate.stream()
+                .map(order -> new OrderPollRequest(order.getTradingPair(), order.getClientOrderId()))
+                .toList();
+        if(requests.isEmpty()) return;
+        requests.forEach(req ->
+                CompletableFuture
+                        .supplyAsync(() -> fetchOrderStatus(req.tradingPair(), req.clientOrderId()), ioExecutor)
+                        .thenAcceptAsync(this::publishOrderStatus, mainExecutor)
         );
     }
 
-    private void updateOrderStatus(InFlightOrder order) {
-        try {
-            OrderUpdateEvent orderUpdateEvent = fetchOrderStatus(order);
-            orderTracker.processOrderUpdate(orderUpdateEvent);
-        } catch (Exception e) {
-            log.warn("order 상태 업데이트 중 예외 발생(not found order로 전환)", e);
-            orderTracker.processOrderNotFound(order.getClientOrderId());
-        }
+    private void publishOrderStatus(OrderUpdateEvent event) {
+        eventPublisher.publish(event);
     }
 
-    private OrderUpdateEvent fetchOrderStatus(InFlightOrder order) {
-        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(order.getTradingPair());
+    private boolean isOrderNotFoundDuringStatusUpdateException(Exception e) {
+        String message = e.getMessage();
+        return message != null
+                && message.contains(String.valueOf(BinanceApiSpec.ORDER_NOT_EXIST_ERROR_CODE));
+    }
+
+    private OrderUpdateEvent fetchOrderStatus(String tradingPair, String clientOrderId) {
+        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
                 .pathUrl(BinanceApiSpec.ORDER_PATH_URL)
-                .params(Map.of("symbol", symbol, "origClientOrderId", order.getClientOrderId()))
+                .params(Map.of("symbol", symbol, "origClientOrderId", clientOrderId))
                 .authRequired(true)
                 .build();
-        JsonNode updatedOrder = restAssistant.executeRequestAndGetJsonBody(request);
-        InFlightOrder.State newState = BinanceApiSpec.ORDER_STATE.get(updatedOrder.get("status").asString());
-        return new OrderUpdateEvent(
-                order.getTradingPair(),
-                Instant.ofEpochMilli(updatedOrder.get("updateTime").asLong()),
-                newState,
-                order.getClientOrderId(),
-                updatedOrder.get("orderId").asString()
-        );
+        try {
+            JsonNode updatedOrder = restAssistant.executeRequestAndGetJsonBody(request);
+            OrderState newState = BinanceApiSpec.ORDER_STATE.get(updatedOrder.get("status").asString());
+            log.info("{}:{}", tradingPair, updatedOrder);
+            return new OrderUpdateEvent(
+                    tradingPair,
+                    Instant.ofEpochMilli(updatedOrder.get("updateTime").asLong()),
+                    newState,
+                    clientOrderId,
+                    updatedOrder.get("orderId").asString()
+            );
+        } catch (Exception e) {
+            if (isOrderNotFoundDuringStatusUpdateException(e)) {
+                // 거래소에서 주문을 못 찾음 → lost 후보
+                eventPublisher.publish(new OrderLostEvent(clientOrderId));
+            }
+            throw e;
+        }
     }
 
+    @Override
+    public void start() {
+        pollScheduler.start(() -> mainExecutor.execute(this::pollData));
+        running = true;
+    }
 
-    private void executeParallel(Collection<InFlightOrder> orders, Consumer<InFlightOrder> task) {
-        List<Future<?>> futures = new ArrayList<>();
-        for (InFlightOrder order : orders) {
-            futures.add(taskExecutor.submit(() -> task.accept(order)));
-        }
-        for (Future<?> future : futures) {
-            try {
-                future.get();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (ExecutionException e) {
-                // task 내부에서 처리
-            }
-        }
+    @Override
+    public void stop() {
+        pollScheduler.stop();
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
     }
 }

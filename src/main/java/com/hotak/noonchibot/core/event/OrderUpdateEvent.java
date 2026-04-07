@@ -1,13 +1,13 @@
-package com.hotak.noonchibot.core.order;
+package com.hotak.noonchibot.core.event;
 
-import com.hotak.noonchibot.core.event.ExchangeEvent;
+import com.hotak.noonchibot.core.order.OrderState;
 
 import java.time.Instant;
 
 public record OrderUpdateEvent(
         String tradingPair,
         Instant updateTimestamp,
-        InFlightOrder.State newState,
+        OrderState newState,
         String clientOrderId,
         String exchangeOrderId,
         //nullable
@@ -17,12 +17,14 @@ public record OrderUpdateEvent(
     public OrderUpdateEvent(
             String tradingPair,
             Instant updateTimestamp,
-            InFlightOrder.State newState,
+            OrderState newState,
             String clientOrderId,
             String exchangeOrderId
     ) {
        this(tradingPair, updateTimestamp, newState, clientOrderId, exchangeOrderId, null);
     }
 
-    public record OrderFailure(String errorType, String errorMessage) {}
+    public record OrderFailure(String errorType, String errorMessage) {
+
+    }
 }

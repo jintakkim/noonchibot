@@ -8,7 +8,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class StructuredOrderIdGeneratorTest {
+public class StructuredInFlightOrderIdGeneratorTest {
 
     private final StructuredOrderIdGenerator generator = new StructuredOrderIdGenerator();
 

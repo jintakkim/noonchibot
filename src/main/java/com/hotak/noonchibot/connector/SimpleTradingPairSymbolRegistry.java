@@ -31,13 +31,14 @@ public class SimpleTradingPairSymbolRegistry implements TradingPairSymbolRegistr
     }
 
     @Override
-    public String convertExchangeSymbolToTradingPair(String exchangeSymbol) {
+    public String convertExchangeSymbolToTradingPair(String exchangeSymbol, boolean throwIfNotFound) {
         String tradingPair = symbolTradingPairMap.get(exchangeSymbol);
-        if (tradingPair == null) {
+        if (tradingPair == null && throwIfNotFound) {
             throw new NotRegisteredException("No trading pair registered for exchange symbol: " + exchangeSymbol);
         }
         return tradingPair;
     }
+
 
     @Override
     public boolean isEmpty() {

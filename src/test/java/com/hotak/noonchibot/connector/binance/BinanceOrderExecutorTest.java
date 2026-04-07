@@ -4,10 +4,10 @@ import com.hotak.noonchibot.connector.*;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
-import com.hotak.noonchibot.core.order.InFlightOrder;
+import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderTracker;
-import com.hotak.noonchibot.core.order.executor.AbstractExchangeOrderExecutor;
-import com.hotak.noonchibot.core.order.executor.AbstractExchangeOrderExecutorTest;
+import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutorTest;
+import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
@@ -58,11 +58,11 @@ public class BinanceOrderExecutorTest extends AbstractExchangeOrderExecutorTest 
     protected Exception createOrderNotFoundException() {
         return new ExchangeApiException(
                 HttpStatusCode.valueOf(400),
-                "{\"code\":" + BinanceApiSpec.UNKNOWN_ORDER_ERROR_CODE + ",\"msg\":\"" + BinanceApiSpec.UNKNOWN_ORDER_MESSAGE + "\"}"
+                "{\"code\":" + BinanceApiSpec.UNKNOWN_ORDER_DURING_CANCELLATION_ERROR_CODE + "}"
         );
     }
 
-    protected JsonNode createOrderStatusResponse(String exchangeOrderId, InFlightOrder.State state) {
+    protected JsonNode createOrderStatusResponse(String exchangeOrderId, OrderState state) {
         String binanceStatus = BinanceApiSpec.ORDER_STATE.entrySet().stream()
                 .filter(e -> e.getValue() == state)
                 .map(Map.Entry::getKey)

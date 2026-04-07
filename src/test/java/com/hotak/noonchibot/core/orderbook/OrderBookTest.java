@@ -2,7 +2,6 @@ package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.core.datatype.TradeType;
 import org.junit.jupiter.api.*;
-import org.mockito.internal.matchers.Or;
 
 import java.math.BigDecimal;
 import java.time.Instant;

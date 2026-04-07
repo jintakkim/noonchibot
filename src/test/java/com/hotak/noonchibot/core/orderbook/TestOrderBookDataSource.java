@@ -1,7 +1,5 @@
 package com.hotak.noonchibot.core.orderbook;
 
-import com.hotak.noonchibot.connector.OrderBookMessageStream;
-
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,7 +18,7 @@ public class TestOrderBookDataSource implements OrderBookDataSource {
     }
 
     @Override
-    public OrderBookMessageStream subscribe(String tradingPair) {
+    public OrderBookMessageStream subscribeOrderBookStream(String tradingPair) {
         Set<OrderBookMessageStream> pairStreams = streams.computeIfAbsent(tradingPair, k -> ConcurrentHashMap.newKeySet());
         OrderBookMessageStream stream = new OrderBookMessageStream(tradingPair);
         pairStreams.add(stream);

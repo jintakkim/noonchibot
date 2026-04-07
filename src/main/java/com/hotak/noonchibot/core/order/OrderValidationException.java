@@ -11,6 +11,13 @@ public class OrderValidationException extends RuntimeException {
         }
     }
 
+
+    public static class UnsupportedTimeInForceException  extends OrderValidationException {
+        public UnsupportedTimeInForceException(String message) {
+            super(message);
+        }
+    }
+
     public static class BelowMinOrderSizeException  extends OrderValidationException {
         public BelowMinOrderSizeException (String message) {
             super(message);

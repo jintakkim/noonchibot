@@ -22,7 +22,7 @@ public class BinanceTradingRuleParser implements TradingRuleParser {
         }
         for (JsonNode symbol : symbols) {
             String exchangeSymbol = symbol.get("symbol").asString();
-            String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
+            String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol, false);
             if (tradingPair == null) continue;
             JsonNode filters = symbol.get("filters");
             JsonNode priceFilter = findFilter(filters, "PRICE_FILTER");
@@ -37,7 +37,7 @@ public class BinanceTradingRuleParser implements TradingRuleParser {
             }
             rules.add(new TradingRule(
                     tradingPair,
-                    lotSizeFilter.get("minQty").asDecimal(), //min order size
+                    lotSizeFilter.get("minQty").asDecimal(), //min inFlightOrder size
                     lotSizeFilter.get("maxQty").asDecimal(),
                     priceFilter.get("tickSize").asDecimal(),
                     lotSizeFilter.get("stepSize").asDecimal(),

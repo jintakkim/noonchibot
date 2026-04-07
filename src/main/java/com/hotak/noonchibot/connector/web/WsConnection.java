@@ -75,6 +75,7 @@ public class WsConnection extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        log.info("websocket connection closed {}", status.toString());
         messageQueue.add(CLOSED);
     }
 

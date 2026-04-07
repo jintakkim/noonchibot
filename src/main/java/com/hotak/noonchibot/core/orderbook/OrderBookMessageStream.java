@@ -1,6 +1,4 @@
-package com.hotak.noonchibot.connector;
-
-import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
+package com.hotak.noonchibot.core.orderbook;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;

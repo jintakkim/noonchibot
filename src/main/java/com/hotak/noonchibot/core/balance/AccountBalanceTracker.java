@@ -112,8 +112,8 @@ public class AccountBalanceTracker {
                 log.warn("마지막 스냅샷({})보다 오래된 업데이트({})를 무시합니다", lastSnapshotTimestamp, event.timestamp());
                 return;
             }
-            accountAvailableBalances.put(event.asset(), event.free());
-            accountBalances.put(event.asset(), event.free().add(event.locked()));
+            accountAvailableBalances.put(event.asset(), event.availableBalance());
+            accountBalances.put(event.asset(), event.totalBalance());
             lastUpdateTimestamp = Instant.now();
         } finally {
             lock.unlockWrite(stamp);

@@ -1,9 +1,11 @@
-package com.hotak.noonchibot.core.order.executor;
+package com.hotak.noonchibot.core.order.execute;
 
 import com.hotak.noonchibot.connector.*;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
+import com.hotak.noonchibot.core.event.OrderLostEvent;
 import com.hotak.noonchibot.core.event.OrderRequestSentEvent;
+import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import com.hotak.noonchibot.core.order.*;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import lombok.extern.slf4j.Slf4j;
@@ -61,18 +63,14 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
         this.exchangeEventPublisher = exchangeEventPublisher;
     }
 
-    @Override
     public abstract Set<OrderType> getSupportedOrderType(String tradingPair);
+
+    public abstract Set<TimeInForce> getSupportedTimeInForce();
 
     /**
      * 요청 에러가 시간 동기화 문제인지 확인
      */
     protected abstract boolean isRequestExceptionRelatedToTimeSynchronizer(Exception e);
-
-    /**
-     * 주문 상태 조회시 주문 없음 예외인지 확인
-     */
-    protected abstract boolean isOrderNotFoundDuringStatusUpdateException(Exception e);
 
     /**
      * 주문 취소시 주문 없음 예외인지 확인
@@ -99,92 +97,107 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
     }
 
     @Override
-    public String buy(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args) {
-        String clientOrderId = orderIdGenerator.createClientOrderId(true, tradingPair, clientOrderIdPrefix, clientOrderIdMaxLength);
-        createOrder(TradeType.BUY, clientOrderId, tradingPair, orderType, amount, price, args);
+    public String buy(OrderCandidate candidate) {
+        String clientOrderId = orderIdGenerator.createClientOrderId(true, candidate.getTradingPair(), clientOrderIdPrefix, clientOrderIdMaxLength);
+        createOrder(candidate, clientOrderId);
         return clientOrderId;
     }
 
     @Override
-    public String sell(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args) {
-        String clientOrderId = orderIdGenerator.createClientOrderId(false, tradingPair, clientOrderIdPrefix, clientOrderIdMaxLength);
-        createOrder(TradeType.SELL, clientOrderId, tradingPair, orderType, amount, price, args);
+    public String sell(OrderCandidate candidate) {
+        String clientOrderId = orderIdGenerator.createClientOrderId(false, candidate.getTradingPair(), clientOrderIdPrefix, clientOrderIdMaxLength);
+        createOrder(candidate, clientOrderId);
         return clientOrderId;
     }
 
-    private void createOrder(TradeType tradeType, String clientOrderId, String tradingPair, OrderType orderType, BigDecimal amount, BigDecimal price, Object... args) {
-        TradingRule tradingRule = tradingRuleRegistry.getTradingRule(tradingPair);
+    private void createOrder(OrderCandidate candidate, String clientOrderId) {
+        TradingRule tradingRule = tradingRuleRegistry.getTradingRule(candidate.getTradingPair());
         if (tradingRule == null) throw new IllegalArgumentException("trading rule not found");
 
-        BigDecimal quantizedPrice = price;
-        if (orderType.equals(OrderType.LIMIT) || orderType.equals(OrderType.LIMIT_MAKER)) {
-            quantizedPrice = quantizeOrderPrice(tradingPair, price);
+        BigDecimal quantizedPrice = candidate.getPrice();
+        if (candidate.getOrderType().equals(OrderType.LIMIT)) {
+            quantizedPrice = quantizeOrderPrice(candidate.getTradingPair(), candidate.getPrice());
         }
-        BigDecimal quantizedOrderAmount = quantizeOrderAmount(tradingPair, amount);
+        BigDecimal quantizedOrderAmount = quantizeOrderAmount(candidate.getTradingPair(), candidate.getAmount());
 
-        InFlightOrder order = new InFlightOrder(clientOrderId, tradingPair, orderType, tradeType, amount, price, Instant.now());
-        exchangeEventPublisher.publish(new OrderRequestSentEvent(order));
+        InFlightOrder inFlightOrder = new InFlightOrder(
+                clientOrderId,
+                candidate.getTradingPair(),
+                candidate.getOrderType(),
+                candidate.getTradeType(),
+                candidate.getAmount(),
+                candidate.getPrice(),
+                Instant.now(),
+                candidate.isPostOnly(),
+                candidate.getTimeInForce()
+        );
+        exchangeEventPublisher.publish(new OrderRequestSentEvent(inFlightOrder));
 
-        if (!getSupportedOrderType(tradingPair).contains(orderType)) {
-            updateOrderAfterFailure(clientOrderId, tradingPair, new OrderValidationException.UnsupportedOrderTypeException("해당 오더 타입은 지원하지 않습니다."));
+        if (!getSupportedOrderType(candidate.getTradingPair()).contains(candidate.getOrderType())) {
+            updateOrderAfterFailure(clientOrderId, candidate.getTradingPair(), new OrderValidationException.UnsupportedOrderTypeException("해당 오더 타입은 지원하지 않습니다."));
+            return;
+        }
+
+        if(!getSupportedTimeInForce().contains(candidate.getTimeInForce())) {
+            updateOrderAfterFailure(clientOrderId, candidate.getTradingPair(), new OrderValidationException.UnsupportedTimeInForceException("해당 timeInForce는 지원하지 않습니다."));
             return;
         }
 
         if (quantizedOrderAmount.compareTo(tradingRule.minOrderSize()) < 0) {
-            updateOrderAfterFailure(clientOrderId, tradingPair, new OrderValidationException.BelowMinOrderSizeException("주문 수량이 최소 주문 수량보다 커야합니다."));
+            updateOrderAfterFailure(clientOrderId, candidate.getTradingPair(), new OrderValidationException.BelowMinOrderSizeException("주문 수량이 최소 주문 수량보다 커야합니다."));
             return;
         }
 
-        BigDecimal notionalSize = price == null ? orderBookDataSource.getLastTradedPrice(tradingPair).multiply(quantizedOrderAmount) : quantizedPrice.multiply(quantizedOrderAmount);
+        BigDecimal notionalSize = candidate.getPrice() == null ? orderBookDataSource.getLastTradedPrice(candidate.getTradingPair()).multiply(quantizedOrderAmount) : quantizedPrice.multiply(quantizedOrderAmount);
         if (notionalSize.compareTo(tradingRule.minNotionalSize()) < 0) {
-            updateOrderAfterFailure(clientOrderId, tradingPair, new OrderValidationException.BelowMinNotionalException("주문 금액이 최소 주문 금액보다 커야합니다."));
+            updateOrderAfterFailure(clientOrderId, candidate.getTradingPair(), new OrderValidationException.BelowMinNotionalException("주문 금액이 최소 주문 금액보다 커야합니다."));
             return;
         }
         try {
-            placeOrderAndProcessUpdate(order, args);
+            placeOrderAndProcessUpdate(inFlightOrder);
         } catch (Exception e) {
-            onOrderFailure(clientOrderId, tradingPair, e);
+            onOrderFailure(clientOrderId, candidate.getTradingPair(), e);
         }
     }
 
     @Override
     public void cancel(String tradingPair, String clientOrderId) {
-        InFlightOrder trackedOrder = orderTracker.findActiveOrder(clientOrderId, null).orElse(null);
-        if (trackedOrder == null) {
+        InFlightOrder order = orderTracker.getInFlightOrderByClientId(clientOrderId);
+        if (order == null) {
             log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
             return;
         }
         try {
-            placeCancel(clientOrderId, trackedOrder);
-            InFlightOrder.State newState = isCancelRequestInExchangeSynchronous ? InFlightOrder.State.CANCELED : InFlightOrder.State.PENDING_CANCEL;
+            placeCancel(clientOrderId, order);
+            OrderState newState = isCancelRequestInExchangeSynchronous ? OrderState.CANCELED : OrderState.PENDING_CANCEL;
             OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), newState, clientOrderId, null, null);
             log.info("주문 취소 요청이 완료되었습니다. | {} | orderId: {} | exchangeOrderId: {}",
                     tradingPair,
                     clientOrderId,
-                    trackedOrder.getExchangeOrderId() != null ? trackedOrder.getExchangeOrderId() : "N/A"
+                    order.getExchangeOrderId() != null ? order.getExchangeOrderId() : "N/A"
             );
             exchangeEventPublisher.publish(orderUpdateEvent);
         } catch (Exception e) {
             if(isOrderNotFoundDuringCancellationException(e)) {
                 log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
-                orderTracker.processOrderNotFound(clientOrderId);
+                exchangeEventPublisher.publish(new OrderLostEvent(clientOrderId));
                 return;
             }
-            log.error("주문을 취소하는데 실패 헀습니다", e);
+            throw e;
         }
     }
 
-    private void placeOrderAndProcessUpdate(InFlightOrder order, Object... args) {
-        OrderPlacedDto placedOrder = placeOrder(order.getClientOrderId(), order.getTradingPair(), order.getAmount(), order.getTradeType(), order.getOrderType(), order.getPrice(), args);
-        OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(order.getTradingPair(), placedOrder.timestamp(), InFlightOrder.State.OPEN, order.getClientOrderId(), placedOrder.exchangeOrderId());
+    private void placeOrderAndProcessUpdate(InFlightOrder inFlightOrder) {
+        OrderPlacedDto placedOrder = placeOrder(inFlightOrder);
+        OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(inFlightOrder.getTradingPair(), placedOrder.timestamp(), OrderState.OPEN, inFlightOrder.getClientOrderId(), placedOrder.exchangeOrderId());
         log.info("주문이 성공적으로 생성되었습니다. | {} {} {} | 수량: {} | 가격: {} | orderId: {} | exchangeOrderId: {}",
-                order.getTradeType(),
-                order.getTradingPair(),
-                order.getOrderType(),
-                order.getAmount().toPlainString(),
-                order.getPrice() != null ? order.getPrice().toPlainString() : "MARKET",
-                order.getClientOrderId(),
-                order.getExchangeOrderId()
+                inFlightOrder.getTradeType(),
+                inFlightOrder.getTradingPair(),
+                inFlightOrder.getOrderType(),
+                inFlightOrder.getAmount().toPlainString(),
+                inFlightOrder.getPrice() != null ? inFlightOrder.getPrice().toPlainString() : "MARKET",
+                inFlightOrder.getClientOrderId(),
+                inFlightOrder.getExchangeOrderId()
         );
         exchangeEventPublisher.publish(orderUpdateEvent);
     }
@@ -192,11 +205,11 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
     /**
      * 동기적으로 주문 처리
      */
-    protected abstract OrderPlacedDto placeOrder(String orderId, String tradingPair, BigDecimal amount, TradeType tradeType, OrderType orderType, BigDecimal price, Object... args);
+    protected abstract OrderPlacedDto placeOrder(InFlightOrder inFlightOrder);
 
     private void updateOrderAfterFailure(String orderId, String tradingPair, Exception exception) {
         OrderUpdateEvent.OrderFailure failure = new OrderUpdateEvent.OrderFailure(exception.getClass().getSimpleName(), exception.getMessage());
-        OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), InFlightOrder.State.FAILED, orderId, null, failure);
+        OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), OrderState.FAILED, orderId, null, failure);
         log.error("주문에 실패했습니다", exception);
         exchangeEventPublisher.publish(orderUpdateEvent);
     }
@@ -210,7 +223,7 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
      * 동기적으로 취소 처리
      * @return 성공시 true 실패시 false
      */
-    protected abstract boolean placeCancel(String orderId, InFlightOrder trackedOrder);
+    protected abstract boolean placeCancel(String orderId, InFlightOrder order);
 
     @Override
     public BigDecimal quantizeOrderPrice(String tradingPair, BigDecimal price) {
