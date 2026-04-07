@@ -2,7 +2,6 @@ package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.core.datatype.TradeType;
 import org.junit.jupiter.api.*;
-import org.mockito.internal.matchers.Or;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -10,7 +9,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public abstract class InFlightOrderBookTest {
+public abstract class OrderBookTest {
     @Test
     @DisplayName("빈 오더북에 스냅샷 적용")
     void applySnapshotToEmptyBook() {

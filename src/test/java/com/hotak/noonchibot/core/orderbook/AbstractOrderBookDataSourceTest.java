@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.connector.web.*;
-import com.hotak.noonchibot.core.AbstractWebsocketDataSourceTestUtils;
+import com.hotak.noonchibot.core.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,14 +22,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-public abstract class AbstractInFlightOrderBookDataSourceTest {
+public abstract class AbstractOrderBookDataSourceTest {
     protected static final ObjectMapper objectMapper = new ObjectMapper();
 
     private BlockingQueue<WsResponse> queue;
 
     protected abstract AbstractOrderBookDataSource createDataSource(
             WsAssistant wsAssistant,
-            AsyncTaskExecutor taskExecutor,
+            IoExecutor ioExecutor,
             TaskScheduler taskScheduler
     );
     protected abstract WsResponse createAckResponse();
@@ -40,7 +40,7 @@ public abstract class AbstractInFlightOrderBookDataSourceTest {
     protected AbstractOrderBookDataSource dataSource;
     private WsAssistant mockWsAssistant;
     private WsConnection mockWsConnection;
-    private AsyncTaskExecutor taskExecutor;
+    private IoExecutor ioExecutor;
     protected TaskScheduler mockTaskScheduler; // 하위 클래스에서 verify 할 수 있도록 protected로 열어둠
 
     @BeforeEach
@@ -48,22 +48,16 @@ public abstract class AbstractInFlightOrderBookDataSourceTest {
         queue = new LinkedBlockingQueue<>();
         mockWsAssistant = Mockito.mock(WsAssistant.class);
         mockWsConnection = Mockito.mock(WsConnection.class);
-        taskExecutor = Mockito.mock(AsyncTaskExecutor.class);
+        ioExecutor = new VirtualThreadIoExecutor();
         mockTaskScheduler = Mockito.mock(TaskScheduler.class);
 
         when(mockWsConnection.take()).thenAnswer(invocation -> queue.take());
-        dataSource = createDataSource(mockWsAssistant, taskExecutor, mockTaskScheduler);
+        dataSource = createDataSource(
+                mockWsAssistant,
+                ioExecutor,
+                mockTaskScheduler
+        );
         AbstractWebsocketDataSourceTestUtils.setWsConnection(dataSource, mockWsConnection);
-    }
-
-    @Test
-    @DisplayName("새 오더북 요청 시 스냅샷 데이터를 받아 정상적으로 적용한 OrderBook을 반환한다")
-    void getNewOrderBookAppliesSnapshot() {
-        OrderBook orderBook = dataSource.getNewOrderBook("BTC-USDT");
-
-        assertThat(orderBook).isNotNull();
-        // 하위 구현체의 getOrderBookSnapshot()에서 제공한 데이터가 orderBook에 잘 들어갔는지
-        // 하위 클래스의 테스트에서 추가로 검증할 수 있습니다.
     }
 
     @Test
@@ -73,7 +67,7 @@ public abstract class AbstractInFlightOrderBookDataSourceTest {
         assertThat(stream).isNotNull();
         assertThat(stream.tradingPair).isEqualTo("BTC-USDT");
         // 구독 메시지 전송 확인
-        verify(mockWsConnection, times(1)).send(any(WsRequest.class));
+        verify(mockWsConnection, times(2)).send(any(WsRequest.class));
         // 1시간 주기 스케줄러 등록 확인
         verify(mockTaskScheduler, times(1)).scheduleAtFixedRate(
                 any(Runnable.class),
@@ -88,7 +82,8 @@ public abstract class AbstractInFlightOrderBookDataSourceTest {
         OrderBookMessageStream stream1 = dataSource.subscribeOrderBookStream("BTC-USDT");
         OrderBookMessageStream stream2 = dataSource.subscribeOrderBookStream("BTC-USDT");
         assertThat(stream1).isNotSameAs(stream2);
-        verify(mockWsConnection, times(1)).send(any());
+        // diff + trade message once
+        verify(mockWsConnection, times(2)).send(any());
         verify(mockTaskScheduler, times(1)).scheduleAtFixedRate(any(), any(), any());
     }
 
@@ -97,8 +92,8 @@ public abstract class AbstractInFlightOrderBookDataSourceTest {
     void unsubscribeRemovesLastStream() {
         OrderBookMessageStream stream = dataSource.subscribeOrderBookStream("BTC-USDT");
         dataSource.unsubscribe(stream);
-        // 구독 1번 + 해제 1번 = 총 2번 전송
-        verify(mockWsConnection, times(2)).send(any());
+        // 구독 1번(diff + trade) + 해제 1번(diff + trade) = 총 2번 전송
+        verify(mockWsConnection, times(4)).send(any());
     }
 
     @Test
@@ -107,8 +102,8 @@ public abstract class AbstractInFlightOrderBookDataSourceTest {
         OrderBookMessageStream stream1 = dataSource.subscribeOrderBookStream("BTC-USDT");
         OrderBookMessageStream stream2 = dataSource.subscribeOrderBookStream("BTC-USDT");
         dataSource.unsubscribe(stream1);
-        // 스트림은 제거되었지만, 구독 메시지는 최초 1번만 전송되었고 해제 메시지는 안 감
-        verify(mockWsConnection, times(1)).send(any());
+        // 스트림은 제거되었지만, 구독 메시지는 최초 1번(diff + trade = 2)만 전송되었고 해제 메시지는 안 감
+        verify(mockWsConnection, times(2)).send(any());
     }
 
     @Test

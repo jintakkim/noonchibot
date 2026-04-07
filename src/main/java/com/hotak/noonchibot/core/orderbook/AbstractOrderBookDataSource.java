@@ -2,6 +2,7 @@ package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
+import com.hotak.noonchibot.core.IoExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
@@ -24,11 +25,11 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
             WsAssistant wsAssistant,
             String wsUrl,
             ObjectMapper objectMapper,
-            AsyncTaskExecutor taskExecutor,
+            IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
             boolean isDex
     ) {
-        super(wsAssistant, wsUrl, objectMapper, taskExecutor);
+        super(wsAssistant, wsUrl, objectMapper, ioExecutor);
         this.taskScheduler = taskScheduler;
         this.isDex = isDex;
     }

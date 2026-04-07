@@ -1,7 +1,8 @@
 package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.throttle.RateLimit;
-import com.hotak.noonchibot.core.order.InFlightOrder;
+import com.hotak.noonchibot.core.order.OrderState;
+import com.hotak.noonchibot.core.order.TimeInForce;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
@@ -30,20 +31,23 @@ public final class BinanceApiSpec {
     public static final String MY_TRADES_PATH_URL = "/v3/myTrades";
     public static final String COMMISSION_RATE_PATH_URL = "/v3/account/commission";
 
-    public static final String TIME_IN_FORCE_GTC = "GTC"; //limit 전용, 캔슬 전까지 주문 만료 없음.
-
-    public static final Map<String, InFlightOrder.State> ORDER_STATE = Map.of(
-            "PENDING", InFlightOrder.State.PENDING_CREATE,
-            "NEW", InFlightOrder.State.OPEN,
-            "FILLED", InFlightOrder.State.FILLED,
-            "PARTIALLY_FILLED", InFlightOrder.State.PARTIALLY_FILLED,
-            "PENDING_CANCEL", InFlightOrder.State.OPEN,
-            "CANCELED", InFlightOrder.State.CANCELED,
-            "REJECTED", InFlightOrder.State.FAILED,
-            "EXPIRED", InFlightOrder.State.FAILED,
-            "EXPIRED_IN_MATCH", InFlightOrder.State.FAILED
+    public static final Map<TimeInForce, String> TIME_IN_FORCE_API_VALUE = Map.of(
+            TimeInForce.FOK, "FOK",
+            TimeInForce.IOC, "IOC",
+            TimeInForce.GTC, "GTC"
     );
 
+    public static final Map<String, OrderState> ORDER_STATE = Map.of(
+            "PENDING", OrderState.PENDING_CREATE,
+            "NEW", OrderState.OPEN,
+            "FILLED", OrderState.FILLED,
+            "PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED,
+            "PENDING_CANCEL", OrderState.OPEN,
+            "CANCELED", OrderState.CANCELED,
+            "REJECTED", OrderState.FAILED,
+            "EXPIRED", OrderState.FAILED,
+            "EXPIRED_IN_MATCH", OrderState.FAILED
+    );
 
     public static int getTickerPriceChangeDynamicWeight(int symbolCount) {
         if (symbolCount == 0) return 80;          // symbols 생략
@@ -114,11 +118,8 @@ public final class BinanceApiSpec {
 
 
     public static final int ORDER_NOT_EXIST_ERROR_CODE = -2013;
-    public static final String ORDER_NOT_EXIST_MESSAGE = "InFlightOrder does not exist";
-    public static final int UNKNOWN_ORDER_ERROR_CODE = -2011;
-    public static final String UNKNOWN_ORDER_MESSAGE = "Unknown inFlightOrder sent";
+    public static final int UNKNOWN_ORDER_DURING_CANCELLATION_ERROR_CODE = -2011;
     public static final int TIMESTAMP_ERROR_CODE = -1021;
-    public static final String TIMESTAMP_ERROR_MESSAGE = "Timestamp for this request";
 
     public static final Duration TRADING_RULE_UPDATE_INTERVAL = Duration.ofHours(1);
 

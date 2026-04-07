@@ -1,6 +1,6 @@
-package com.hotak.noonchibot.core.order;
+package com.hotak.noonchibot.core.event;
 
-import com.hotak.noonchibot.core.event.ExchangeEvent;
+import com.hotak.noonchibot.core.order.OrderState;
 
 import java.time.Instant;
 
@@ -24,5 +24,7 @@ public record OrderUpdateEvent(
        this(tradingPair, updateTimestamp, newState, clientOrderId, exchangeOrderId, null);
     }
 
-    public record OrderFailure(String errorType, String errorMessage) {}
+    public record OrderFailure(String errorType, String errorMessage) {
+
+    }
 }

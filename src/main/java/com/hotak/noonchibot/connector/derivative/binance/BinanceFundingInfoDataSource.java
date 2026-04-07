@@ -5,6 +5,7 @@ import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsRequest;
+import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSource;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.Getter;
@@ -35,11 +36,11 @@ public class BinanceFundingInfoDataSource extends AbstractFundingInfoDataSource 
             WsAssistant wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
-            AsyncTaskExecutor taskExecutor,
+            IoExecutor ioExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant
     ) {
-        super(wsAssistant, publicWsUrl, objectMapper, taskExecutor);
+        super(wsAssistant, publicWsUrl, objectMapper, ioExecutor);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
     }

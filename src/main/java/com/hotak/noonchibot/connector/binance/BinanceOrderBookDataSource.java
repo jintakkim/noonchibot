@@ -2,6 +2,7 @@ package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
+import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBook;
@@ -39,13 +40,13 @@ public class BinanceOrderBookDataSource extends AbstractOrderBookDataSource {
             WsAssistant wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
-            AsyncTaskExecutor taskExecutor,
+            IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant,
             TimeSynchronizer timeSynchronizer
     ) {
-        super(wsAssistant, publicWsUrl, objectMapper, taskExecutor, taskScheduler, false);
+        super(wsAssistant, publicWsUrl, objectMapper, ioExecutor, taskScheduler, false);
         this.restAssistant = restAssistant;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.timeSynchronizer = timeSynchronizer;

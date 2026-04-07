@@ -5,9 +5,13 @@ import com.hotak.noonchibot.connector.throttle.*;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.balance.AccountBalanceTracker;
 import com.hotak.noonchibot.core.event.ExchangeEventBus;
+import com.hotak.noonchibot.core.order.OrderHistoryRepository;
 import com.hotak.noonchibot.core.order.OrderTracker;
+import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -102,8 +106,8 @@ public class BinanceConfig {
     }
 
     @Bean
-    public AsyncThrottler binanceAsyncThrottler(@Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor) {
-        return new AsyncThrottlerImpl(BinanceApiSpec.RATE_LIMITS, taskExecutor);
+    public AsyncThrottler binanceAsyncThrottler(IoExecutor ioExecutor) {
+        return new AsyncThrottlerImpl(BinanceApiSpec.RATE_LIMITS, ioExecutor);
     }
 
     @Bean
@@ -135,7 +139,7 @@ public class BinanceConfig {
            @Qualifier("binanceWsAssistant") WsAssistant wsAssistant,
            @Qualifier("binanceTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
            ObjectMapper objectMapper,
-           @Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor,
+           IoExecutor ioExecutor,
            TaskScheduler taskScheduler,
            @Qualifier("binanceTimeSynchronizer") TimeSynchronizer timeSynchronizer
     ) {
@@ -143,7 +147,7 @@ public class BinanceConfig {
                 wsAssistant,
                 BinanceApiSpec.WSS_URL,
                 objectMapper,
-                taskExecutor,
+                ioExecutor,
                 taskScheduler,
                 tradingPairSymbolRegistry,
                 restAssistant,
@@ -195,20 +199,30 @@ public class BinanceConfig {
     @Bean
     public BinanceBalancePoller binanceBalancePoller(
             @Qualifier("binanceUserStreamEventPublisher") BinanceUserStreamEventPublisher binanceUserStreamEventPublisher,
-            @Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor,
+            IoExecutor ioExecutor,
+            MainExecutor mainExecutor,
             @Qualifier("binanceRestAssistant") RestAssistant restAssistant,
-            @Qualifier("binanceEventBus") ExchangeEventBus eventBus
+            @Qualifier("binanceEventBus") ExchangeEventBus eventBus,
+            TaskScheduler taskScheduler
     ) {
-        return new BinanceBalancePoller(binanceUserStreamEventPublisher, taskExecutor, restAssistant, eventBus);
+        return new BinanceBalancePoller(
+                binanceUserStreamEventPublisher,
+                ioExecutor,
+                mainExecutor,
+                restAssistant,
+                eventBus,
+                taskScheduler
+        );
     }
 
     @Bean
     public OrderBookTracker binanceOrderBookTracker(
             BinanceOrderBookDataSource binanceOrderBookDataSource,
             TaskScheduler taskScheduler,
-            @Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor
+            MainExecutor mainExecutor,
+            IoExecutor ioExecutor
     ) {
-        return new OrderBookTracker(binanceOrderBookDataSource, taskScheduler, taskExecutor);
+        return new OrderBookTracker(binanceOrderBookDataSource, taskScheduler, mainExecutor, ioExecutor);
     }
 
 
@@ -218,8 +232,23 @@ public class BinanceConfig {
     }
 
     @Bean
-    public OrderTracker binanceOrderTracker(@Qualifier("binanceEventBus") ExchangeEventBus eventBus) {
-        return new OrderTracker(eventBus, eventBus);
+    public OrderTracker binanceOrderTracker(
+            @Qualifier("binanceEventBus") ExchangeEventBus eventBus,
+            TradeRepository tradeRepository,
+            OrderHistoryRepository orderHistoryRepository,
+            MainExecutor mainExecutor,
+            IoExecutor ioExecutor
+            ) {
+        return new OrderTracker(
+                eventBus,
+                BinanceApiSpec.PLATFORM_NAME,
+                tradeRepository,
+                orderHistoryRepository,
+                mainExecutor,
+                ioExecutor,
+                eventBus
+        );
+
     }
 
     @Bean
@@ -243,24 +272,47 @@ public class BinanceConfig {
     @Bean
     public BinanceOrderStatusPoller binanceOrderStatusPoller(
             @Qualifier("binanceRestAssistant") RestAssistant restAssistant,
+            @Qualifier("binanceEventBus") ExchangeEventBus eventBus,
             @Qualifier("binanceOrderTracker") OrderTracker orderTracker,
+            MainExecutor mainExecutor,
+            IoExecutor ioExecutor,
             @Qualifier("binanceTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
             @Qualifier("binanceUserStreamEventPublisher") BinanceUserStreamEventPublisher userStreamEventPublisher,
-            @Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor
-
+            TaskScheduler taskScheduler
     ) {
-        return new BinanceOrderStatusPoller(restAssistant, orderTracker, tradingPairSymbolRegistry, userStreamEventPublisher, taskExecutor);
+        return new BinanceOrderStatusPoller(
+                restAssistant,
+                eventBus,
+                orderTracker,
+                mainExecutor,
+                ioExecutor,
+                tradingPairSymbolRegistry,
+                userStreamEventPublisher,
+                taskScheduler
+        );
     }
 
     @Bean
     public BinanceTradePoller binanceTradePoller(
             @Qualifier("binanceRestAssistant") RestAssistant restAssistant,
+            TaskScheduler taskScheduler,
+            @Qualifier("binanceEventBus") ExchangeEventBus eventBus,
             @Qualifier("binanceOrderTracker") OrderTracker orderTracker,
             @Qualifier("binanceTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
             @Qualifier("binanceUserStreamEventPublisher") BinanceUserStreamEventPublisher userStreamEventPublisher,
-            @Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor
+            IoExecutor ioExecutor,
+            MainExecutor mainExecutor
     ) {
-        return new BinanceTradePoller(userStreamEventPublisher, taskExecutor, restAssistant, orderTracker, tradingPairSymbolRegistry);
+        return new BinanceTradePoller(
+                userStreamEventPublisher,
+                eventBus,
+                restAssistant,
+                taskScheduler,
+                orderTracker,
+                tradingPairSymbolRegistry,
+                ioExecutor,
+                mainExecutor
+        );
     }
 
     @Bean

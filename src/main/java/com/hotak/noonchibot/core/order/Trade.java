@@ -15,6 +15,7 @@ import java.time.Instant;
 public class Trade {
     @Id
     private String tradeId;
+    private String platform;
     private String clientOrderId;
     private String exchangeOrderId;
     private Instant fillTimestamp;

@@ -4,23 +4,25 @@ import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.datatype.OrderStreamStatus;
+import com.hotak.noonchibot.core.TestMainExecutor;
+import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
-import com.hotak.noonchibot.core.order.InFlightOrder;
-import com.hotak.noonchibot.core.order.OrderTracker;
-import com.hotak.noonchibot.core.order.OrderType;
+import com.hotak.noonchibot.core.event.TestExchangeEventPublisher;
+import com.hotak.noonchibot.core.order.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -29,105 +31,139 @@ import static org.mockito.Mockito.*;
 
 class BinanceTradePollerTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    private RestAssistant mockRestAssistant;
-    private OrderTracker mockOrderTracker;
+    private RestAssistant restAssistant;
+    private OrderTracker orderTracker;
     private TradingPairSymbolRegistry symbolRegistry;
     private BinanceTradePoller poller;
+    private TestExchangeEventPublisher testExchangeEventPublisher;
 
     @BeforeEach
     void setUp() {
-        mockRestAssistant = Mockito.mock(RestAssistant.class);
-        mockOrderTracker = Mockito.mock(OrderTracker.class);
+        restAssistant = Mockito.mock(RestAssistant.class);
+        testExchangeEventPublisher = new TestExchangeEventPublisher();
+        orderTracker = Mockito.mock(OrderTracker.class);
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of("BTC-USDT", "BTCUSDT"));
         poller = new BinanceTradePoller(
-                Mockito.mock(OrderStreamStatus.class),
+                Mockito.mock(WebsocketStatus.class),
+                testExchangeEventPublisher,
+                restAssistant,
+                mock(TaskScheduler.class),
+                orderTracker,
+                symbolRegistry,
                 Runnable::run,
-                mockRestAssistant,
-                mockOrderTracker,
-                symbolRegistry
+                new TestMainExecutor()
         );
     }
 
-    private InFlightOrder createActiveOrder(String clientOrderId, String exchangeOrderId) {
+    private InFlightOrder createInFlightOrder(String clientOrderId, String exchangeOrderId) {
         return new InFlightOrder(
                 clientOrderId, "BTC-USDT", OrderType.LIMIT,
                 TradeType.BUY, new BigDecimal("0.01"), new BigDecimal("50000"),
-                Instant.now(), exchangeOrderId
+                Instant.now(), exchangeOrderId, false, TimeInForce.GTC, new HashSet<>(), new HashMap<>()
         );
     }
 
     @Test
-    @DisplayName("체결 내역이 OrderTracker에 전달된다")
+    @DisplayName("체결 내역이 TradeUpdateEvent로 발행된다")
     void processesTradeUpdates() {
-        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", "12345");
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
+        InFlightOrder order = createInFlightOrder("BUY-BTC-USDT-1", "12345");
+        when(orderTracker.getAll()).thenReturn(List.of(order));
         stubTradesResponse(List.of(
                 createTradeNode("t1", "12345", "50000", "0.005", "0.25", "USDT", true)
         ));
 
         poller.pollData();
-
-        ArgumentCaptor<TradeUpdateEvent> captor = ArgumentCaptor.forClass(TradeUpdateEvent.class);
-        verify(mockOrderTracker).processTradeUpdate(captor.capture());
-        TradeUpdateEvent trade = captor.getValue();
-        assertThat(trade.tradeId()).isEqualTo("t1");
-        assertThat(trade.fillPrice()).isEqualByComparingTo(new BigDecimal("50000"));
-        assertThat(trade.fillBaseAmount()).isEqualByComparingTo(new BigDecimal("0.005"));
-        assertThat(trade.isMaker()).isTrue();
+        assertThat(testExchangeEventPublisher.getEventsOfType(TradeUpdateEvent.class))
+                .hasSize(1)
+                .first()
+                .satisfies(trade -> {
+                    assertThat(trade.tradeId()).isEqualTo("t1");
+                    assertThat(trade.fillPrice()).isEqualByComparingTo(new BigDecimal("50000"));
+                    assertThat(trade.fillBaseAmount()).isEqualByComparingTo(new BigDecimal("0.005"));
+                    assertThat(trade.isMaker()).isTrue();
+                });
     }
 
     @Test
-    @DisplayName("여러 체결 내역이 모두 전달된다")
+    @DisplayName("여러 체결 내역이 모두 발행된다")
     void processesMultipleTradeUpdates() {
-        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", "12345");
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
+        InFlightOrder order = createInFlightOrder("BUY-BTC-USDT-1", "12345");
+        when(orderTracker.getAll()).thenReturn(List.of(order));
         stubTradesResponse(List.of(
                 createTradeNode("t1", "12345", "50000", "0.003", "0.15", "USDT", true),
                 createTradeNode("t2", "12345", "50100", "0.007", "0.35", "USDT", false)
         ));
 
         poller.pollData();
-
-        verify(mockOrderTracker, times(2)).processTradeUpdate(any(TradeUpdateEvent.class));
+        assertThat(testExchangeEventPublisher.getEventsOfType(TradeUpdateEvent.class)).hasSize(2);
     }
 
     @Test
-    @DisplayName("exchangeOrderId가 UNKNOWN이면 체결 내역을 조회하지 않는다")
+    @DisplayName("exchangeOrderId가 UNKNOWN이면 조회하지 않는다")
     void skipsUnknownExchangeOrderId() {
-        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", "UNKNOWN");
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
-
+        InFlightOrder order = createInFlightOrder("BUY-BTC-USDT-1", "UNKNOWN");
+        when(orderTracker.getAll()).thenReturn(List.of(order));
         poller.pollData();
 
-        verify(mockRestAssistant, never()).executeRequestAndGetJsonBody(any(RestRequest.class));
+        verify(restAssistant, never()).executeRequestAndGetJsonBody(any());
     }
 
     @Test
-    @DisplayName("exchangeOrderId가 null이면 체결 내역을 조회하지 않는다")
+    @DisplayName("exchangeOrderId가 null이면 조회하지 않는다")
     void skipsNullExchangeOrderId() {
-        InFlightOrder inFlightOrder = createActiveOrder("BUY-BTC-USDT-1", null);
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of("BUY-BTC-USDT-1", inFlightOrder));
-
+        InFlightOrder order = createInFlightOrder("BUY-BTC-USDT-1", null);
+        when(orderTracker.getAll()).thenReturn(List.of(order));
         poller.pollData();
 
-        verify(mockRestAssistant, never()).executeRequestAndGetJsonBody(any(RestRequest.class));
+        verify(restAssistant, never()).executeRequestAndGetJsonBody(any());
     }
 
     @Test
     @DisplayName("활성 주문이 없으면 API를 호출하지 않는다")
     void noActiveOrders() {
-        when(mockOrderTracker.getActiveOrders()).thenReturn(Map.of());
+        when(orderTracker.getAll()).thenReturn(List.of());
+        poller.pollData();
+        verify(restAssistant, never()).executeRequestAndGetJsonBody(any());
+    }
 
+    @Test
+    @DisplayName("여러 주문의 체결 내역이 각각 발행된다")
+    void processesTradesForMultipleOrders() {
+        InFlightOrder order1 = createInFlightOrder("ORDER-1", "111");
+        InFlightOrder order2 = createInFlightOrder("ORDER-2", "222");
+        when(orderTracker.getAll()).thenReturn(List.of(order1, order2));
+
+        when(restAssistant.executeRequestAndGetJsonBody(any())).thenAnswer(inv -> {
+            RestRequest req = inv.getArgument(0);
+            String orderId = (String) req.params().get("orderId");
+            return switch (orderId) {
+                case "111" -> createTradesArray(List.of(
+                        createTradeNode("t1", "111", "50000", "0.01", "0.5", "USDT", true)));
+                case "222" -> createTradesArray(List.of(
+                        createTradeNode("t2", "222", "51000", "0.02", "1.0", "USDT", false)));
+                default -> throw new IllegalArgumentException("unexpected orderId: " + orderId);
+            };
+        });
         poller.pollData();
 
-        verify(mockRestAssistant, never()).executeRequestAndGetJsonBody(any(RestRequest.class));
+        assertThat(testExchangeEventPublisher.getEventsOfType(TradeUpdateEvent.class))
+                .hasSize(2)
+                .extracting(TradeUpdateEvent::tradeId)
+                .containsExactlyInAnyOrder("t1", "t2");
     }
+
 
     private void stubTradesResponse(List<ObjectNode> trades) {
         ArrayNode array = objectMapper.createArrayNode();
         trades.forEach(array::add);
-        when(mockRestAssistant.executeRequestAndGetJsonBody(any(RestRequest.class)))
+        when(restAssistant.executeRequestAndGetJsonBody(any(RestRequest.class)))
                 .thenReturn(array);
+    }
+
+    private ArrayNode createTradesArray(List<ObjectNode> trades) {
+        ArrayNode array = objectMapper.createArrayNode();
+        trades.forEach(array::add);
+        return array;
     }
 
     private ObjectNode createTradeNode(String tradeId, String orderId, String price,

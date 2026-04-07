@@ -1,20 +1,17 @@
 package com.hotak.noonchibot.connector.derivative.binance;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.binance.BinanceApiSpec;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsRequest;
+import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
-import com.hotak.noonchibot.core.orderbook.OrderBook;
 import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -42,12 +39,12 @@ public class BinanceDerivativeOrderBookDataSource extends AbstractOrderBookDataS
             WsAssistant wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
-            @Qualifier("virtualThreadAsyncTaskExecutor") AsyncTaskExecutor taskExecutor,
+            IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant
     ) {
-        super(wsAssistant, publicWsUrl, objectMapper, taskExecutor, taskScheduler, false);
+        super(wsAssistant, publicWsUrl, objectMapper, ioExecutor, taskScheduler, false);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
     }

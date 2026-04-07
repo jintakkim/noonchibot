@@ -5,8 +5,8 @@ import java.time.Instant;
 
 public record BalanceUpdateEvent(
         String asset,
-        BigDecimal free,
-        BigDecimal locked,
+        BigDecimal totalBalance,
+        BigDecimal availableBalance,
         Instant timestamp
 ) implements ExchangeEvent {
 }

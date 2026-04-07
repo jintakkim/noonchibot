@@ -19,7 +19,7 @@ public abstract class AbstractWebsocketDataSource implements SmartLifecycle {
     private final WsAssistant wsAssistant;
     private final String wsUrl;
     protected final ObjectMapper objectMapper;
-    private final AsyncTaskExecutor taskExecutor;
+    private final IoExecutor ioExecutor;
 
     private volatile Future<?> connectionFuture;
     private volatile boolean running = false;
@@ -57,7 +57,7 @@ public abstract class AbstractWebsocketDataSource implements SmartLifecycle {
     @Override
     public void start() {
         running = true;
-        connectionFuture = taskExecutor.submit(this::connectionLoop);
+        connectionFuture = ioExecutor.submit(this::connectionLoop);
     }
 
     @Override

@@ -46,12 +46,11 @@ public class BinanceDerivativeTradingRuleParser implements TradingRuleParser {
                     symbol.get("quotePrecision").asInt(),
                     orderTypes,
                     symbol.get("marginAsset").asString(), // buyOrderCollateralToken
-                    symbol.get("baseAsset").asString()     // sellOrderCollateralToken
+                    symbol.get("marginAsset").asString()     // sellOrderCollateralToken
             ));
         }
         return rules;
     }
-
     private JsonNode findFilter(JsonNode filters, String... filterTypes) {
         Set<String> types = Set.of(filterTypes);
         for (JsonNode filter : filters) {

@@ -6,24 +6,19 @@ import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
-import com.hotak.noonchibot.core.order.InFlightOrder;
-import com.hotak.noonchibot.core.order.OrderTracker;
-import com.hotak.noonchibot.core.order.OrderType;
-import com.hotak.noonchibot.core.order.executor.AbstractExchangeOrderExecutor;
+import com.hotak.noonchibot.core.order.*;
+import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 
 @Slf4j
 public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
-    private static final String EXCHANGE_NAME = "binance";
-
     private final TimeSynchronizer timeSynchronizer;
     private final RestAssistant restAssistant;
 
@@ -38,7 +33,7 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
             RestAssistant restAssistant
             ) {
         super(
-                EXCHANGE_NAME,
+                BinanceApiSpec.PLATFORM_NAME,
                 orderIdGenerator,
                 orderTracker,
                 tradingRuleRegistry,
@@ -61,27 +56,22 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
     }
 
     @Override
-    protected boolean isRequestExceptionRelatedToTimeSynchronizer(Exception e) {
-        String message = e.getMessage();
-        return message != null
-                && message.contains(String.valueOf(BinanceApiSpec.TIMESTAMP_ERROR_CODE))
-                && message.contains(BinanceApiSpec.TIMESTAMP_ERROR_MESSAGE);
+    public Set<TimeInForce> getSupportedTimeInForce() {
+        return Set.of(TimeInForce.FOK, TimeInForce.GTC, TimeInForce.IOC);
     }
 
     @Override
-    protected boolean isOrderNotFoundDuringStatusUpdateException(Exception e) {
+    protected boolean isRequestExceptionRelatedToTimeSynchronizer(Exception e) {
         String message = e.getMessage();
         return message != null
-                && message.contains(String.valueOf(BinanceApiSpec.ORDER_NOT_EXIST_ERROR_CODE))
-                && message.contains(BinanceApiSpec.ORDER_NOT_EXIST_MESSAGE);
+                && message.contains(String.valueOf(BinanceApiSpec.TIMESTAMP_ERROR_CODE));
     }
 
     @Override
     protected boolean isOrderNotFoundDuringCancellationException(Exception e) {
         String message = e.getMessage();
         return message != null
-                && message.contains(String.valueOf(BinanceApiSpec.UNKNOWN_ORDER_ERROR_CODE))
-                && message.contains(BinanceApiSpec.UNKNOWN_ORDER_MESSAGE);
+                && message.contains(String.valueOf(BinanceApiSpec.UNKNOWN_ORDER_DURING_CANCELLATION_ERROR_CODE));
     }
 
     /**
@@ -91,23 +81,22 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
      * 따라서 해당 조건일때 리턴되는 ExchangeOrderId는 "UNKNOWN" 이다.
      */
     @Override
-    protected OrderPlacedDto placeOrder(String orderId, String tradingPair, BigDecimal amount, TradeType tradeType, OrderType orderType, BigDecimal price, Object... args) {
-        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
-        String tradeTypeApiValue = tradeType == TradeType.BUY ? "BUY" : "SELL";
-        String orderTypeApiValue = orderTypeToApiValue(orderType);
+    protected OrderPlacedDto placeOrder(InFlightOrder inFlightOrder) {
+        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(inFlightOrder.getTradingPair());
+        String tradeTypeApiValue = inFlightOrder.getTradeType() == TradeType.BUY ? "BUY" : "SELL";
+        String orderTypeApiValue = orderTypeToApiValue(inFlightOrder.getOrderType(), inFlightOrder.isPostOnly());
 
         Map<String, Object> apiParams = new HashMap<>();
         apiParams.put("symbol", symbol);
         apiParams.put("side", tradeTypeApiValue);
-        apiParams.put("quantity", amount.toPlainString());
+        apiParams.put("quantity", inFlightOrder.getAmount().toPlainString());
         apiParams.put("type", orderTypeApiValue);
-        apiParams.put("newClientOrderId", orderId);
+        apiParams.put("newClientOrderId", inFlightOrder.getClientOrderId());
 
-        if (orderType == OrderType.LIMIT || orderType == OrderType.LIMIT_MAKER) {
-            apiParams.put("price", price.toPlainString());
-        }
-        if (orderType == OrderType.LIMIT) {
-            apiParams.put("timeInForce", BinanceApiSpec.TIME_IN_FORCE_GTC);
+        if (inFlightOrder.getOrderType() == OrderType.LIMIT) {
+            apiParams.put("price", inFlightOrder.getPrice().toPlainString());
+            apiParams.put("timeInForce", BinanceApiSpec.TIME_IN_FORCE_API_VALUE.get(inFlightOrder.getTimeInForce()));
+
         }
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.POST)
@@ -130,8 +119,8 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
     }
 
     @Override
-    protected boolean placeCancel(String orderId, InFlightOrder trackedInFlightOrder) {
-        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(trackedInFlightOrder.getTradingPair());
+    protected boolean placeCancel(String orderId, InFlightOrder order) {
+        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(order.getTradingPair());
 
         Map<String, Object> apiParams = new HashMap<>();
         apiParams.put("symbol", symbol);
@@ -147,7 +136,10 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
         return "CANCELED".equals(result.path("status").asString());
     }
 
-    private static String orderTypeToApiValue(OrderType orderType) {
+    private static String orderTypeToApiValue(OrderType orderType, boolean isPostOnly) {
+        if(orderType == OrderType.LIMIT && isPostOnly) {
+            return "LIMIT_MAKER";
+        }
         return orderType.name().toUpperCase();
     }
 }

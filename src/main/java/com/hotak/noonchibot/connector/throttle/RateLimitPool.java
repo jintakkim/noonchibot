@@ -1,15 +1,16 @@
 package com.hotak.noonchibot.connector.throttle;
 
+import lombok.RequiredArgsConstructor;
+
+import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
+@RequiredArgsConstructor
 public class RateLimitPool {
     public final RateLimit rateLimit;
+    private final Clock clock;
     private final Deque<TaskLog> logs = new ArrayDeque<>();
-
-    public RateLimitPool(RateLimit rateLimit) {
-        this.rateLimit = rateLimit;
-    }
 
     /**
      * @return 해당 weight만큼 여유가 있는지
@@ -21,11 +22,11 @@ public class RateLimitPool {
     }
 
     public synchronized void record(int weight) {
-        logs.addLast(new TaskLog(weight, System.currentTimeMillis()));
+        logs.addLast(new TaskLog(weight, clock.millis()));
     }
 
     private void purgeExpired(double safetyMarginPct) {
-        long now = System.currentTimeMillis();
+        long now = clock.millis();
         long effectiveWindowMs = (long) (rateLimit.timeInterval().toMillis() * (1 - safetyMarginPct));
         while (!logs.isEmpty() && now - logs.peekFirst().timestamp() > effectiveWindowMs) {
             logs.pollFirst();

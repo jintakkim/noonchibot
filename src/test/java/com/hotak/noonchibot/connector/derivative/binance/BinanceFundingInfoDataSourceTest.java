@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector.derivative.binance;
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
+import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
 import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSource;
 import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSourceTest;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
@@ -36,7 +37,7 @@ public class BinanceFundingInfoDataSourceTest extends AbstractFundingInfoDataSou
                 wsAssistant,
                 BinanceDerivativeApiSpec.WSS_PUBLIC_URL,
                 objectMapper,
-                taskExecutor,
+                Runnable::run,
                 symbolRegistry,
                 mockRestAssistant
         );

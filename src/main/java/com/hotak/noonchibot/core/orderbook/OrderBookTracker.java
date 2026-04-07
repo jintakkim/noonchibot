@@ -1,6 +1,8 @@
 package com.hotak.noonchibot.core.orderbook;
 
-import com.hotak.noonchibot.core.RetryableTrigger;
+import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.MainExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
@@ -14,51 +16,66 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public class OrderBookTracker {
-    private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(1);
-    private static final Duration ERROR_RETRY_INTERVAL = Duration.ofSeconds(30);
+    private static final int MAX_PAST_DIFFS = 30;
+    private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(5);
 
     /// 스냅샷 복구 시 restoreFromSnapshotAndDiffs에 전달할 diff 메시지 윈도우
     private final Map<String, Deque<OrderBookMessage.DiffMessage>> pastDiffsWindows = new HashMap<>();
     private final OrderBookDataSource dataSource;
 
+    private final IoExecutor ioExecutor;
     private final TaskScheduler scheduler;
-    private final AsyncTaskExecutor executor;
-    private final Map<String, Future<?>> executorTask = new ConcurrentHashMap<>();
-    private final Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
-    private final Map<String, OrderBookMessageStream> streams = new ConcurrentHashMap<>();
+    private final MainExecutor mainExecutor;
+    private final Map<String, OrderBook> orderBooks = new HashMap<>();
+    private final Map<String, OrderBookMessageStream> streams = new HashMap<>();
+    private final Map<String, Future<?>> streamTasks = new HashMap<>();
 
-    public OrderBookTracker(OrderBookDataSource dataSource, TaskScheduler scheduler, AsyncTaskExecutor executor) {
+    public OrderBookTracker(
+            OrderBookDataSource dataSource,
+            TaskScheduler scheduler,
+            MainExecutor mainExecutor,
+            IoExecutor ioExecutor
+    ) {
         this.dataSource = dataSource;
         this.scheduler = scheduler;
-        this.executor = executor;
+        this.mainExecutor = mainExecutor;
+        this.ioExecutor = ioExecutor;
         scheduleStalePriceFallback();
     }
 
     private void scheduleStalePriceFallback() {
-        RetryableTrigger priceUpdateTrigger = new RetryableTrigger(PRICE_CHECK_INTERVAL, ERROR_RETRY_INTERVAL);
-        scheduler.schedule(() -> {
-            try {
-                updateLastTradePrices();
-                priceUpdateTrigger.recordSuccess();
-            } catch (Exception e) {
-                log.error("최근 거래 가격 업데이트 중 에러 발생: {}", e.getMessage());
-                priceUpdateTrigger.recordFailure();
-            }
-        }, priceUpdateTrigger);
+        scheduler.scheduleAtFixedRate(
+                () -> mainExecutor.submit(this::refreshStalePrices),
+                Instant.now().plus(PRICE_CHECK_INTERVAL),
+                PRICE_CHECK_INTERVAL
+        );
     }
 
-    private Future<?> submitTaskToExecutor(Runnable runnable) {
-        return executor.submit(() -> {
-            try {
-                runnable.run();
-            } catch (Exception e) {
-                log.error("스트림 처리 중 예외 발생: {}", e.getMessage(), e);
-            }
+    @VisibleForTesting
+    CompletableFuture<Void> refreshStalePrices() {
+        Set<String> stalePairs = findStalePairs();
+        if (stalePairs.isEmpty()) return CompletableFuture.completedFuture(null);
+        return CompletableFuture
+                .supplyAsync(() -> dataSource.getLastTradedPrices(stalePairs), ioExecutor)
+                .thenAcceptAsync(this::applyPrices, mainExecutor);
+    }
+
+    private void applyPrices(Map<String, BigDecimal> prices) {
+        prices.forEach((tradingPair, price) -> {
+            OrderBook orderBook = orderBooks.get(tradingPair);
+            if (orderBook != null) orderBook.setLastTradePrice(price);
         });
     }
 
-    void processStream(OrderBookMessageStream stream) throws InterruptedException {
-        OrderBookMessage message = stream.take();
+    private Set<String> findStalePairs() {
+        return orderBooks.entrySet().stream()
+                .filter(e -> isStale(e.getValue()))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toSet());
+    }
+
+    @VisibleForTesting
+    void processMessage(OrderBookMessage message) {
         switch (message) {
             case OrderBookMessage.SnapshotMessage s -> processSnapshotStream(s);
             case OrderBookMessage.DiffMessage d -> processDiffStream(d);
@@ -71,16 +88,20 @@ public class OrderBookTracker {
         String tradingPair = diffMessage.getTradingPair();
         if (!orderBooks.containsKey(tradingPair)) return; // 현재 트래킹 중이 아닌 페어를 받을 시 ignore
         OrderBook book = orderBooks.get(tradingPair);
-        pastDiffsWindows.computeIfAbsent(tradingPair, k -> new ArrayDeque<>()).add(diffMessage);
         // 최신 id가 아닌 diff 메시지는 ignore
         if (book.getSnapshotId() > diffMessage.getUpdateId()) return;
+        Deque<OrderBookMessage.DiffMessage> window = pastDiffsWindows.computeIfAbsent(tradingPair, k -> new ArrayDeque<>());
+        window.add(diffMessage);
+        while (window.size() > MAX_PAST_DIFFS) {
+            window.poll();
+        }
         book.applyDiffs(diffMessage.getBids(), diffMessage.getAsks(), diffMessage.getUpdateId());
     }
 
     private void processSnapshotStream(OrderBookMessage.SnapshotMessage snapshotMessage) {
         String tradingPair = snapshotMessage.getTradingPair();
-        OrderBook book = orderBooks.get(tradingPair);
         if (!orderBooks.containsKey(tradingPair)) return; // 현재 트래킹 중이 아닌 페어를 받을 시 ignore
+        OrderBook book = orderBooks.get(tradingPair);
         List<OrderBookMessage.DiffMessage> pastDiffs = new ArrayList<>(pastDiffsWindows.getOrDefault(tradingPair, new ArrayDeque<>()));
         book.restoreFromSnapshotAndDiffs(snapshotMessage, pastDiffs);
     }
@@ -92,24 +113,37 @@ public class OrderBookTracker {
         book.applyTrade(tradeMessage);
     }
 
+    /**
+     * blocking method
+     * do not call this method at mainExecutor
+     */
     public void addTradingPair(String tradingPair) {
+        addTradingPairAsync(tradingPair).join();
+    }
+
+    public CompletableFuture<Void> addTradingPairAsync(String tradingPair) {
         if (orderBooks.containsKey(tradingPair)) {
             log.warn("해당 페어는 이미 트래킹 중입니다.");
-            return;
+            return CompletableFuture.completedFuture(null);
         }
-        OrderBookMessageStream stream = dataSource.subscribeOrderBookStream(tradingPair);
-        streams.put(tradingPair, stream);
-        executorTask.put(tradingPair, submitTaskToExecutor(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    processStream(stream);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        }));
-        OrderBook book = dataSource.getNewOrderBook(tradingPair);
-        orderBooks.put(tradingPair, book);
+        return CompletableFuture
+                .supplyAsync(() -> dataSource.getNewOrderBook(tradingPair), ioExecutor)
+                .thenAcceptAsync(book -> {
+                    orderBooks.put(tradingPair, book);
+                    OrderBookMessageStream stream = dataSource.subscribeOrderBookStream(tradingPair);
+                    streams.put(tradingPair, stream);
+                    Future<?> task = ioExecutor.submit(() -> {
+                        while (!Thread.currentThread().isInterrupted()) {
+                            try {
+                                OrderBookMessage message = stream.take();
+                                mainExecutor.submit(() -> processMessage(message));
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                    });
+                    streamTasks.put(tradingPair, task);
+                }, mainExecutor);
     }
 
     public void removeTradingPair(String tradingPair) {
@@ -120,24 +154,8 @@ public class OrderBookTracker {
         orderBooks.remove(tradingPair);
         OrderBookMessageStream stream = streams.remove(tradingPair);
         dataSource.unsubscribe(stream);
-    }
-
-    /**
-     * orderBook websocket 연결 끊김시 lastTradePrice는 별도로 restApi로 조회 후 업데이트
-     * 마지막 trade msg 수신 시점으로 부터 대략 3분이 지났다면 끊김으로 판단(PRICE_CHECK_INTERVAL에 따라 변동가능).
-     */
-    void updateLastTradePrices() {
-        Set<String> stalePairs = orderBooks.entrySet().stream()
-                .filter(e -> isStale(e.getValue()))
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toSet());
-        if (stalePairs.isEmpty()) return;
-        Map<String, BigDecimal> lastPrices = dataSource.getLastTradedPrices(stalePairs);
-        lastPrices.forEach((tradingPair, price) -> {
-            OrderBook orderBook = orderBooks.get(tradingPair);
-            if(orderBook == null) return;
-            orderBook.setLastTradePrice(price);
-        });
+        Future<?> task = streamTasks.remove(tradingPair);
+        if (task != null) task.cancel(true);
     }
 
     private boolean isStale(OrderBook book) {
@@ -145,11 +163,16 @@ public class OrderBookTracker {
         return lastTradeTime == null || lastTradeTime.isBefore(Instant.now().minus(Duration.ofMinutes(3)));
     }
 
-    public Map<String, ReadOnlyOrderBook> getOrderBooks() {
+    public Map<String, OrderBook> getOrderBooks() {
         return new HashMap<>(orderBooks);
     }
 
-    public Optional<ReadOnlyOrderBook> findOrderBook(String tradingPair) {
+    public Optional<OrderBook> findOrderBook(String tradingPair) {
         return Optional.ofNullable(orderBooks.get(tradingPair));
+    }
+
+    @VisibleForTesting
+    Deque<OrderBookMessage.DiffMessage> getPastDiffsWindow(String tradingPair) {
+        return pastDiffsWindows.get(tradingPair);
     }
 }

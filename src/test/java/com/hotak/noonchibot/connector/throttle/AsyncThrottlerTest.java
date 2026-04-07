@@ -8,6 +8,7 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.core.task.support.TaskExecutorAdapter;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
@@ -19,6 +20,7 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 public class AsyncThrottlerTest {
     private AsyncThrottlerImpl throttler;
+    private TestClock clock;
     private final TaskExecutor executor = new TaskExecutorAdapter(Executors.newVirtualThreadPerTaskExecutor());
 
     @Nested
@@ -26,13 +28,14 @@ public class AsyncThrottlerTest {
     class BasicExecution {
         @BeforeEach
         void setUp() {
+            clock = new TestClock(Instant.now());
             throttler = new AsyncThrottlerImpl(List.of(
                     RateLimit.pool("REQUEST_WEIGHT", 6000, Duration.ofMinutes(1)),
                     RateLimit.pool("RAW_REQUESTS", 61000, Duration.ofMinutes(5)),
                     RateLimit.endpoint("/api/time", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
                             new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 1),
                             new RateLimit.LinkedLimitWeightPair("RAW_REQUESTS", 1)))
-            ), executor);
+            ), executor, Duration.ofMillis(10), 0.0, clock);
         }
 
         @Test
@@ -61,6 +64,7 @@ public class AsyncThrottlerTest {
         }
     }
 
+
     @Nested
     @DisplayName("Rate Limit 용량 제한")
     class CapacityLimiting {
@@ -68,47 +72,44 @@ public class AsyncThrottlerTest {
         @Test
         @DisplayName("풀 한도를 초과하면 대기한다")
         void blocksWhenPoolExhausted() throws Exception {
+            clock = new TestClock(Instant.now());
             throttler = new AsyncThrottlerImpl(List.of(
                     RateLimit.pool("SMALL_POOL", 3, Duration.ofSeconds(2)),
                     RateLimit.endpoint("/api/test", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
                             new RateLimit.LinkedLimitWeightPair("SMALL_POOL", 1)))
-            ), executor, Duration.ofMillis(50), 0.0);
+            ), executor, Duration.ofMillis(10), 0.0, clock);
 
-            // 3개 즉시 실행 (한도 소진)
             for (int i = 0; i < 3; i++) {
                 throttler.execute("/api/test", () -> "ok").get(1, TimeUnit.SECONDS);
             }
 
-            // 4번째는 대기해야 함
-            var start = System.currentTimeMillis();
-            throttler.execute("/api/test", () -> "ok").get(5, TimeUnit.SECONDS);
-            var elapsed = System.currentTimeMillis() - start;
+            // 4번째는 용량 부족으로 대기 중
+            var future = throttler.execute("/api/test", () -> "ok");
+            Thread.sleep(50); // 루프 진입 대기
+            assertThat(future.isDone()).isFalse();
 
-            assertThat(elapsed).isGreaterThan(500);
+            // 시간 전진 → 용량 회복 → 즉시 완료
+            clock.advance(Duration.ofSeconds(3));
+            assertThat(future.get(1, TimeUnit.SECONDS)).isEqualTo("ok");
         }
 
         @Test
         @DisplayName("시간 윈도우가 지나면 용량이 회복된다")
         void capacityRecoversAfterWindow() throws Exception {
+            clock = new TestClock(Instant.now());
             throttler = new AsyncThrottlerImpl(List.of(
                     RateLimit.pool("TINY_POOL", 2, Duration.ofSeconds(1)),
                     RateLimit.endpoint("/api/test", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
                             new RateLimit.LinkedLimitWeightPair("TINY_POOL", 1)))
-            ), executor, Duration.ofMillis(50), 0.0);
+            ), executor, Duration.ofMillis(10), 0.0, clock);
 
-            // 한도 소진
             throttler.execute("/api/test", () -> "ok").get(1, TimeUnit.SECONDS);
             throttler.execute("/api/test", () -> "ok").get(1, TimeUnit.SECONDS);
 
-            // 윈도우 경과 대기
-            Thread.sleep(1100);
+            clock.advance(Duration.ofSeconds(2));
 
-            // 다시 즉시 실행 가능
-            var start = System.currentTimeMillis();
-            throttler.execute("/api/test", () -> "ok").get(1, TimeUnit.SECONDS);
-            var elapsed = System.currentTimeMillis() - start;
-
-            assertThat(elapsed).isLessThan(500);
+            var result = throttler.execute("/api/test", () -> "ok").get(1, TimeUnit.SECONDS);
+            assertThat(result).isEqualTo("ok");
         }
     }
 
@@ -119,43 +120,43 @@ public class AsyncThrottlerTest {
         @Test
         @DisplayName("높은 weight의 요청은 풀 용량을 더 많이 소비한다")
         void highWeightConsumesMoreCapacity() throws Exception {
+            clock = new TestClock(Instant.now());
             throttler = new AsyncThrottlerImpl(List.of(
                     RateLimit.pool("POOL", 10, Duration.ofSeconds(2)),
                     RateLimit.endpoint("/api/heavy", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
                             new RateLimit.LinkedLimitWeightPair("POOL", 5)))
-            ), executor, Duration.ofMillis(50), 0.0);
+            ), executor, Duration.ofMillis(10), 0.0, clock);
 
-            // weight 5 × 2번 = 10 (한도 소진)
             throttler.execute("/api/heavy", () -> "ok").get(1, TimeUnit.SECONDS);
             throttler.execute("/api/heavy", () -> "ok").get(1, TimeUnit.SECONDS);
 
-            // 3번째는 대기
-            var start = System.currentTimeMillis();
-            throttler.execute("/api/heavy", () -> "ok").get(5, TimeUnit.SECONDS);
-            var elapsed = System.currentTimeMillis() - start;
+            var future = throttler.execute("/api/heavy", () -> "ok");
+            Thread.sleep(50);
+            assertThat(future.isDone()).isFalse();
 
-            assertThat(elapsed).isGreaterThan(500);
+            clock.advance(Duration.ofSeconds(3));
+            assertThat(future.get(1, TimeUnit.SECONDS)).isEqualTo("ok");
         }
 
         @Test
         @DisplayName("weightOverrides로 동적 weight를 적용할 수 있다")
         void weightOverrideIsApplied() throws Exception {
+            clock = new TestClock(Instant.now());
             throttler = new AsyncThrottlerImpl(List.of(
                     RateLimit.pool("POOL", 10, Duration.ofSeconds(2)),
                     RateLimit.endpoint("/api/ticker", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
                             new RateLimit.LinkedLimitWeightPair("POOL", 2)))
-            ), executor, Duration.ofMillis(50), 0.0);
+            ), executor, Duration.ofMillis(10), 0.0, clock);
 
-            // weight를 10으로 override → 한 번에 한도 소진
             throttler.execute("/api/ticker", () -> "ok", Map.of("POOL", 10))
                     .get(1, TimeUnit.SECONDS);
 
-            // 다음은 대기
-            var start = System.currentTimeMillis();
-            throttler.execute("/api/ticker", () -> "ok").get(5, TimeUnit.SECONDS);
-            var elapsed = System.currentTimeMillis() - start;
+            var future = throttler.execute("/api/ticker", () -> "ok");
+            Thread.sleep(50);
+            assertThat(future.isDone()).isFalse();
 
-            assertThat(elapsed).isGreaterThan(500);
+            clock.advance(Duration.ofSeconds(3));
+            assertThat(future.get(1, TimeUnit.SECONDS)).isEqualTo("ok");
         }
     }
 
@@ -165,24 +166,24 @@ public class AsyncThrottlerTest {
         @Test
         @DisplayName("linkedLimits로 연결된 모든 풀에서 용량을 소비한다")
         void consumesFromAllLinkedPools() throws Exception {
+            clock = new TestClock(Instant.now());
             throttler = new AsyncThrottlerImpl(List.of(
                     RateLimit.pool("WEIGHT", 100, Duration.ofSeconds(2)),
                     RateLimit.pool("ORDERS", 2, Duration.ofSeconds(2)),
                     RateLimit.endpoint("/api/inFlightOrder", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
                             new RateLimit.LinkedLimitWeightPair("WEIGHT", 4),
                             new RateLimit.LinkedLimitWeightPair("ORDERS", 1)))
-            ), executor, Duration.ofMillis(50), 0.0);
+            ), executor, Duration.ofMillis(10), 0.0, clock);
 
-            // ORDERS 풀: 한도 2, weight 1 × 2번 = 소진
             throttler.execute("/api/inFlightOrder", () -> "ok").get(1, TimeUnit.SECONDS);
             throttler.execute("/api/inFlightOrder", () -> "ok").get(1, TimeUnit.SECONDS);
 
-            // WEIGHT는 아직 여유(8/100)지만 ORDERS가 꽉 참 → 대기
-            var start = System.currentTimeMillis();
-            throttler.execute("/api/inFlightOrder", () -> "ok").get(5, TimeUnit.SECONDS);
-            var elapsed = System.currentTimeMillis() - start;
+            var future = throttler.execute("/api/inFlightOrder", () -> "ok");
+            Thread.sleep(50);
+            assertThat(future.isDone()).isFalse();
 
-            assertThat(elapsed).isGreaterThan(500);
+            clock.advance(Duration.ofSeconds(3));
+            assertThat(future.get(1, TimeUnit.SECONDS)).isEqualTo("ok");
         }
     }
 
@@ -193,18 +194,20 @@ public class AsyncThrottlerTest {
         @Test
         @DisplayName("linkedLimits 없는 endpoint는 자기 자신의 풀에서 소비한다")
         void endpointWithoutLinkedLimitsUsesSelfPool() throws Exception {
+            clock = new TestClock(Instant.now());
             throttler = new AsyncThrottlerImpl(List.of(
                     RateLimit.pool("/api/simple", 2, Duration.ofSeconds(2))
-            ), executor, Duration.ofMillis(50), 0.0);
+            ), executor, Duration.ofMillis(10), 0.0, clock);
 
             throttler.execute("/api/simple", () -> "ok").get(1, TimeUnit.SECONDS);
             throttler.execute("/api/simple", () -> "ok").get(1, TimeUnit.SECONDS);
 
-            var start = System.currentTimeMillis();
-            throttler.execute("/api/simple", () -> "ok").get(5, TimeUnit.SECONDS);
-            var elapsed = System.currentTimeMillis() - start;
+            var future = throttler.execute("/api/simple", () -> "ok");
+            Thread.sleep(50);
+            assertThat(future.isDone()).isFalse();
 
-            assertThat(elapsed).isGreaterThan(500);
+            clock.advance(Duration.ofSeconds(3));
+            assertThat(future.get(1, TimeUnit.SECONDS)).isEqualTo("ok");
         }
     }
 }

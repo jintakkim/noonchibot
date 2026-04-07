@@ -2,6 +2,7 @@ package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
+import com.hotak.noonchibot.core.IoExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -16,8 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public abstract class AbstractFundingInfoDataSource extends AbstractWebsocketDataSource implements FundingInfoDataSource, SmartLifecycle {
     private final Map<String, Set<FundingInfoMessageStream>> fundingInfoMessageStreams = new ConcurrentHashMap<>();
 
-    public AbstractFundingInfoDataSource(WsAssistant wsAssistant, String publicWsUrl, ObjectMapper objectMapper, AsyncTaskExecutor taskExecutor) {
-        super(wsAssistant, publicWsUrl, objectMapper, taskExecutor);
+    public AbstractFundingInfoDataSource(WsAssistant wsAssistant, String publicWsUrl, ObjectMapper objectMapper, IoExecutor ioExecutor) {
+        super(wsAssistant, publicWsUrl, objectMapper, ioExecutor);
     }
 
     @Override

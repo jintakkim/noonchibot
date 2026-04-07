@@ -2,6 +2,7 @@ package com.hotak.noonchibot.core.order;
 
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
+import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.Instant;
-import java.util.Objects;
+import java.util.*;
 
 @Slf4j
 @Getter
@@ -23,11 +24,11 @@ public class InFlightOrder {
     private final BigDecimal amount;
     private final BigDecimal price;
     private final Instant creationTimestamp;
+    private final boolean postOnly;
+    private final TimeInForce timeInForce;
 
-    /**
-     * 주문 트레킹에 실패했을 때 true
-     */
-    private boolean lost;
+    private final Set<String> processedTradeIds;
+    private final Map<String, BigDecimal> accumulatedFees;
     private String exchangeOrderId;
     private OrderState currentState = OrderState.PENDING_CREATE; // 초기값 설정
     private BigDecimal executedAmountBase = BigDecimal.ZERO;
@@ -42,7 +43,11 @@ public class InFlightOrder {
             BigDecimal amount,
             BigDecimal price,
             Instant creationTimestamp,
-            String exchangeOrderId
+            String exchangeOrderId,
+            boolean postOnly,
+            TimeInForce timeInForce,
+            Set<String> processedTradeIds,
+            Map<String, BigDecimal> accumulatedFees
     ) {
         this.clientOrderId = clientOrderId;
         this.tradingPair = tradingPair;
@@ -50,10 +55,12 @@ public class InFlightOrder {
         this.tradeType = tradeType;
         this.amount = amount;
         this.price = price;
+        this.postOnly = postOnly;
+        this.timeInForce = timeInForce;
         this.creationTimestamp = creationTimestamp;
-        this.lost = false;
         this.exchangeOrderId = exchangeOrderId;
-
+        this.processedTradeIds = processedTradeIds;
+        this.accumulatedFees = accumulatedFees;
     }
 
     public InFlightOrder(
@@ -63,9 +70,23 @@ public class InFlightOrder {
             TradeType tradeType,
             BigDecimal amount,
             BigDecimal price,
-            Instant creationTimestamp
+            Instant creationTimestamp,
+            boolean postOnly,
+            TimeInForce timeInForce
     ) {
-        this(clientOrderId, tradingPair, orderType, tradeType, amount, price, creationTimestamp, null);
+        this(
+                clientOrderId,
+                tradingPair,
+                orderType,
+                tradeType,
+                amount, price,
+                creationTimestamp,
+                null,
+                postOnly,
+                timeInForce,
+                new HashSet<>(),
+                new HashMap<>()
+        );
     }
 
     /**
@@ -85,9 +106,20 @@ public class InFlightOrder {
         if (!clientIdMatch && !exchangeIdMatch) {
             throw new InFlightUpdateFailedException("주문 ID가 일치하지 않습니다.");
         }
+        if(processedTradeIds.contains(tradeUpdateEvent.tradeId())) {
+            log.warn("이미 처리된 거래 건 입니다(tradeId: {})", tradeUpdateEvent.tradeId());
+            return;
+        }
         executedAmountBase = executedAmountBase.add(tradeUpdateEvent.fillBaseAmount());
         executedAmountQuote = executedAmountQuote.add(tradeUpdateEvent.fillQuoteAmount());
-        this.lastUpdateTimestamp = tradeUpdateEvent.fillTimestamp();
+        if(tradeUpdateEvent.fee() != null)
+            accumulatedFees.merge(
+                    tradeUpdateEvent.fee().token(),
+                    tradeUpdateEvent.fee().amount(),
+                    BigDecimal::add
+            );
+        lastUpdateTimestamp = tradeUpdateEvent.fillTimestamp();
+        processedTradeIds.add(tradeUpdateEvent.tradeId());
     }
 
 
@@ -127,7 +159,4 @@ public class InFlightOrder {
         BigDecimal remaining = amount.abs().subtract(executedAmountBase);
         return remaining.compareTo(FILL_TOLERANCE) <= 0;
     }
-
-    public String getBaseAsset() { return this.tradingPair.split("-")[0]; }
-    public String getQuoteAsset() { return this.tradingPair.split("-")[1]; }
 }

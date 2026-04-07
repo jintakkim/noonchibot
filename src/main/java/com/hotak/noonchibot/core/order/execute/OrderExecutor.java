@@ -1,14 +1,13 @@
-package com.hotak.noonchibot.core.order.executor;
+package com.hotak.noonchibot.core.order.execute;
 
-import com.hotak.noonchibot.core.order.OrderType;
+import com.hotak.noonchibot.core.order.OrderCandidate;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Set;
 
 public interface OrderExecutor {
-    String buy(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args);
-    String sell(String tradingPair, BigDecimal amount, OrderType orderType, BigDecimal price, Object... args);
+    String buy(OrderCandidate candidate);
+    String sell(OrderCandidate candidate);
     void cancel(String tradingPair, String orderId);
 
     /**
@@ -21,10 +20,6 @@ public interface OrderExecutor {
      */
     List<String> getAllTradingPairs();
 
-    /**
-     * @return 지원하는 주문 타입 리스트
-     */
-    Set<OrderType> getSupportedOrderType(String tradingPair);
 
     /**
      * 가격 최소 단위 (tick size)

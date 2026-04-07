@@ -5,6 +5,7 @@ import com.hotak.noonchibot.core.event.BalanceUpdateEvent;
 import com.hotak.noonchibot.core.event.ExchangeEvent;
 import tools.jackson.databind.JsonNode;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,10 +21,12 @@ public class BinanceBalanceUpdateParser implements UserStreamEventParser {
         Instant eventTime = Instant.ofEpochMilli(msg.get("E").asLong());
         List<ExchangeEvent> events = new ArrayList<>();
         for (JsonNode balance : msg.get("B")) {
+            BigDecimal free = balance.get("f").asDecimal();
+            BigDecimal locked = balance.get("l").asDecimal();
             events.add(new BalanceUpdateEvent(
                     balance.get("a").asString(),
-                    balance.get("f").asDecimal(),
-                    balance.get("l").asDecimal(),
+                    free.add(locked),
+                    free,
                     eventTime
             ));
         }
