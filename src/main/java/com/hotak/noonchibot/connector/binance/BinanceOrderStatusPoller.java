@@ -69,7 +69,7 @@ public class BinanceOrderStatusPoller implements SmartLifecycle {
         requests.forEach(req ->
                 CompletableFuture
                         .supplyAsync(() -> fetchOrderStatus(req.tradingPair(), req.clientOrderId()), ioExecutor)
-                        .thenAcceptAsync(this::publishOrderStatus)
+                        .thenAccept(this::publishOrderStatus)
         );
     }
 
