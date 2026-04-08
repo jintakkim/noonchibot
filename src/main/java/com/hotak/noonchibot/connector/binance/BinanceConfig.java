@@ -20,7 +20,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Profile;
-import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
@@ -42,8 +41,8 @@ public class BinanceConfig {
     ) {}
 
     @Bean
-    public ExchangeEventBus binanceEventBus() {
-        return new ExchangeEventBus();
+    public ExchangeEventBus binanceEventBus(MainExecutor mainExecutor) {
+        return new ExchangeEventBus(mainExecutor);
     }
 
     @Bean
@@ -200,7 +199,6 @@ public class BinanceConfig {
     public BinanceBalancePoller binanceBalancePoller(
             @Qualifier("binanceUserStreamEventPublisher") BinanceUserStreamEventPublisher binanceUserStreamEventPublisher,
             IoExecutor ioExecutor,
-            MainExecutor mainExecutor,
             @Qualifier("binanceRestAssistant") RestAssistant restAssistant,
             @Qualifier("binanceEventBus") ExchangeEventBus eventBus,
             TaskScheduler taskScheduler
@@ -208,7 +206,6 @@ public class BinanceConfig {
         return new BinanceBalancePoller(
                 binanceUserStreamEventPublisher,
                 ioExecutor,
-                mainExecutor,
                 restAssistant,
                 eventBus,
                 taskScheduler
@@ -236,7 +233,6 @@ public class BinanceConfig {
             @Qualifier("binanceEventBus") ExchangeEventBus eventBus,
             TradeRepository tradeRepository,
             OrderHistoryRepository orderHistoryRepository,
-            MainExecutor mainExecutor,
             IoExecutor ioExecutor
             ) {
         return new OrderTracker(
@@ -244,7 +240,6 @@ public class BinanceConfig {
                 BinanceApiSpec.PLATFORM_NAME,
                 tradeRepository,
                 orderHistoryRepository,
-                mainExecutor,
                 ioExecutor,
                 eventBus
         );
@@ -258,14 +253,16 @@ public class BinanceConfig {
             ObjectMapper objectMapper,
             BinanceAuthenticator binanceAuthenticator,
             @Qualifier("binanceEventBus") ExchangeEventBus eventBus,
-            @Qualifier("binanceTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry
+            @Qualifier("binanceTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
+            IoExecutor ioExecutor
     ) {
         return new BinanceUserStreamEventPublisher(
                 wsAssistant,
                 objectMapper,
                 binanceAuthenticator,
                 List.of(new BinanceExecutionReportParser(tradingPairSymbolRegistry), new BinanceBalanceUpdateParser()),
-                eventBus
+                eventBus,
+                ioExecutor
         );
     }
 
@@ -288,7 +285,8 @@ public class BinanceConfig {
                 ioExecutor,
                 tradingPairSymbolRegistry,
                 userStreamEventPublisher,
-                taskScheduler
+                taskScheduler,
+                BinanceApiSpec.ORDER_PATH_URL
         );
     }
 
@@ -311,15 +309,16 @@ public class BinanceConfig {
                 orderTracker,
                 tradingPairSymbolRegistry,
                 ioExecutor,
-                mainExecutor
+                mainExecutor,
+                BinanceApiSpec.MY_TRADES_PATH_URL
         );
     }
 
     @Bean
-    public BinanceSpotTradeFeeSchemaLoader binanceSpotTradeFeeSchemaLoader(
+    public BinanceTradeFeeSchemaLoader binanceTradeFeeSchemaLoader(
             @Qualifier("binanceRestAssistant") RestAssistant restAssistant,
             @Qualifier("binanceTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry
     ) {
-        return new BinanceSpotTradeFeeSchemaLoader(restAssistant, tradingPairSymbolRegistry);
+        return new BinanceTradeFeeSchemaLoader(restAssistant, tradingPairSymbolRegistry);
     }
 }

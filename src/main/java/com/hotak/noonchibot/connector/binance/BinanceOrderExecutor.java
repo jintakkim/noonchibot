@@ -95,8 +95,9 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
 
         if (inFlightOrder.getOrderType() == OrderType.LIMIT) {
             apiParams.put("price", inFlightOrder.getPrice().toPlainString());
-            apiParams.put("timeInForce", BinanceApiSpec.TIME_IN_FORCE_API_VALUE.get(inFlightOrder.getTimeInForce()));
-
+            if(!inFlightOrder.isPostOnly()) {
+                apiParams.put("timeInForce", BinanceApiSpec.TIME_IN_FORCE_API_VALUE.get(inFlightOrder.getTimeInForce()));
+            }
         }
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.POST)

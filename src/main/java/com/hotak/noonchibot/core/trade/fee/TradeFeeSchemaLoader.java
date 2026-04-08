@@ -6,9 +6,4 @@ public interface TradeFeeSchemaLoader {
      * ex) 거래소 별로 이벤트, 일부 페어의 경우 수수료 무료정책을 적용중이기 때문에 필요시 사용.
      */
     TradeFeeSchema get(String tradingPair);
-
-    /**
-     * 계정 단위의 일반 수수료를 제공한다.
-     */
-    TradeFeeSchema get();
 }

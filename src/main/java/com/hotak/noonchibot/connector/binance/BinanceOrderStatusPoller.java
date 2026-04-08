@@ -33,6 +33,7 @@ public class BinanceOrderStatusPoller implements SmartLifecycle {
     private final IoExecutor ioExecutor;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final PollScheduler pollScheduler;
+    private final String orderPathUrl;
     private volatile boolean running = false;
 
     public BinanceOrderStatusPoller(
@@ -43,7 +44,8 @@ public class BinanceOrderStatusPoller implements SmartLifecycle {
             IoExecutor ioExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             WebsocketStatus websocketStatus,
-            TaskScheduler scheduler
+            TaskScheduler scheduler,
+            String orderPathUrl
     ) {
         this.restAssistant = restAssistant;
         this.eventPublisher = eventPublisher;
@@ -51,6 +53,7 @@ public class BinanceOrderStatusPoller implements SmartLifecycle {
         this.mainExecutor = mainExecutor;
         this.ioExecutor = ioExecutor;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
+        this.orderPathUrl = orderPathUrl;
         this.pollScheduler = new PollScheduler(websocketStatus, scheduler);
     }
 
@@ -66,7 +69,7 @@ public class BinanceOrderStatusPoller implements SmartLifecycle {
         requests.forEach(req ->
                 CompletableFuture
                         .supplyAsync(() -> fetchOrderStatus(req.tradingPair(), req.clientOrderId()), ioExecutor)
-                        .thenAcceptAsync(this::publishOrderStatus, mainExecutor)
+                        .thenAcceptAsync(this::publishOrderStatus)
         );
     }
 
@@ -84,7 +87,7 @@ public class BinanceOrderStatusPoller implements SmartLifecycle {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
-                .pathUrl(BinanceApiSpec.ORDER_PATH_URL)
+                .pathUrl(orderPathUrl)
                 .params(Map.of("symbol", symbol, "origClientOrderId", clientOrderId))
                 .authRequired(true)
                 .build();

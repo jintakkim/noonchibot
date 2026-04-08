@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.core.order;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.core.MainExecutor;
+import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.EventListener;
@@ -25,20 +25,20 @@ public class OrderTracker implements SmartLifecycle {
     private final ExchangeEventSubscriber eventSubscriber;
     private final Map<String, InFlightOrder> inFlightOrders = new HashMap<>();
     private final Map<String, Integer> orderNotFoundRecords = new HashMap<>();
-    private volatile boolean running = false;
 
     private final EventListener<OrderRequestSentEvent> orderRequestEventListener;
     private final EventListener<OrderUpdateEvent> orderUpdateEventListener;
     private final EventListener<TradeUpdateEvent> tradeUpdateEventListener;
     private final EventListener<OrderLostEvent> orderLostEventListener;
 
+    private volatile boolean running = false;
+
     public OrderTracker(
             ExchangeEventPublisher eventPublisher,
             String platformName,
             TradeRepository tradeRepository,
             OrderHistoryRepository orderHistoryRepository,
-            MainExecutor mainExecutor,
-            AsyncTaskExecutor ioExecutor,
+            IoExecutor ioExecutor,
             ExchangeEventSubscriber eventSubscriber
     ) {
         this.eventPublisher = eventPublisher;
@@ -48,10 +48,10 @@ public class OrderTracker implements SmartLifecycle {
         this.ioExecutor = ioExecutor;
         this.eventSubscriber = eventSubscriber;
 
-        this.orderRequestEventListener = event -> mainExecutor.execute(() -> startTrackingOrder(event.inFlightOrder()));
-        this.orderUpdateEventListener = event -> mainExecutor.execute(() -> processOrderUpdate(event));
-        this.tradeUpdateEventListener = event -> mainExecutor.execute(() -> processTradeUpdate(event));
-        this.orderLostEventListener = event -> mainExecutor.execute(() -> processOrderNotFound(event.clientOrderId()));
+        this.orderRequestEventListener = event -> startTrackingOrder(event.inFlightOrder());
+        this.orderUpdateEventListener = this::processOrderUpdate;
+        this.tradeUpdateEventListener = this::processTradeUpdate;
+        this.orderLostEventListener = event -> processOrderNotFound(event.clientOrderId());
     }
 
     @VisibleForTesting

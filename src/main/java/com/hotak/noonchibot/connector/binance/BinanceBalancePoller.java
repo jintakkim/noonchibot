@@ -24,20 +24,17 @@ public class BinanceBalancePoller implements SmartLifecycle {
     private final RestAssistant restAssistant;
     private final ExchangeEventPublisher eventPublisher;
     private final IoExecutor ioExecutor;
-    private final MainExecutor mainExecutor;
     private final PollScheduler pollScheduler;
     private volatile boolean running = false;
 
     public BinanceBalancePoller(
             WebsocketStatus websocketStatus,
             IoExecutor ioExecutor,
-            MainExecutor mainExecutor,
             RestAssistant restAssistant,
             ExchangeEventPublisher eventPublisher,
             TaskScheduler taskScheduler
     ) {
         this.ioExecutor = ioExecutor;
-        this.mainExecutor = mainExecutor;
         this.restAssistant = restAssistant;
         this.eventPublisher = eventPublisher;
         this.pollScheduler = new PollScheduler(websocketStatus, taskScheduler);
@@ -48,16 +45,19 @@ public class BinanceBalancePoller implements SmartLifecycle {
         fetchAccountInfo()
                 .thenApply(accountInfo -> {
                     Instant updateTime = Instant.ofEpochMilli(accountInfo.get("updateTime").asLong());
-                    Map<String, BigDecimal> free = new HashMap<>();
-                    Map<String, BigDecimal> locked = new HashMap<>();
+
+                    Map<String, BigDecimal> totalBalances = new HashMap<>();
+                    Map<String, BigDecimal> availableBalances = new HashMap<>();
                     for (JsonNode entry : accountInfo.get("balances")) {
-                        String asset = entry.get("asset").asString();
-                        free.put(asset, entry.get("free").asDecimal());
-                        locked.put(asset, entry.get("locked").asDecimal());
+                        String asset = entry.get("asset").asText();
+                        BigDecimal free = entry.get("free").asDecimal();
+                        BigDecimal locked = entry.get("locked").asDecimal();
+                        totalBalances.put(asset, free.add(locked));
+                        availableBalances.put(asset, free);
                     }
-                    return new BalanceSnapshotEvent(free, locked, updateTime);
+                    return new BalanceSnapshotEvent(totalBalances, availableBalances, updateTime);
                 })
-                .thenAcceptAsync(eventPublisher::publish, mainExecutor);
+                .thenAccept(eventPublisher::publish);
     }
 
     private CompletableFuture<JsonNode> fetchAccountInfo() {
@@ -74,7 +74,6 @@ public class BinanceBalancePoller implements SmartLifecycle {
     public void start() {
         pollScheduler.start(this::pollData);
         running = true;
-
     }
 
     @Override

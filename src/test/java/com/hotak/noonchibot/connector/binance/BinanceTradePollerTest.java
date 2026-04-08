@@ -51,7 +51,8 @@ class BinanceTradePollerTest {
                 orderTracker,
                 symbolRegistry,
                 Runnable::run,
-                new TestMainExecutor()
+                new TestMainExecutor(),
+                BinanceApiSpec.MY_TRADES_PATH_URL
         );
     }
 

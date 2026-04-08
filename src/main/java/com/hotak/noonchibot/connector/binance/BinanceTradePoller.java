@@ -33,6 +33,7 @@ public class BinanceTradePoller implements SmartLifecycle {
     private final IoExecutor ioExecutor;
     private final MainExecutor mainExecutor;
     private final PollScheduler pollScheduler;
+    private final String tradePathUrl;
 
     private volatile boolean running = false;
 
@@ -44,7 +45,8 @@ public class BinanceTradePoller implements SmartLifecycle {
             OrderTracker orderTracker,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             IoExecutor ioExecutor,
-            MainExecutor mainExecutor
+            MainExecutor mainExecutor,
+            String tradePathUrl
             ) {
         this.eventPublisher = eventPublisher;
         this.restAssistant = restAssistant;
@@ -52,6 +54,7 @@ public class BinanceTradePoller implements SmartLifecycle {
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.ioExecutor = ioExecutor;
         this.mainExecutor = mainExecutor;
+        this.tradePathUrl = tradePathUrl;
         this.pollScheduler = new PollScheduler(websocketStatus, taskScheduler);
     }
 
@@ -63,7 +66,7 @@ public class BinanceTradePoller implements SmartLifecycle {
                 .map(order -> new TradePollRequest(order.getClientOrderId(), order.getExchangeOrderId(), order.getTradingPair()))
                 .forEach(request -> CompletableFuture
                         .supplyAsync(() -> fetchAllTradeUpdatesForOrder(request), ioExecutor)
-                        .thenAcceptAsync(tradeEvents -> tradeEvents.forEach(eventPublisher::publish), mainExecutor));
+                        .thenAccept(tradeEvents -> tradeEvents.forEach(eventPublisher::publish)));
     }
 
     private List<TradeUpdateEvent> fetchAllTradeUpdatesForOrder(TradePollRequest tradePollRequest) {
@@ -74,7 +77,7 @@ public class BinanceTradePoller implements SmartLifecycle {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradePollRequest.tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
-                .pathUrl(BinanceApiSpec.MY_TRADES_PATH_URL)
+                .pathUrl(tradePathUrl)
                 .params(Map.of(
                         "symbol", symbol,
                         "orderId", tradePollRequest.exchangeOrderId

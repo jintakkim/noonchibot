@@ -16,9 +16,4 @@ public class TestTradeFeeSchemaLoader implements TradeFeeSchemaLoader {
     public TradeFeeSchema get(String tradingPair) {
         return tradeFeeSchema;
     }
-
-    @Override
-    public TradeFeeSchema get() {
-        return tradeFeeSchema;
-    }
 }

@@ -4,7 +4,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.math.BigDecimal;
@@ -15,7 +15,7 @@ import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
-public class OrderBookTracker {
+public class OrderBookTracker implements SmartLifecycle {
     private static final int MAX_PAST_DIFFS = 30;
     private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(5);
 
@@ -30,6 +30,8 @@ public class OrderBookTracker {
     private final Map<String, OrderBookMessageStream> streams = new HashMap<>();
     private final Map<String, Future<?>> streamTasks = new HashMap<>();
 
+    private volatile boolean running = false;
+
     public OrderBookTracker(
             OrderBookDataSource dataSource,
             TaskScheduler scheduler,
@@ -40,7 +42,6 @@ public class OrderBookTracker {
         this.scheduler = scheduler;
         this.mainExecutor = mainExecutor;
         this.ioExecutor = ioExecutor;
-        scheduleStalePriceFallback();
     }
 
     private void scheduleStalePriceFallback() {
@@ -174,5 +175,27 @@ public class OrderBookTracker {
     @VisibleForTesting
     Deque<OrderBookMessage.DiffMessage> getPastDiffsWindow(String tradingPair) {
         return pastDiffsWindows.get(tradingPair);
+    }
+
+    @Override
+    public void start() {
+        scheduleStalePriceFallback();
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+        // 모든 stream 구독 해제
+        streams.forEach((pair, stream) -> dataSource.unsubscribe(stream));
+        // 모든 stream consumer 스레드 종료
+        streamTasks.values().forEach(task -> task.cancel(true));
+        streamTasks.clear();
+        streams.clear();
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
     }
 }

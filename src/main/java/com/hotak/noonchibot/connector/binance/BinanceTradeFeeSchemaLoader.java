@@ -10,33 +10,20 @@ import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @RequiredArgsConstructor
-public class BinanceSpotTradeFeeSchemaLoader implements TradeFeeSchemaLoader {
+public class BinanceTradeFeeSchemaLoader implements TradeFeeSchemaLoader {
     private final RestAssistant restAssistant;
     private final TradingPairSymbolRegistry symbolRegistry;
 
-    private volatile TradeFeeSchema accountFeeSchema;
-    private final ConcurrentHashMap<String, TradeFeeSchema> pairFeeSchemaCache = new ConcurrentHashMap<>();
+    private final Map<String, TradeFeeSchema> pairFeeSchemaCache = new HashMap<>();
 
     @Override
     public TradeFeeSchema get(String tradingPair) {
         return pairFeeSchemaCache.computeIfAbsent(tradingPair, this::fetchPairFeeSchema);
-    }
-
-    @Override
-    public TradeFeeSchema get() {
-        if (accountFeeSchema == null) {
-            synchronized (this) {
-                if (accountFeeSchema == null) {
-                    accountFeeSchema = fetchAccountFeeSchema();
-                }
-            }
-        }
-        return accountFeeSchema;
     }
 
     private TradeFeeSchema fetchPairFeeSchema(String tradingPair) {
@@ -73,27 +60,6 @@ public class BinanceSpotTradeFeeSchemaLoader implements TradeFeeSchemaLoader {
                 makerRate,
                 takerRate,
                 !bnbDiscountEnabled,
-                List.of(),
-                List.of()
-        );
-    }
-
-    private TradeFeeSchema fetchAccountFeeSchema() {
-        JsonNode body = restAssistant.executeRequestAndGetJsonBody(
-                RestRequest.builder()
-                        .method(HttpMethod.GET)
-                        .pathUrl(BinanceApiSpec.ACCOUNTS_PATH_URL)
-                        .authRequired(true)
-                        .build()
-        );
-
-        JsonNode rates = body.get("commissionRates");
-
-        return new TradeFeeSchema(
-                null,
-                new BigDecimal(rates.get("maker").asString()),
-                new BigDecimal(rates.get("taker").asString()),
-                true,
                 List.of(),
                 List.of()
         );

@@ -53,7 +53,8 @@ class BinanceOrderStatusPollerTest {
                 Runnable::run,
                 symbolRegistry,
                 Mockito.mock(WebsocketStatus.class),
-                mock(TaskScheduler.class)
+                mock(TaskScheduler.class),
+                BinanceApiSpec.ORDER_PATH_URL
         );
     }
 

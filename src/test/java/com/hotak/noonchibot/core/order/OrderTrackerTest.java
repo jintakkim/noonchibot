@@ -35,7 +35,7 @@ class OrderTrackerTest {
     void setUp() {
         capturedEvents = new ArrayList<>();
         testMainExecutor = new TestMainExecutor();
-        ExchangeEventBus exchangeEventBus = Mockito.spy(new ExchangeEventBus());
+        ExchangeEventBus exchangeEventBus = Mockito.spy(new ExchangeEventBus(new TestMainExecutor()));
         doAnswer(invocation -> {
             capturedEvents.add(invocation.getArgument(0));
             return null;
@@ -47,7 +47,6 @@ class OrderTrackerTest {
                 "test-platform",
                 tradeRepository,
                 orderHistoryRepository,
-                testMainExecutor,
                 Runnable::run,
                 exchangeEventBus
         );

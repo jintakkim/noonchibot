@@ -25,7 +25,7 @@ public final class BinanceApiSpec {
     public static final String SNAPSHOT_PATH_URL = "/v3/depth";
     public static final String SERVER_TIME_PATH_URL = "/v3/time";
     public static final String EXCHANGE_INFO_PATH_URL = "/v3/exchangeInfo";
-    public static final String ORDER_PATH_URL = "/v3/inFlightOrder";
+    public static final String ORDER_PATH_URL = "/v3/order";
     public static final String PING_PATH_URL = "/v3/ping";
     public static final String ACCOUNTS_PATH_URL = "/v3/account";
     public static final String MY_TRADES_PATH_URL = "/v3/myTrades";

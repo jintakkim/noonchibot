@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.web.*;
-import com.hotak.noonchibot.core.datatype.BalanceStreamStatus;
+import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.UserStreamEventParser;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
@@ -16,21 +16,24 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Future;
 
 import static java.lang.Thread.sleep;
 
 @Slf4j
 @RequiredArgsConstructor
-public class BinanceUserStreamEventPublisher implements WebsocketStatus, BalanceStreamStatus, SmartLifecycle {
+public class BinanceUserStreamEventPublisher implements WebsocketStatus, SmartLifecycle {
     private final WsAssistant wsAssistant;
     private final ObjectMapper objectMapper;
     private final BinanceAuthenticator binanceAuthenticator;
     private final List<UserStreamEventParser> userStreamEventParsers;
     private final ExchangeEventPublisher exchangeEventPublisher;
+    private final IoExecutor ioExecutor;
 
     private volatile Instant lastRecvTime;
     private volatile WsConnection wsConnection;
-    private volatile Thread connectionThread;
+    private volatile boolean running = false;
+    private volatile Future<?> connection;
 
     private void connectionLoop() {
         while (!Thread.currentThread().isInterrupted()) {
@@ -115,17 +118,19 @@ public class BinanceUserStreamEventPublisher implements WebsocketStatus, Balance
 
     @Override
     public void start() {
-        connectionThread = Thread.ofVirtual().start(this::connectionLoop);
+        connection = ioExecutor.submit(this::connectionLoop);
+        running = true;
     }
 
     @Override
     public void stop() {
-        connectionThread.interrupt();
-        connectionThread = null;
+        connection.cancel(true);
+        connection = null;
+        running = false;
     }
 
     @Override
     public boolean isRunning() {
-        return connectionThread != null && connectionThread.isAlive();
+        return running;
     }
 }
