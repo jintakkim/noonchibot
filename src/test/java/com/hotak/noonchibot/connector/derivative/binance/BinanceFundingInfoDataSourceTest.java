@@ -3,12 +3,11 @@ package com.hotak.noonchibot.connector.derivative.binance;
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
-import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
+import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSource;
 import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSourceTest;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -30,14 +29,14 @@ public class BinanceFundingInfoDataSourceTest extends AbstractFundingInfoDataSou
     private RestAssistant mockRestAssistant;
 
     @Override
-    protected AbstractFundingInfoDataSource createDataSource(WsAssistant wsAssistant, AsyncTaskExecutor taskExecutor) {
+    protected AbstractFundingInfoDataSource createDataSource(WsAssistant wsAssistant, IoExecutor ioExecutor) {
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of("BTC-USDT", "BTCUSDT", "ETH-USDT", "ETHUSDT"));
         mockRestAssistant = Mockito.mock(RestAssistant.class);
         return new BinanceFundingInfoDataSource(
                 wsAssistant,
                 BinanceDerivativeApiSpec.WSS_PUBLIC_URL,
                 objectMapper,
-                Runnable::run,
+                ioExecutor,
                 symbolRegistry,
                 mockRestAssistant
         );

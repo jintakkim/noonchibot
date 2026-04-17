@@ -11,7 +11,6 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * funding-Info, leverage, position에 대한 정보를 관리
@@ -28,7 +27,6 @@ public class DerivativeInfoTracker implements SmartLifecycle {
     private final PositionMode positionMode;
     private final Map<String, Integer> leverages = new HashMap<>();
     private final Map<String, Position> positions = new HashMap<>();
-    private final Map<String, FundingInfoMessage> fundingInfo = new HashMap<>();
 
     private volatile boolean running = false;
 

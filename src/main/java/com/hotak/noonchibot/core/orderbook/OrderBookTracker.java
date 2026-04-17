@@ -29,6 +29,7 @@ public class OrderBookTracker implements SmartLifecycle {
     private final Map<String, OrderBook> orderBooks = new HashMap<>();
     private final Map<String, OrderBookMessageStream> streams = new HashMap<>();
     private final Map<String, Future<?>> streamTasks = new HashMap<>();
+    private final String platformName;
 
     private volatile boolean running = false;
 
@@ -36,12 +37,14 @@ public class OrderBookTracker implements SmartLifecycle {
             OrderBookDataSource dataSource,
             TaskScheduler scheduler,
             MainExecutor mainExecutor,
-            IoExecutor ioExecutor
+            IoExecutor ioExecutor,
+            String platformName
     ) {
         this.dataSource = dataSource;
         this.scheduler = scheduler;
         this.mainExecutor = mainExecutor;
         this.ioExecutor = ioExecutor;
+        this.platformName = platformName;
     }
 
     private void scheduleStalePriceFallback() {
@@ -197,5 +200,9 @@ public class OrderBookTracker implements SmartLifecycle {
     @Override
     public boolean isRunning() {
         return running;
+    }
+
+    public String getPlatformName() {
+        return platformName;
     }
 }

@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector.binance;
 import com.hotak.noonchibot.connector.*;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
+import com.hotak.noonchibot.core.TestMainExecutor;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderTracker;
@@ -50,7 +51,9 @@ public class BinanceOrderExecutorTest extends AbstractExchangeOrderExecutorTest 
                 orderBookDataSource,
                 timeSynchronizer,
                 exchangeEventPublisher,
-                restAssistant
+                restAssistant,
+                new TestMainExecutor(),
+                Runnable::run
         );
     }
 

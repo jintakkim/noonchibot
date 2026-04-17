@@ -4,6 +4,8 @@ import com.hotak.noonchibot.connector.*;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
+import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.order.*;
@@ -30,7 +32,9 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
             OrderBookDataSource orderBookDataSource,
             TimeSynchronizer timeSynchronizer,
             ExchangeEventPublisher exchangeEventPublisher,
-            RestAssistant restAssistant
+            RestAssistant restAssistant,
+            MainExecutor mainExecutor,
+            IoExecutor ioExecutor
             ) {
         super(
                 BinanceApiSpec.PLATFORM_NAME,
@@ -42,7 +46,9 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
                 BinanceApiSpec.MAX_ORDER_ID_LENGTH,
                 tradingPairSymbolRegistry,
                 orderBookDataSource,
-                exchangeEventPublisher
+                exchangeEventPublisher,
+                mainExecutor,
+                ioExecutor
         );
         this.timeSynchronizer = timeSynchronizer;
         this.restAssistant = restAssistant;
@@ -68,7 +74,7 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
     }
 
     @Override
-    protected boolean isOrderNotFoundDuringCancellationException(Exception e) {
+    protected boolean isOrderNotFoundDuringCancellationException(Throwable e) {
         String message = e.getMessage();
         return message != null
                 && message.contains(String.valueOf(BinanceApiSpec.UNKNOWN_ORDER_DURING_CANCELLATION_ERROR_CODE));

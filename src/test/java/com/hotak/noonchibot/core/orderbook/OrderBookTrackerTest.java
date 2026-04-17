@@ -15,8 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
-import org.springframework.core.task.AsyncTaskExecutor;
-import org.springframework.core.task.VirtualThreadTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.util.List;
@@ -38,7 +36,7 @@ public class OrderBookTrackerTest {
         mainExecutor = new TestMainExecutor();
         ioExecutor = new VirtualThreadIoExecutor();
         orderBook = spy(new OrderBook(false));
-        tracker = new OrderBookTracker(dataSource, scheduler, mainExecutor, ioExecutor);
+        tracker = new OrderBookTracker(dataSource, scheduler, mainExecutor, ioExecutor, "test-platform");
 
         when(scheduler.scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class))).thenReturn(null);
         when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);

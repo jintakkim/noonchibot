@@ -322,13 +322,14 @@ public abstract class AbstractExchangeOrderExecutorTest {
         }
 
         @Test
-        @DisplayName("취소 도중 처리할 수 없는 예외는 처리하지 않는다.")
+        @DisplayName("취소 도중 처리할 수 없는 예외를 만났을때 Order를 failed 처리한다..")
         void cancelApiFailure() {
             stubTrackedOrder("BUY-BTC-USDT-1", "12345");
             when(mockRestAssistant.executeRequestAndGetJsonBody(any(RestRequest.class)))
                     .thenThrow(new ExchangeApiException(HttpStatusCode.valueOf(500), "internal error"));
-            assertThatThrownBy(() -> exchangeConnector.cancel("BTC-USDT", "BUY-BTC-USDT-1"))
-                    .isInstanceOf(ExchangeApiException.class);
+            exchangeConnector.cancel("BTC-USDT", "BUY-BTC-USDT-1");
+            List<OrderUpdateEvent> events = testExchangeEventPublisher.getEventsOfType(OrderUpdateEvent.class);
+            assertThat(events.getFirst().orderFailure().errorType()).isEqualTo(ExchangeApiException.class.getSimpleName());
         }
     }
 

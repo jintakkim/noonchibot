@@ -1,6 +1,8 @@
 package com.hotak.noonchibot.core.order.execute;
 
 import com.hotak.noonchibot.connector.*;
+import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.event.OrderLostEvent;
@@ -8,11 +10,13 @@ import com.hotak.noonchibot.core.event.OrderRequestSentEvent;
 import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import com.hotak.noonchibot.core.order.*;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
+import com.hotak.noonchibot.core.utils.AsyncUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
@@ -36,6 +40,8 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
 
     private final OrderBookDataSource orderBookDataSource;
     private final ExchangeEventPublisher exchangeEventPublisher;
+    private final MainExecutor mainExecutor;
+    private final IoExecutor ioExecutor;
 
 
     public AbstractExchangeOrderExecutor(
@@ -48,7 +54,9 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
             int clientOrderIdMaxLength,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             OrderBookDataSource orderBookDataSource,
-            ExchangeEventPublisher exchangeEventPublisher
+            ExchangeEventPublisher exchangeEventPublisher,
+            MainExecutor mainExecutor,
+            IoExecutor ioExecutor
 
     ) {
         this.platformName = platformName;
@@ -61,6 +69,8 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.orderBookDataSource = orderBookDataSource;
         this.exchangeEventPublisher = exchangeEventPublisher;
+        this.mainExecutor = mainExecutor;
+        this.ioExecutor = ioExecutor;
     }
 
     public abstract Set<OrderType> getSupportedOrderType(String tradingPair);
@@ -75,7 +85,7 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
     /**
      * 주문 취소시 주문 없음 예외인지 확인
      */
-    protected abstract boolean isOrderNotFoundDuringCancellationException(Exception e);
+    protected abstract boolean isOrderNotFoundDuringCancellationException(Throwable e);
 
     @Override
     public BigDecimal getOrderPriceQuantum(String tradingPair, BigDecimal price) {
@@ -153,11 +163,15 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
             updateOrderAfterFailure(clientOrderId, candidate.getTradingPair(), new OrderValidationException.BelowMinNotionalException("주문 금액이 최소 주문 금액보다 커야합니다."));
             return;
         }
-        try {
-            placeOrderAndProcessUpdate(inFlightOrder);
-        } catch (Exception e) {
-            onOrderFailure(clientOrderId, candidate.getTradingPair(), e);
-        }
+
+        placeOrderAndProcessUpdateAsync(inFlightOrder)
+                .exceptionallyAsync(
+                        e -> {
+                            onOrderFailure(inFlightOrder.getClientOrderId(), inFlightOrder.getTradingPair(), AsyncUtils.unwrapCompletionException(e));
+                            return null;
+                        },
+                        mainExecutor
+                );
     }
 
     @Override
@@ -167,39 +181,51 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
             log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
             return;
         }
-        try {
-            placeCancel(clientOrderId, order);
-            OrderState newState = isCancelRequestInExchangeSynchronous ? OrderState.CANCELED : OrderState.PENDING_CANCEL;
-            OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), newState, clientOrderId, null, null);
-            log.info("주문 취소 요청이 완료되었습니다. | {} | orderId: {} | exchangeOrderId: {}",
-                    tradingPair,
-                    clientOrderId,
-                    order.getExchangeOrderId() != null ? order.getExchangeOrderId() : "N/A"
-            );
-            exchangeEventPublisher.publish(orderUpdateEvent);
-        } catch (Exception e) {
-            if(isOrderNotFoundDuringCancellationException(e)) {
-                log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
-                exchangeEventPublisher.publish(new OrderLostEvent(clientOrderId));
-                return;
-            }
-            throw e;
-        }
+        CompletableFuture
+                .runAsync(() -> placeCancel(clientOrderId, order), ioExecutor)
+                .thenAcceptAsync(v -> {
+                    OrderState newState = isCancelRequestInExchangeSynchronous ? OrderState.CANCELED : OrderState.PENDING_CANCEL;
+                    OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), newState, clientOrderId, null, null);
+                    log.info("주문 취소 요청이 완료되었습니다. | {} | orderId: {} | exchangeOrderId: {}",
+                        tradingPair,
+                        clientOrderId,
+                        order.getExchangeOrderId() != null ? order.getExchangeOrderId() : "N/A"
+                    );
+                    exchangeEventPublisher.publish(orderUpdateEvent);
+                }, mainExecutor)
+                .exceptionallyAsync(e -> {
+                    if (isOrderNotFoundDuringCancellationException(AsyncUtils.unwrapCompletionException(e))) {
+                        log.warn("orderId: {}에 해당하는 주문을 찾을 수 없습니다.", clientOrderId);
+                        exchangeEventPublisher.publish(new OrderLostEvent(clientOrderId));
+                    } else {
+                        onOrderFailure(clientOrderId, tradingPair, AsyncUtils.unwrapCompletionException(e));
+                    }
+                    return null;
+                }, mainExecutor);
     }
 
-    private void placeOrderAndProcessUpdate(InFlightOrder inFlightOrder) {
-        OrderPlacedDto placedOrder = placeOrder(inFlightOrder);
-        OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(inFlightOrder.getTradingPair(), placedOrder.timestamp(), OrderState.OPEN, inFlightOrder.getClientOrderId(), placedOrder.exchangeOrderId());
-        log.info("주문이 성공적으로 생성되었습니다. | {} {} {} | 수량: {} | 가격: {} | orderId: {} | exchangeOrderId: {}",
-                inFlightOrder.getTradeType(),
-                inFlightOrder.getTradingPair(),
-                inFlightOrder.getOrderType(),
-                inFlightOrder.getAmount().toPlainString(),
-                inFlightOrder.getPrice() != null ? inFlightOrder.getPrice().toPlainString() : "MARKET",
-                inFlightOrder.getClientOrderId(),
-                inFlightOrder.getExchangeOrderId()
-        );
-        exchangeEventPublisher.publish(orderUpdateEvent);
+    private CompletableFuture<Void> placeOrderAndProcessUpdateAsync(InFlightOrder inFlightOrder) {
+        return CompletableFuture
+                .supplyAsync(() -> placeOrder(inFlightOrder), ioExecutor)
+                .thenAcceptAsync(placedOrder -> {
+                    OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(
+                            inFlightOrder.getTradingPair(),
+                            placedOrder.timestamp(),
+                            OrderState.OPEN,
+                            inFlightOrder.getClientOrderId(),
+                            placedOrder.exchangeOrderId()
+                    );
+                    log.info("주문이 성공적으로 생성되었습니다. | {} {} {} | 수량: {} | 가격: {} | orderId: {} | exchangeOrderId: {}",
+                            inFlightOrder.getTradeType(),
+                            inFlightOrder.getTradingPair(),
+                            inFlightOrder.getOrderType(),
+                            inFlightOrder.getAmount().toPlainString(),
+                            inFlightOrder.getPrice() != null ? inFlightOrder.getPrice().toPlainString() : "MARKET",
+                            inFlightOrder.getClientOrderId(),
+                            placedOrder.exchangeOrderId()
+                    );
+                    exchangeEventPublisher.publish(orderUpdateEvent);
+                }, mainExecutor);
     }
 
     /**
@@ -207,15 +233,14 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
      */
     protected abstract OrderPlacedDto placeOrder(InFlightOrder inFlightOrder);
 
-    private void updateOrderAfterFailure(String orderId, String tradingPair, Exception exception) {
+    private void updateOrderAfterFailure(String orderId, String tradingPair, Throwable exception) {
         OrderUpdateEvent.OrderFailure failure = new OrderUpdateEvent.OrderFailure(exception.getClass().getSimpleName(), exception.getMessage());
         OrderUpdateEvent orderUpdateEvent = new OrderUpdateEvent(tradingPair, Instant.now(), OrderState.FAILED, orderId, null, failure);
-        log.error("주문에 실패했습니다", exception);
+        log.error("{}에 대한 주문을 제출하는데 실패 했습니다, 네트워크 에러나 거래소 서버 상태, apiKey 문제 일 수 있습니다.", orderId, exception);
         exchangeEventPublisher.publish(orderUpdateEvent);
     }
 
-    private void onOrderFailure(String orderId, String tradingPair, Exception e) {
-        log.error("{}에 대한 주문을 제출하는데 실패 했습니다, 네트워크 에러나 거래소 서버 상태, apiKey 문제 일 수 있습니다.", orderId);
+    private void onOrderFailure(String orderId, String tradingPair, Throwable e) {
         updateOrderAfterFailure(orderId, tradingPair, e);
     }
 

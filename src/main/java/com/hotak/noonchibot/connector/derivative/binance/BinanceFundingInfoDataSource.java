@@ -10,7 +10,6 @@ import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSource;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -46,18 +45,13 @@ public class BinanceFundingInfoDataSource extends AbstractFundingInfoDataSource 
     }
 
     @Override
-    protected void sendSubscribe(String tradingPair) {
-        sendFundingRateRequest(MessageMethod.SUBSCRIBE, Set.of(tradingPair));
-    }
-
-    @Override
     protected void sendSubscribe(Set<String> tradingPairs) {
         sendFundingRateRequest(MessageMethod.SUBSCRIBE, tradingPairs);
     }
 
     @Override
-    protected void sendUnsubscribe(String tradingPair) {
-        sendFundingRateRequest(MessageMethod.UNSUBSCRIBE, Set.of(tradingPair));
+    protected void sendUnsubscribe(Set<String> tradingPairs) {
+        sendFundingRateRequest(MessageMethod.UNSUBSCRIBE, tradingPairs);
     }
 
     @Override
@@ -78,7 +72,8 @@ public class BinanceFundingInfoDataSource extends AbstractFundingInfoDataSource 
                 Instant.ofEpochMilli(msg.get("E").asLong()),
                 msg.get("p").asDecimal(),
                 msg.get("r").asDecimal(),
-                Instant.ofEpochMilli(msg.get("T").asLong())
+                Instant.ofEpochMilli(msg.get("T").asLong()),
+                null
         );
     }
 
@@ -97,7 +92,8 @@ public class BinanceFundingInfoDataSource extends AbstractFundingInfoDataSource 
                 Instant.ofEpochMilli(data.get("time").asLong()),
                 data.get("markPrice").asDecimal(),
                 data.get("lastFundingRate").asDecimal(),
-                Instant.ofEpochMilli(data.get("nextFundingTime").asLong())
+                Instant.ofEpochMilli(data.get("nextFundingTime").asLong()),
+                null
         );
     }
 

@@ -179,32 +179,61 @@ public class OrderBook {
         return new OrderBookQueryResult(bestPrice, volume, lastPrice, cumulativeVolume);
     }
 
-    public OrderBookQueryResult getVWAPForVolume(boolean isBuy, BigDecimal volume) {
+    public VWAPForVolumeQueryResult getVWAPForBaseVolume(boolean isBuy, BigDecimal volume) {
         NavigableMap<BigDecimal, OrderBookEntry> book = isBuy ? askBook : bidBook;
-        BigDecimal bestPrice = isBuy ? bestAsk : bestBid;
 
         BigDecimal totalCost = BigDecimal.ZERO;
         BigDecimal totalVolume = BigDecimal.ZERO;
-        BigDecimal resultVwap = null;
+        BigDecimal lastPrice = null;
 
         for (OrderBookEntry entry : book.values()) {
             BigDecimal remainingVolume = volume.subtract(totalVolume);
+            lastPrice = entry.price();
 
             if (entry.amount().compareTo(remainingVolume) >= 0) {
                 totalCost = totalCost.add(remainingVolume.multiply(entry.price()));
                 totalVolume = volume;
-                resultVwap = totalCost.divide(totalVolume, 8, RoundingMode.HALF_UP);
-
-                return new OrderBookQueryResult(bestPrice, volume, resultVwap, totalVolume);
+                BigDecimal vwap = totalCost.divide(totalVolume, 8, RoundingMode.HALF_UP);
+                return new VWAPForVolumeQueryResult(vwap, totalVolume, lastPrice);
             }
             totalCost = totalCost.add(entry.amount().multiply(entry.price()));
             totalVolume = totalVolume.add(entry.amount());
         }
 
-        if (totalVolume.compareTo(BigDecimal.ZERO) > 0) {
-            resultVwap = totalCost.divide(totalVolume, 8, RoundingMode.HALF_UP);
+        BigDecimal vwap = totalVolume.compareTo(BigDecimal.ZERO) > 0
+                ? totalCost.divide(totalVolume, 8, RoundingMode.HALF_UP)
+                : null;
+        return new VWAPForVolumeQueryResult(vwap, totalVolume, lastPrice);
+    }
+
+    public VWAPForVolumeQueryResult getVWAPForQuoteVolume(boolean isBuy, BigDecimal quoteVolume) {
+        NavigableMap<BigDecimal, OrderBookEntry> book = isBuy ? askBook : bidBook;
+
+        BigDecimal totalCost = BigDecimal.ZERO;
+        BigDecimal totalBaseVolume = BigDecimal.ZERO;
+        BigDecimal lastPrice = null;
+
+        for (OrderBookEntry entry : book.values()) {
+            BigDecimal remainingQuote = quoteVolume.subtract(totalCost);
+            BigDecimal entryCost = entry.amount().multiply(entry.price());
+            lastPrice = entry.price();
+
+            if (entryCost.compareTo(remainingQuote) >= 0) {
+                BigDecimal fillBase = remainingQuote.divide(entry.price(), 8, RoundingMode.HALF_UP);
+                totalBaseVolume = totalBaseVolume.add(fillBase);
+                totalCost = quoteVolume;
+                BigDecimal vwap = totalCost.divide(totalBaseVolume, 8, RoundingMode.HALF_UP);
+                return new VWAPForVolumeQueryResult(vwap, totalBaseVolume, lastPrice);
+            }
+
+            totalCost = totalCost.add(entryCost);
+            totalBaseVolume = totalBaseVolume.add(entry.amount());
         }
-        return new OrderBookQueryResult(bestPrice, volume, resultVwap, totalVolume);
+
+        BigDecimal vwap = totalBaseVolume.compareTo(BigDecimal.ZERO) > 0
+                ? totalCost.divide(totalBaseVolume, 8, RoundingMode.HALF_UP)
+                : null;
+        return new VWAPForVolumeQueryResult(vwap, totalBaseVolume, lastPrice);
     }
 
     public OrderBookQueryResult getImpactPriceForQuoteVolume(boolean isBuy, BigDecimal quoteVolume) {

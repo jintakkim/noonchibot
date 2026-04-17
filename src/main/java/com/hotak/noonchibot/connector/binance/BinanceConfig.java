@@ -180,7 +180,9 @@ public class BinanceConfig {
             @Qualifier("binanceRestAssistant") RestAssistant restAssistant,
             @Qualifier("binanceTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
             @Qualifier("binanceTimeSynchronizer") TimeSynchronizer timeSynchronizer,
-            @Qualifier("binanceTradingRuleRegistry") TradingRuleRegistry tradingRuleRegistry
+            @Qualifier("binanceTradingRuleRegistry") TradingRuleRegistry tradingRuleRegistry,
+            MainExecutor mainExecutor,
+            IoExecutor ioExecutor
 
             ) {
         return new BinanceOrderExecutor(
@@ -191,7 +193,9 @@ public class BinanceConfig {
                 binanceOrderBookDataSource,
                 timeSynchronizer,
                 exchangeEventBus,
-                restAssistant
+                restAssistant,
+                mainExecutor,
+                ioExecutor
         );
     }
 
@@ -219,7 +223,7 @@ public class BinanceConfig {
             MainExecutor mainExecutor,
             IoExecutor ioExecutor
     ) {
-        return new OrderBookTracker(binanceOrderBookDataSource, taskScheduler, mainExecutor, ioExecutor);
+        return new OrderBookTracker(binanceOrderBookDataSource, taskScheduler, mainExecutor, ioExecutor, BinanceApiSpec.PLATFORM_NAME);
     }
 
 

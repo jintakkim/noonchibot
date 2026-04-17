@@ -1,18 +1,24 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
+@RequiredArgsConstructor
 public class FundingInfoMessageStream {
-    public final String tradingPair;
+    @Getter
+    private final Set<String> subscribedTradingPairs;
     private final BlockingQueue<FundingInfoMessage> delegate = new LinkedBlockingQueue<>();
-
-    public FundingInfoMessageStream(String tradingPair) {
-        this.tradingPair = tradingPair;
-    }
 
     public FundingInfoMessage take() throws InterruptedException {
         return delegate.take();
+    }
+
+    public FundingInfoMessage poll() {
+        return delegate.poll();
     }
 
     public void add(FundingInfoMessage message) {

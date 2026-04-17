@@ -6,7 +6,6 @@ import com.hotak.noonchibot.connector.web.WsConnection;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
-import org.springframework.core.task.AsyncTaskExecutor;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;

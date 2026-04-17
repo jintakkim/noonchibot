@@ -5,17 +5,17 @@ import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
 import com.hotak.noonchibot.core.IoExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
-import org.springframework.core.task.AsyncTaskExecutor;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public abstract class AbstractFundingInfoDataSource extends AbstractWebsocketDataSource implements FundingInfoDataSource, SmartLifecycle {
-    private final Map<String, Set<FundingInfoMessageStream>> fundingInfoMessageStreams = new ConcurrentHashMap<>();
+    private final Map<String, Set<FundingInfoMessageStream>> streamsByPair = new HashMap<>();
 
     public AbstractFundingInfoDataSource(WsAssistant wsAssistant, String publicWsUrl, ObjectMapper objectMapper, IoExecutor ioExecutor) {
         super(wsAssistant, publicWsUrl, objectMapper, ioExecutor);
@@ -23,23 +23,42 @@ public abstract class AbstractFundingInfoDataSource extends AbstractWebsocketDat
 
     @Override
     public FundingInfoMessageStream subscribe(String tradingPair) {
-        Set<FundingInfoMessageStream> pairStreams = fundingInfoMessageStreams.computeIfAbsent(tradingPair, k -> ConcurrentHashMap.newKeySet());
-        FundingInfoMessageStream stream = new FundingInfoMessageStream(tradingPair);
-        pairStreams.add(stream);
-        if (pairStreams.size() == 1) {
-            sendSubscribe(tradingPair);
+        return batchSubscribe(Set.of(tradingPair));
+    }
+
+    @Override
+    public FundingInfoMessageStream batchSubscribe(Set<String> tradingPairs) {
+        FundingInfoMessageStream stream = new FundingInfoMessageStream(tradingPairs);
+
+        Set<String> pairsToRequest = new HashSet<>();
+        for (String pair : tradingPairs) {
+            Set<FundingInfoMessageStream> streams = streamsByPair.computeIfAbsent(pair, k -> new HashSet<>());
+            streams.add(stream);
+            if (streams.size() == 1) {
+                pairsToRequest.add(pair);
+            }
+        }
+        if (!pairsToRequest.isEmpty()) {
+            sendSubscribe(pairsToRequest);
         }
         return stream;
     }
 
     @Override
     public void unsubscribe(FundingInfoMessageStream stream) {
-        Set<FundingInfoMessageStream> streams = fundingInfoMessageStreams.get(stream.tradingPair);
-        if(streams == null) return;
-        streams.remove(stream);
-        if (streams.isEmpty()) {
-            fundingInfoMessageStreams.remove(stream.tradingPair);
-            sendUnsubscribe(stream.tradingPair);
+        Set<String> pairsToRelease = new HashSet<>();
+
+        for (String pair : stream.getSubscribedTradingPairs()) {
+            Set<FundingInfoMessageStream> streams = streamsByPair.get(pair);
+            if (streams == null) continue;
+            streams.remove(stream);
+            if (streams.isEmpty()) {
+                streamsByPair.remove(pair);
+                pairsToRelease.add(pair);
+            }
+        }
+        if (!pairsToRelease.isEmpty()) {
+            sendUnsubscribe(pairsToRelease);
         }
     }
 
@@ -52,7 +71,7 @@ public abstract class AbstractFundingInfoDataSource extends AbstractWebsocketDat
      * 끊김으로 인한 재연결 상황 등 일때 기존 구독분을 재구독한다.
      */
     private void resubscribeIfStreamExist() {
-        Set<String> tradingPairs = fundingInfoMessageStreams.keySet();
+        Set<String> tradingPairs = streamsByPair.keySet();
         if(tradingPairs.isEmpty()) return;
         sendSubscribe(tradingPairs);
     }
@@ -72,17 +91,15 @@ public abstract class AbstractFundingInfoDataSource extends AbstractWebsocketDat
         castMessageToStream(fundingMessage);
     }
 
-
-    protected abstract void sendSubscribe(String tradingPair);
     protected abstract void sendSubscribe(Set<String> tradingPairs);
-    protected abstract void sendUnsubscribe(String tradingPair);
+    protected abstract void sendUnsubscribe(Set<String> tradingPairs);
     protected abstract boolean isErrorMessage(JsonNode msg);
     protected abstract boolean isAckMessage(JsonNode msg);
     protected abstract FundingInfoMessage parseFundingInfoMessage(JsonNode msg);
 
 
     private void castMessageToStream(FundingInfoMessage message) {
-        Set<FundingInfoMessageStream> streams = fundingInfoMessageStreams.get(message.tradingPair());
+        Set<FundingInfoMessageStream> streams = streamsByPair.get(message.tradingPair());
         if(streams == null) {
             log.warn("no streams found for trading pair {}, possibly need to send unsubscribe message to exchange server", message.tradingPair());
             return;

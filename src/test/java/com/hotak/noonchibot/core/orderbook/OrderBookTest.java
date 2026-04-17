@@ -512,11 +512,11 @@ public abstract class OrderBookTest {
         @Test
         @DisplayName("단일 레벨 VWAP")
         void singleLevelVwap() {
-            OrderBookQueryResult result = orderBook.getVWAPForVolume(true, new BigDecimal("10"));
+            VWAPForVolumeQueryResult result = orderBook.getVWAPForBaseVolume(true, new BigDecimal("10"));
 
             // 101 * 10 / 10 = 101
-            assertThat(result.resultPrice()).isEqualByComparingTo("101");
-            assertThat(result.resultVolume()).isEqualByComparingTo("10");
+            assertThat(result.vwapPrice()).isEqualByComparingTo("101");
+            assertThat(result.fillableBaseVolume()).isEqualByComparingTo("10");
         }
 
         @Test
@@ -524,10 +524,10 @@ public abstract class OrderBookTest {
         void multiLevelVwap() {
             // 25개 매수: 101*10 + 102*15 = 1010 + 1530 = 2540
             // VWAP = 2540 / 25 = 101.6
-            OrderBookQueryResult result = orderBook.getVWAPForVolume(true, new BigDecimal("25"));
+            VWAPForVolumeQueryResult result = orderBook.getVWAPForBaseVolume(true, new BigDecimal("25"));
 
-            assertThat(result.resultPrice()).isEqualByComparingTo("101.6");
-            assertThat(result.resultVolume()).isEqualByComparingTo("25");
+            assertThat(result.vwapPrice()).isEqualByComparingTo("101.6");
+            assertThat(result.fillableBaseVolume()).isEqualByComparingTo("25");
         }
 
         @Test
@@ -535,21 +535,20 @@ public abstract class OrderBookTest {
         void allLevelsVwap() {
             // 60개 매수: 101*10 + 102*20 + 103*30 = 1010 + 2040 + 3090 = 6140
             // VWAP = 6140 / 60 = 102.333...
-            OrderBookQueryResult result = orderBook.getVWAPForVolume(true, new BigDecimal("60"));
+            VWAPForVolumeQueryResult result = orderBook.getVWAPForBaseVolume(true, new BigDecimal("60"));
 
-            assertThat(result.resultPrice()).isEqualByComparingTo("102.33333333");
-            assertThat(result.resultVolume()).isEqualByComparingTo("60");
+            assertThat(result.vwapPrice()).isEqualByComparingTo("102.33333333");
+            assertThat(result.fillableBaseVolume()).isEqualByComparingTo("60");
         }
 
         @Test
         @DisplayName("호가 부족 시 가능한 수량만 VWAP 계산")
         void insufficientLiquidityVwap() {
-            OrderBookQueryResult result = orderBook.getVWAPForVolume(true, new BigDecimal("100"));
+            VWAPForVolumeQueryResult result = orderBook.getVWAPForBaseVolume(true, new BigDecimal("100"));
 
             // 60개만 가능, VWAP = 6140 / 60
-            assertThat(result.queryVolume()).isEqualByComparingTo("100");
-            assertThat(result.resultVolume()).isEqualByComparingTo("60");
-            assertThat(result.resultPrice()).isEqualByComparingTo("102.33333333");
+            assertThat(result.fillableBaseVolume()).isEqualByComparingTo("60");
+            assertThat(result.vwapPrice()).isEqualByComparingTo("102.33333333");
         }
     }
 
