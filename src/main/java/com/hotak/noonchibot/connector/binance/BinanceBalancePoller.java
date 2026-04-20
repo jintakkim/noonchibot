@@ -49,7 +49,7 @@ public class BinanceBalancePoller implements SmartLifecycle {
                     Map<String, BigDecimal> totalBalances = new HashMap<>();
                     Map<String, BigDecimal> availableBalances = new HashMap<>();
                     for (JsonNode entry : accountInfo.get("balances")) {
-                        String asset = entry.get("asset").asText();
+                        String asset = entry.get("asset").asString();
                         BigDecimal free = entry.get("free").asDecimal();
                         BigDecimal locked = entry.get("locked").asDecimal();
                         totalBalances.put(asset, free.add(locked));
