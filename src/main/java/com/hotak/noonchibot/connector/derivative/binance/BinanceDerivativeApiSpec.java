@@ -1,7 +1,6 @@
 package com.hotak.noonchibot.connector.derivative.binance;
 
 import com.hotak.noonchibot.connector.throttle.RateLimit;
-import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.TimeInForce;
 import lombok.AccessLevel;
