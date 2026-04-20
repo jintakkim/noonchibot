@@ -4,11 +4,13 @@ import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSourceTest;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBook;
+import com.hotak.noonchibot.core.orderbook.OrderBookMessageStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,12 +22,14 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
 public class BinanceDerivativeOrderBookDataSourceTest extends AbstractOrderBookDataSourceTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -154,5 +158,51 @@ public class BinanceDerivativeOrderBookDataSourceTest extends AbstractOrderBookD
         snapshot.set("asks", asks);
 
         when(restAssistant.executeRequestAndGetJsonBody(any())).thenReturn(snapshot);
+    }
+
+    @Test
+    @DisplayName("최초 구독 시 스트림 반환, 구독 메시지 전송 및 1시간 주기 스냅샷 스케줄러가 등록된다")
+    protected void subscribeOrderBookStreamFirstTime() {
+        OrderBookMessageStream stream = dataSource.subscribeOrderBookStream("BTC-USDT");
+        assertThat(stream).isNotNull();
+        assertThat(stream.tradingPair).isEqualTo("BTC-USDT");
+        // 구독 메시지 전송 확인
+        verify(mockWsConnection, times(2)).send(any(WsRequest.class));
+        // 1시간 주기 스케줄러 등록 확인
+        verify(mockTaskScheduler, times(1)).scheduleAtFixedRate(
+                any(Runnable.class),
+                any(Instant.class),
+                eq(Duration.ofHours(1))
+        );
+    }
+
+    @Test
+    @DisplayName("같은 페어를 여러 번 구독하면 다른 스트림이 반환되지만, 서버에는 최초 1번만 구독 요청을 보낸다")
+    void multipleSubscriptionsReturnDifferentStreamsButOneRequest() {
+        OrderBookMessageStream stream1 = dataSource.subscribeOrderBookStream("BTC-USDT");
+        OrderBookMessageStream stream2 = dataSource.subscribeOrderBookStream("BTC-USDT");
+        assertThat(stream1).isNotSameAs(stream2);
+        // diff + trade message once
+        verify(mockWsConnection, times(2)).send(any());
+        verify(mockTaskScheduler, times(1)).scheduleAtFixedRate(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("마지막 스트림이 구독 해제되면 서버에 구독 해제 요청(Unsubscribe)을 보낸다")
+    void unsubscribeRemovesLastStream() {
+        OrderBookMessageStream stream = dataSource.subscribeOrderBookStream("BTC-USDT");
+        dataSource.unsubscribe(stream);
+        // 구독 1번(diff + trade) + 해제 1번(diff + trade) = 총 2번 전송
+        verify(mockWsConnection, times(4)).send(any());
+    }
+
+    @Test
+    @DisplayName("여러 구독 중 일부만 해제하면 서버에 구독 해제 요청을 보내지 않는다")
+    void unsubscribeOneKeepsOthers() {
+        OrderBookMessageStream stream1 = dataSource.subscribeOrderBookStream("BTC-USDT");
+        OrderBookMessageStream stream2 = dataSource.subscribeOrderBookStream("BTC-USDT");
+        dataSource.unsubscribe(stream1);
+        // 스트림은 제거되었지만, 구독 메시지는 최초 1번(diff + trade = 2)만 전송되었고 해제 메시지는 안 감
+        verify(mockWsConnection, times(2)).send(any());
     }
 }
