@@ -1,0 +1,26 @@
+package com.hotak.noonchibot.connector.bybit;
+
+import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.connector.web.ServerTimeProvider;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpMethod;
+import tools.jackson.databind.JsonNode;
+
+@RequiredArgsConstructor
+public class BybitServerTimeProvider implements ServerTimeProvider {
+    private final RestAssistant restAssistant;
+    private final String pathUrl;
+
+    @Override
+    public long getServerTimeMs() {
+        JsonNode body = restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .method(HttpMethod.GET)
+                        .pathUrl(pathUrl)
+                        .authRequired(false)
+                        .build()
+        );
+        return body.get("time").asLong();
+    }
+}
