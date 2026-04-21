@@ -1,40 +1,48 @@
 package com.hotak.noonchibot.core.derivative;
 
-import com.hotak.noonchibot.core.event.EventListener;
-import com.hotak.noonchibot.core.event.ExchangeEventSubscriber;
-import com.hotak.noonchibot.core.event.PositionUpdateEvent;
-import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
+import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.core.event.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.SmartLifecycle;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * funding-Info, leverage, position에 대한 정보를 관리
  */
 @RequiredArgsConstructor
 public class DerivativeInfoTracker implements SmartLifecycle {
-    /**
-     * 펀딩비를 받기 위해 정해진 시간 대비 얼마나 일찍 포지션을 들고 있어야하는지, 5초면 1시에 펀딩비가 나온다면 1시 5초전을 의미
-     */
-    private static final Duration FUNDING_PAYMENT_SPAN_BEFORE = Duration.ofSeconds(5);
-    private static final Duration FUNDING_PAYMENT_SPAN_AFTER = Duration.ofSeconds(5);
-
     private final ExchangeEventSubscriber eventSubscriber;
-    private final PositionMode positionMode;
+    private PositionMode positionMode = null;
     private final Map<String, Integer> leverages = new HashMap<>();
     private final Map<String, Position> positions = new HashMap<>();
+    private final Map<String, MarginMode> marginModes = new HashMap<>();
 
     private volatile boolean running = false;
 
-    private final EventListener<PositionUpdateEvent> positionHandler = this::updatePosition;
+    private final EventListener<PositionUpdateEvent> positionUpdatedListener = this::onPositionUpdated;
+    private final EventListener<LeverageChangedEvent> leverageChangedListener = this::onLeverageChanged;
+    private final EventListener<MarginModeChangedEvent> marginModeChangedListener = this::onMarginModeChanged;
+    private final EventListener<PositionModeChangedEvent> positionModeChangedListener = this::onPositionModeChanged;
 
-    public Position getPosition(String tradingPair, PositionSide positionSide) {
+    public Optional<Position> findPosition(String tradingPair, PositionSide positionSide) {
         String key = createPositionKey(tradingPair, positionSide);
-        return positions.get(key);
+        return Optional.ofNullable(positions.get(key));
+    }
+
+    public Optional<PositionMode> findPositionMode() {
+        return Optional.ofNullable(positionMode);
+    }
+
+    public Optional<MarginMode> findMarginMode(String tradingPair) {
+        return Optional.ofNullable(marginModes.get(tradingPair));
+    }
+
+    public Optional<Integer> findLeverage(String tradingPair) {
+        return Optional.ofNullable(leverages.get(tradingPair));
     }
 
     private String createPositionKey(String tradingPair, PositionSide positionSide) {
@@ -44,31 +52,59 @@ public class DerivativeInfoTracker implements SmartLifecycle {
         return tradingPair + "_" + positionSide.name();
     }
 
-    public void updatePosition(PositionUpdateEvent event) {
+    @VisibleForTesting
+    void onPositionUpdated(PositionUpdateEvent event) {
         String key = createPositionKey(event.tradingPair(), event.positionSide());
         if (event.amount().compareTo(BigDecimal.ZERO) == 0) {
             // 포지션 종료
             positions.remove(key);
             return;
         }
-        positions.computeIfPresent(key, (positionKey, position) -> position.toBuilder()
-                .amount(event.amount())
-                .entryPrice(event.entryPrice())
-                .unrealizedPnl(event.unrealizedPnl())
-                .build()
-        );
+        Position position = positions.get(key);
+        if(position == null) {
+            positions.put(key, Position.builder()
+                    .tradingPair(event.tradingPair())
+                    .positionSide(event.positionSide())
+                    .amount(event.amount())
+                    .unrealizedPnl(event.unrealizedPnl())
+                    .entryPrice(event.entryPrice())
+                    .build());
+            return;
+        }
+        position.update(event.unrealizedPnl(), event.entryPrice(), event.amount());
+    }
+
+    @VisibleForTesting
+    void onMarginModeChanged(MarginModeChangedEvent event) {
+        marginModes.put(event.tradingPair(), event.newMode());
+    }
+
+    @VisibleForTesting
+    void onPositionModeChanged(PositionModeChangedEvent event) {
+        positionMode = event.newMode();
+    }
+
+    @VisibleForTesting
+    void onLeverageChanged(LeverageChangedEvent event) {
+        leverages.put(event.tradingPair(), event.leverage());
     }
 
     @Override
     public void start() {
-        eventSubscriber.subscribe(PositionUpdateEvent.class, positionHandler);
+        eventSubscriber.subscribe(PositionUpdateEvent.class, positionUpdatedListener);
+        eventSubscriber.subscribe(LeverageChangedEvent.class, leverageChangedListener);
+        eventSubscriber.subscribe(MarginModeChangedEvent.class, marginModeChangedListener);
+        eventSubscriber.subscribe(PositionModeChangedEvent.class, positionModeChangedListener);
         running = true;
 
     }
 
     @Override
     public void stop() {
-        eventSubscriber.unsubscribe(PositionUpdateEvent.class, positionHandler);
+        eventSubscriber.unsubscribe(PositionUpdateEvent.class, positionUpdatedListener);
+        eventSubscriber.unsubscribe(LeverageChangedEvent.class, leverageChangedListener);
+        eventSubscriber.unsubscribe(MarginModeChangedEvent.class, marginModeChangedListener);
+        eventSubscriber.unsubscribe(PositionModeChangedEvent.class, positionModeChangedListener);
         running = false;
     }
 
