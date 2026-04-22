@@ -5,26 +5,19 @@ import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
-import org.springframework.scheduling.TaskScheduler;
 
-import java.math.BigDecimal;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 public class OrderBookTracker implements SmartLifecycle {
     private static final int MAX_PAST_DIFFS = 30;
-    private static final Duration PRICE_CHECK_INTERVAL = Duration.ofSeconds(5);
 
     /// 스냅샷 복구 시 restoreFromSnapshotAndDiffs에 전달할 diff 메시지 윈도우
     private final Map<String, Deque<OrderBookMessage.DiffMessage>> pastDiffsWindows = new HashMap<>();
     private final OrderBookDataSource dataSource;
 
     private final IoExecutor ioExecutor;
-    private final TaskScheduler scheduler;
     private final MainExecutor mainExecutor;
     private final Map<String, OrderBook> orderBooks = new HashMap<>();
     private final Map<String, OrderBookMessageStream> streams = new HashMap<>();
@@ -35,47 +28,14 @@ public class OrderBookTracker implements SmartLifecycle {
 
     public OrderBookTracker(
             OrderBookDataSource dataSource,
-            TaskScheduler scheduler,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor,
             String platformName
     ) {
         this.dataSource = dataSource;
-        this.scheduler = scheduler;
         this.mainExecutor = mainExecutor;
         this.ioExecutor = ioExecutor;
         this.platformName = platformName;
-    }
-
-    private void scheduleStalePriceFallback() {
-        scheduler.scheduleAtFixedRate(
-                () -> mainExecutor.submit(this::refreshStalePrices),
-                Instant.now().plus(PRICE_CHECK_INTERVAL),
-                PRICE_CHECK_INTERVAL
-        );
-    }
-
-    @VisibleForTesting
-    CompletableFuture<Void> refreshStalePrices() {
-        Set<String> stalePairs = findStalePairs();
-        if (stalePairs.isEmpty()) return CompletableFuture.completedFuture(null);
-        return CompletableFuture
-                .supplyAsync(() -> dataSource.getLastTradedPrices(stalePairs), ioExecutor)
-                .thenAcceptAsync(this::applyPrices, mainExecutor);
-    }
-
-    private void applyPrices(Map<String, BigDecimal> prices) {
-        prices.forEach((tradingPair, price) -> {
-            OrderBook orderBook = orderBooks.get(tradingPair);
-            if (orderBook != null) orderBook.setLastTradePrice(price);
-        });
-    }
-
-    private Set<String> findStalePairs() {
-        return orderBooks.entrySet().stream()
-                .filter(e -> isStale(e.getValue()))
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toSet());
     }
 
     @VisibleForTesting
@@ -162,11 +122,6 @@ public class OrderBookTracker implements SmartLifecycle {
         if (task != null) task.cancel(true);
     }
 
-    private boolean isStale(OrderBook book) {
-        Instant lastTradeTime = book.getLastAppliedTradeTime();
-        return lastTradeTime == null || lastTradeTime.isBefore(Instant.now().minus(Duration.ofMinutes(3)));
-    }
-
     public Map<String, OrderBook> getOrderBooks() {
         return new HashMap<>(orderBooks);
     }
@@ -182,7 +137,6 @@ public class OrderBookTracker implements SmartLifecycle {
 
     @Override
     public void start() {
-        scheduleStalePriceFallback();
         running = true;
     }
 

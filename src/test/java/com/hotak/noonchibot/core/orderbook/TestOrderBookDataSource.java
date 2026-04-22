@@ -1,7 +1,6 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,20 +28,6 @@ public class TestOrderBookDataSource implements OrderBookDataSource {
     public void unsubscribe(OrderBookMessageStream stream) {
         Set<OrderBookMessageStream> pairStreams = streams.get(stream.tradingPair);
         if (pairStreams != null) pairStreams.remove(stream);
-    }
-
-    @Override
-    public BigDecimal getLastTradedPrice(String tradingPair) {
-        return lastTradedPrices.getOrDefault(tradingPair, BigDecimal.ZERO);
-    }
-
-    @Override
-    public Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs) {
-        Map<String, BigDecimal> result = new HashMap<>();
-        for (String pair : tradingPairs) {
-            result.put(pair, getLastTradedPrice(pair));
-        }
-        return result;
     }
 
     // 테스트 헬퍼

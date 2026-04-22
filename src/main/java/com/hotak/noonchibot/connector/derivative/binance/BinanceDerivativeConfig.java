@@ -169,7 +169,7 @@ public class BinanceDerivativeConfig {
 
     @Bean
     public BinanceDerivativeOrderExecutor binanceDerivativeOrderExecutor(
-            BinanceDerivativeOrderBookDataSource binanceDerivativeOrderBookDataSource,
+            @Qualifier("binanceDerivativeOrderBookTracker") OrderBookTracker orderBookTracker,
             @Qualifier("binanceDerivativeOrderTracker") OrderTracker orderTracker,
             @Qualifier("binanceDerivativeEventBus") ExchangeEventBus exchangeEventBus,
             @Qualifier("binanceDerivativeRestAssistant") RestAssistant restAssistant,
@@ -185,7 +185,7 @@ public class BinanceDerivativeConfig {
                 orderTracker,
                 tradingRuleRegistry,
                 tradingPairSymbolRegistry,
-                binanceDerivativeOrderBookDataSource,
+                orderBookTracker,
                 timeSynchronizer,
                 exchangeEventBus,
                 restAssistant,
@@ -216,11 +216,10 @@ public class BinanceDerivativeConfig {
     @Bean
     public OrderBookTracker binanceDerivativeOrderBookTracker(
             BinanceDerivativeOrderBookDataSource binanceDerivativeOrderBookDataSource,
-            TaskScheduler taskScheduler,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor
     ) {
-        return new OrderBookTracker(binanceDerivativeOrderBookDataSource, taskScheduler, mainExecutor, ioExecutor, BinanceDerivativeApiSpec.PLATFORM_NAME);
+        return new OrderBookTracker(binanceDerivativeOrderBookDataSource, mainExecutor, ioExecutor, BinanceDerivativeApiSpec.PLATFORM_NAME);
     }
 
     @Bean
@@ -324,6 +323,4 @@ public class BinanceDerivativeConfig {
     ) {
         return new BinanceDerivativeTradeFeeSchemaLoader(restAssistant, tradingPairSymbolRegistry);
     }
-
-
 }

@@ -8,8 +8,8 @@ import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.datatype.TradingRule;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.order.*;
-import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
-import com.hotak.noonchibot.core.orderbook.TestOrderBookDataSource;
+import com.hotak.noonchibot.core.orderbook.OrderBook;
+import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -94,14 +94,14 @@ public abstract class AbstractExchangeOrderExecutorTest {
             TradingRuleRegistry tradingRuleRegistry,
             RestAssistant restAssistant,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            OrderBookDataSource orderBookDataSource,
+            OrderBookTracker orderBookTracker,
             ExchangeEventPublisher exchangeEventPublisher,
             TimeSynchronizer timeSynchronizer
     );
 
     protected AbstractExchangeOrderExecutor exchangeConnector;
     protected TestOrderIdGenerator testOrderIdGenerator;
-    protected TestOrderBookDataSource testOrderBookDataSource;
+    protected OrderBookTracker orderBookTracker;
     protected OrderTracker mockOrderTracker;
     protected TradingRuleRegistry tradingRuleRegistry;
     protected TradingPairSymbolRegistry tradingPairSymbolRegistry;
@@ -116,7 +116,7 @@ public abstract class AbstractExchangeOrderExecutorTest {
         mockOrderTracker = createMockOrderTracker();
         tradingRuleRegistry = createTradingRuleRegistry();
         tradingPairSymbolRegistry = createTradingPairSymbolRegistry(TRADING_PAIRS);
-        testOrderBookDataSource = new TestOrderBookDataSource();
+        orderBookTracker = Mockito.mock(OrderBookTracker.class);
         mockRestAssistant = createMockRestAssistant();
         testExchangeEventPublisher = new TestExchangeEventPublisher();
         mockTimeSynchronizer = createMockTimeSynchronizer();
@@ -126,7 +126,7 @@ public abstract class AbstractExchangeOrderExecutorTest {
                 tradingRuleRegistry,
                 mockRestAssistant,
                 tradingPairSymbolRegistry,
-                testOrderBookDataSource,
+                orderBookTracker,
                 testExchangeEventPublisher,
                 mockTimeSynchronizer
         );
@@ -229,11 +229,10 @@ public abstract class AbstractExchangeOrderExecutorTest {
         }
 
         @Test
-        @DisplayName("시장가 주문 시 lastTradedPrice로 notional을 계산한다")
+        @DisplayName("시장가 주문 시 bestPrice로 notional을 계산한다")
         void marketOrderUsesLastTradedPrice() {
             stubOrderPlacementResponse("12345");
-            testOrderBookDataSource.setLastTradedPrice("BTC-USDT", new BigDecimal("50000"));
-
+            stubOrderBook("BTC-USDT", new BigDecimal("50000"), new BigDecimal("50000"));
             String clientOrderId = exchangeConnector.buy(btcMarketOrder("0.001"));
 
             assertThat(clientOrderId).isNotBlank();
@@ -385,5 +384,13 @@ public abstract class AbstractExchangeOrderExecutorTest {
         if (errorType != null) {
             assertThat(update.orderFailure().errorType()).isEqualTo(errorType);
         }
+    }
+
+    private void stubOrderBook(String tradingPair, BigDecimal bestBid, BigDecimal bestAsk) {
+        OrderBook orderBook = mock(OrderBook.class);
+        when(orderBook.getBestBid()).thenReturn(bestBid);
+        when(orderBook.getBestAsk()).thenReturn(bestAsk);
+        when(orderBookTracker.findOrderBook(tradingPair))
+                .thenReturn(Optional.of(orderBook));
     }
 }

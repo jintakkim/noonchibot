@@ -10,6 +10,7 @@ import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutorTest;
 import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
 import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
+import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
@@ -39,7 +40,7 @@ public class BinanceOrderExecutorTest extends AbstractExchangeOrderExecutorTest 
             TradingRuleRegistry tradingRuleRegistry,
             RestAssistant restAssistant,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            OrderBookDataSource orderBookDataSource,
+            OrderBookTracker orderBookTracker,
             ExchangeEventPublisher exchangeEventPublisher,
             TimeSynchronizer timeSynchronizer
     ) {
@@ -48,7 +49,7 @@ public class BinanceOrderExecutorTest extends AbstractExchangeOrderExecutorTest 
                 orderTracker,
                 tradingRuleRegistry,
                 tradingPairSymbolRegistry,
-                orderBookDataSource,
+                orderBookTracker,
                 timeSynchronizer,
                 exchangeEventPublisher,
                 restAssistant,

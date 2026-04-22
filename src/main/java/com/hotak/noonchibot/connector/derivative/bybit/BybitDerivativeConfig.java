@@ -154,8 +154,7 @@ public class BybitDerivativeConfig {
     public BybitTradingRuleRegistry bybitDerivativeTradingRuleRegistry(
             @Qualifier("bybitDerivativeRestAssistant") RestAssistant restAssistant,
             @Qualifier("bybitDerivativeTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            TaskScheduler taskScheduler,
-            ObjectMapper objectMapper
+            TaskScheduler taskScheduler
     ) {
         return new BybitTradingRuleRegistry(
                 restAssistant,
@@ -168,7 +167,7 @@ public class BybitDerivativeConfig {
 
     @Bean
     public BybitDerivativeOrderExecutor bybitDerivativeOrderExecutor(
-            BybitDerivativeOrderBookDataSource bybitDerivativeOrderBookDataSource,
+            @Qualifier("bybitDerivativeOrderBookTracker") OrderBookTracker orderBookTracker,
             @Qualifier("bybitDerivativeOrderTracker") OrderTracker orderTracker,
             @Qualifier("bybitDerivativeEventBus") ExchangeEventBus exchangeEventBus,
             @Qualifier("bybitDerivativeRestAssistant") RestAssistant restAssistant,
@@ -184,7 +183,7 @@ public class BybitDerivativeConfig {
                 orderTracker,
                 tradingRuleRegistry,
                 tradingPairSymbolRegistry,
-                bybitDerivativeOrderBookDataSource,
+                orderBookTracker,
                 timeSynchronizer,
                 exchangeEventBus,
                 restAssistant,
@@ -215,11 +214,10 @@ public class BybitDerivativeConfig {
     @Bean
     public OrderBookTracker bybitDerivativeOrderBookTracker(
             BybitDerivativeOrderBookDataSource bybitDerivativeOrderBookDataSource,
-            TaskScheduler taskScheduler,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor
     ) {
-        return new OrderBookTracker(bybitDerivativeOrderBookDataSource, taskScheduler, mainExecutor, ioExecutor, BybitDerivativeApiSpec.PLATFORM_NAME);
+        return new OrderBookTracker(bybitDerivativeOrderBookDataSource, mainExecutor, ioExecutor, BybitDerivativeApiSpec.PLATFORM_NAME);
     }
 
     @Bean

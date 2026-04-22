@@ -4,7 +4,6 @@ import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
 import com.hotak.noonchibot.core.IoExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;

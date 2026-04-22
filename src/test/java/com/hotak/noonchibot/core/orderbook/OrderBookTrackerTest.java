@@ -7,7 +7,6 @@ import com.hotak.noonchibot.core.datatype.TradeType;
 import org.junit.jupiter.api.*;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -15,14 +14,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
-import org.springframework.scheduling.TaskScheduler;
-
 import java.util.List;
 
 public class OrderBookTrackerTest {
 
     private OrderBookDataSource dataSource;
-    private TaskScheduler scheduler;
     private TestMainExecutor mainExecutor;
     private IoExecutor ioExecutor;
     private OrderBook orderBook;
@@ -32,13 +28,10 @@ public class OrderBookTrackerTest {
     @BeforeEach
     void setUp() {
         dataSource = mock(OrderBookDataSource.class);
-        scheduler = mock(TaskScheduler.class);
         mainExecutor = new TestMainExecutor();
         ioExecutor = new VirtualThreadIoExecutor();
         orderBook = spy(new OrderBook(false));
-        tracker = new OrderBookTracker(dataSource, scheduler, mainExecutor, ioExecutor, "test-platform");
-
-        when(scheduler.scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class))).thenReturn(null);
+        tracker = new OrderBookTracker(dataSource, mainExecutor, ioExecutor, "test-platform");
         when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);
     }
 
@@ -154,44 +147,6 @@ public class OrderBookTrackerTest {
             assertThat(window).hasSize(30);
             assertThat(window.getFirst().getUpdateId()).isEqualTo(7L);  // 2+5, 앞의 5개 제거됨
             assertThat(window.getLast().getUpdateId()).isEqualTo(36L);
-        }
-    }
-
-
-    @Nested
-    @DisplayName("stale 가격 갱신")
-    class StalePriceRefresh {
-        @Test
-        @DisplayName("trade 수신이 3분 이상 없으면 REST로 가격을 갱신한다")
-        void refreshesStalePrices() {
-            String pair = "BTC-USDT";
-            OrderBookMessageStream stream = new OrderBookMessageStream(pair);
-            when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
-            tracker.addTradingPair(pair);
-
-            when(orderBook.getLastAppliedTradeTime())
-                    .thenReturn(Instant.now().minus(Duration.ofMinutes(4)));
-            BigDecimal fallbackPrice = new BigDecimal("51000");
-            when(dataSource.getLastTradedPrices(Set.of(pair)))
-                    .thenReturn(Map.of(pair, fallbackPrice));
-
-            tracker.refreshStalePrices().join();
-            verify(dataSource).getLastTradedPrices(Set.of(pair));
-            assertThat(orderBook.getLastTradePrice()).isEqualByComparingTo(fallbackPrice);
-        }
-
-        @Test
-        @DisplayName("최근 trade가 있으면 REST 호출하지 않는다")
-        void doesNotRefreshFreshPrices() {
-            String pair = "BTC-USDT";
-            OrderBookMessageStream stream = new OrderBookMessageStream(pair);
-            when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
-            tracker.addTradingPair(pair);
-
-            when(orderBook.getLastAppliedTradeTime())
-                    .thenReturn(Instant.now().minus(Duration.ofSeconds(30)));
-            tracker.refreshStalePrices().join();
-            verify(dataSource, never()).getLastTradedPrices(any());
         }
     }
 

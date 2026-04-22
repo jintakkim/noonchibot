@@ -174,7 +174,7 @@ public class BinanceConfig {
 
     @Bean
     public BinanceOrderExecutor binanceOrderExecutor(
-            BinanceOrderBookDataSource binanceOrderBookDataSource,
+            @Qualifier("binanceOrderBookTracker") OrderBookTracker orderBookTracker,
             @Qualifier("binanceOrderTracker") OrderTracker orderTracker,
             @Qualifier("binanceEventBus") ExchangeEventBus exchangeEventBus,
             @Qualifier("binanceRestAssistant") RestAssistant restAssistant,
@@ -190,7 +190,7 @@ public class BinanceConfig {
                 orderTracker,
                 tradingRuleRegistry,
                 tradingPairSymbolRegistry,
-                binanceOrderBookDataSource,
+                orderBookTracker,
                 timeSynchronizer,
                 exchangeEventBus,
                 restAssistant,
@@ -219,11 +219,10 @@ public class BinanceConfig {
     @Bean
     public OrderBookTracker binanceOrderBookTracker(
             BinanceOrderBookDataSource binanceOrderBookDataSource,
-            TaskScheduler taskScheduler,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor
     ) {
-        return new OrderBookTracker(binanceOrderBookDataSource, taskScheduler, mainExecutor, ioExecutor, BinanceApiSpec.PLATFORM_NAME);
+        return new OrderBookTracker(binanceOrderBookDataSource, mainExecutor, ioExecutor, BinanceApiSpec.PLATFORM_NAME);
     }
 
 

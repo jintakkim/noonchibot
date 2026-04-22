@@ -5,13 +5,11 @@ import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
-import com.hotak.noonchibot.core.orderbook.OrderBook;
 import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -152,48 +150,6 @@ public class BinanceOrderBookDataSource extends AbstractOrderBookDataSource {
                 "params", tradeMessage,
                 "id", TRADE_SUBSCRIPTION_ID
         ), false));
-    }
-
-    /**
-     * using rest api
-     */
-    @Override
-    public Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs) {
-        if(tradingPairs == null || tradingPairs.isEmpty()) throw new IllegalArgumentException("한개 이상의 tradingPair가 전달되어야 합니다.");
-        List<String> symbols = tradingPairs.stream()
-                .map(tradingPairSymbolRegistry::convertTradingPairToExchangeSymbol)
-                .toList();
-
-        RestRequest request = RestRequest.builder()
-                .method(HttpMethod.GET)
-                .pathUrl(BinanceApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
-                .params(Map.of("symbols", symbols))
-                .weightOverrides(Map.of("REQUEST_WEIGHT", BinanceApiSpec.getTickerPriceChangeDynamicWeight(symbols.size())))
-                .build();
-
-        JsonNode response = restAssistant.executeRequestAndGetJsonBody(request);
-
-        Map<String, BigDecimal> result = new HashMap<>();
-        for (JsonNode ticker : response) {
-            String exchangeSymbol = ticker.get("symbol").asString();
-            String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
-            result.put(tradingPair, ticker.get("price").asDecimal());
-        }
-        return result;
-    }
-
-    /**
-     * using rest api
-     */
-    @Override
-    public BigDecimal getLastTradedPrice(String tradingPair) {
-        String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
-        RestRequest request = RestRequest.builder()
-                .method(HttpMethod.GET)
-                .pathUrl(BinanceApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
-                .params(Map.of("symbol", exchangeSymbol))
-                .build();
-        return restAssistant.executeRequestAndGetJsonBody(request).get("lastPrice").asDecimal();
     }
 
     private static List<OrderBookEntry> parseEntries(JsonNode arrayNode) {

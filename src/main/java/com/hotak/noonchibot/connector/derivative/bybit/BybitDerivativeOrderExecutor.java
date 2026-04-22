@@ -14,7 +14,7 @@ import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.order.TimeInForce;
 import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
-import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
+import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
@@ -33,7 +33,7 @@ public class BybitDerivativeOrderExecutor extends AbstractExchangeOrderExecutor 
             OrderTracker orderTracker,
             TradingRuleRegistry tradingRuleRegistry,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            OrderBookDataSource orderBookDataSource,
+            OrderBookTracker orderBookTracker,
             TimeSynchronizer timeSynchronizer,
             ExchangeEventPublisher exchangeEventPublisher,
             RestAssistant restAssistant,
@@ -49,7 +49,7 @@ public class BybitDerivativeOrderExecutor extends AbstractExchangeOrderExecutor 
                 BybitDerivativeApiSpec.ORDER_ID_PREFIX,
                 BybitDerivativeApiSpec.MAX_ORDER_ID_LENGTH,
                 tradingPairSymbolRegistry,
-                orderBookDataSource,
+                orderBookTracker,
                 exchangeEventPublisher,
                 mainExecutor,
                 ioExecutor

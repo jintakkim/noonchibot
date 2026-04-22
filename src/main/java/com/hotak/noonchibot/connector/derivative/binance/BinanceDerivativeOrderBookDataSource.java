@@ -131,22 +131,6 @@ public class BinanceDerivativeOrderBookDataSource extends AbstractOrderBookDataS
         );
     }
 
-    @Override
-    public Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs) {
-        throw new UnsupportedOperationException("binance derivative does not support multiple symbols query option");
-    }
-
-    @Override
-    public BigDecimal getLastTradedPrice(String tradingPair) {
-        String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
-        RestRequest request = RestRequest.builder()
-                .method(HttpMethod.GET)
-                .pathUrl(BinanceDerivativeApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
-                .params(Map.of("symbol", exchangeSymbol))
-                .build();
-        return restAssistant.executeRequestAndGetJsonBody(request).get("lastPrice").asDecimal();
-    }
-
     private void sendDiffRequest(MessageMethod method, Collection<String> tradingPairs) {
         List<String> diffMessage = tradingPairs.stream()
                 .map(tradingPairSymbolRegistry::convertTradingPairToExchangeSymbol)

@@ -135,41 +135,6 @@ public class BybitOrderBookDataSource extends AbstractOrderBookDataSource {
         ), false));
     }
 
-    @Override
-    public Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs) {
-        if (tradingPairs == null || tradingPairs.isEmpty())
-            throw new IllegalArgumentException("한개 이상의 tradingPair가 전달되어야 합니다.");
-
-        RestRequest request = RestRequest.builder()
-                .method(HttpMethod.GET)
-                .pathUrl(BybitApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
-                .params(Map.of("category", "spot"))
-                .build();
-        JsonNode list = restAssistant.executeRequestAndGetJsonBody(request).get("result").get("list");
-
-        Map<String, BigDecimal> result = new HashMap<>();
-        for (JsonNode ticker : list) {
-            String exchangeSymbol = ticker.get("symbol").asString();
-            String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
-            if (tradingPairs.contains(tradingPair)) {
-                result.put(tradingPair, ticker.get("lastPrice").asDecimal());
-            }
-        }
-        return result;
-    }
-
-    @Override
-    public BigDecimal getLastTradedPrice(String tradingPair) {
-        String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
-        RestRequest request = RestRequest.builder()
-                .method(HttpMethod.GET)
-                .pathUrl(BybitApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
-                .params(Map.of("category", "spot", "symbol", exchangeSymbol))
-                .build();
-        return restAssistant.executeRequestAndGetJsonBody(request)
-                .get("result").get("list").get(0).get("lastPrice").asDecimal();
-    }
-
     private static List<OrderBookEntry> parseEntries(JsonNode arrayNode) {
         List<OrderBookEntry> entries = new ArrayList<>(arrayNode.size());
         for (JsonNode entry : arrayNode) {

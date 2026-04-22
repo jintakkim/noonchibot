@@ -191,16 +191,6 @@ public class BybitDerivativeOrderBookDataSource extends AbstractOrderBookDataSou
         );
     }
 
-    @Override
-    public Map<String, BigDecimal> getLastTradedPrices(Set<String> tradingPairs) {
-        throw new UnsupportedOperationException("bybit derivative does not support multiple symbols query option");
-    }
-
-    @Override
-    public BigDecimal getLastTradedPrice(String tradingPair) {
-        throw new UnsupportedOperationException("not implemented yet");
-    }
-
     private static List<OrderBookEntry> parseEntries(JsonNode arrayNode) {
         List<OrderBookEntry> entries = new ArrayList<>(arrayNode.size());
         for (JsonNode entry : arrayNode) {

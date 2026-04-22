@@ -9,7 +9,8 @@ import com.hotak.noonchibot.core.event.OrderLostEvent;
 import com.hotak.noonchibot.core.event.OrderRequestSentEvent;
 import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import com.hotak.noonchibot.core.order.*;
-import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
+import com.hotak.noonchibot.core.orderbook.OrderBook;
+import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.utils.AsyncUtils;
 import lombok.extern.slf4j.Slf4j;
 
@@ -38,7 +39,7 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
     private final int clientOrderIdMaxLength;
     protected final TradingPairSymbolRegistry tradingPairSymbolRegistry;
 
-    private final OrderBookDataSource orderBookDataSource;
+    private final OrderBookTracker orderBookTracker;
     private final ExchangeEventPublisher exchangeEventPublisher;
     private final MainExecutor mainExecutor;
     private final IoExecutor ioExecutor;
@@ -53,7 +54,7 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
             String clientOrderIdPrefix,
             int clientOrderIdMaxLength,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            OrderBookDataSource orderBookDataSource,
+            OrderBookTracker orderBookTracker,
             ExchangeEventPublisher exchangeEventPublisher,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor
@@ -67,7 +68,7 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
         this.clientOrderIdPrefix = clientOrderIdPrefix;
         this.clientOrderIdMaxLength = clientOrderIdMaxLength;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
-        this.orderBookDataSource = orderBookDataSource;
+        this.orderBookTracker = orderBookTracker;
         this.exchangeEventPublisher = exchangeEventPublisher;
         this.mainExecutor = mainExecutor;
         this.ioExecutor = ioExecutor;
@@ -158,9 +159,21 @@ public abstract class AbstractExchangeOrderExecutor implements OrderExecutor {
             return;
         }
 
-        BigDecimal notionalSize = candidate.getPrice() == null ? orderBookDataSource.getLastTradedPrice(candidate.getTradingPair()).multiply(quantizedOrderAmount) : quantizedPrice.multiply(quantizedOrderAmount);
+        BigDecimal estimatedPrice;
+        if (candidate.getPrice() != null) {
+            estimatedPrice = quantizedPrice;
+        } else {
+            // 시장가 매수 → bestAsk, 시장가 매도 → bestBid
+            OrderBook book = orderBookTracker.findOrderBook(candidate.getTradingPair())
+                    .orElseThrow(() -> new IllegalStateException(candidate.getTradingPair() + " 오더북 미초기화"));
+            estimatedPrice = candidate.getTradeType() == TradeType.BUY ? book.getBestAsk() : book.getBestBid();
+        }
+
+        BigDecimal notionalSize = estimatedPrice.multiply(quantizedOrderAmount);
         if (notionalSize.compareTo(tradingRule.minNotionalSize()) < 0) {
-            updateOrderAfterFailure(clientOrderId, candidate.getTradingPair(), new OrderValidationException.BelowMinNotionalException("주문 금액이 최소 주문 금액보다 커야합니다."));
+            updateOrderAfterFailure(clientOrderId, candidate.getTradingPair(),
+                    new OrderValidationException.BelowMinNotionalException(
+                            "주문 금액이 최소 주문 금액보다 커야합니다."));
             return;
         }
 

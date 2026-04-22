@@ -172,7 +172,7 @@ public class BybitConfig {
 
     @Bean
     public BybitOrderExecutor bybitOrderExecutor(
-            BybitOrderBookDataSource bybitOrderBookDataSource,
+            @Qualifier("bybitOrderBookTracker") OrderBookTracker orderBookTracker,
             @Qualifier("bybitOrderTracker") OrderTracker orderTracker,
             @Qualifier("bybitEventBus") ExchangeEventBus exchangeEventBus,
             @Qualifier("bybitRestAssistant") RestAssistant restAssistant,
@@ -188,7 +188,7 @@ public class BybitConfig {
                 orderTracker,
                 tradingRuleRegistry,
                 tradingPairSymbolRegistry,
-                bybitOrderBookDataSource,
+                orderBookTracker,
                 timeSynchronizer,
                 exchangeEventBus,
                 restAssistant,
@@ -217,11 +217,10 @@ public class BybitConfig {
     @Bean
     public OrderBookTracker bybitOrderBookTracker(
             BybitOrderBookDataSource bybitOrderBookDataSource,
-            TaskScheduler taskScheduler,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor
     ) {
-        return new OrderBookTracker(bybitOrderBookDataSource, taskScheduler, mainExecutor, ioExecutor, BybitApiSpec.PLATFORM_NAME);
+        return new OrderBookTracker(bybitOrderBookDataSource, mainExecutor, ioExecutor, BybitApiSpec.PLATFORM_NAME);
     }
 
     @Bean

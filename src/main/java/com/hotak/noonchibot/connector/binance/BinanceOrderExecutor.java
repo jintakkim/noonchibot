@@ -10,7 +10,7 @@ import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.order.*;
 import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
-import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
+import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
@@ -29,7 +29,7 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
             OrderTracker orderTracker,
             TradingRuleRegistry tradingRuleRegistry,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            OrderBookDataSource orderBookDataSource,
+            OrderBookTracker orderBookTracker,
             TimeSynchronizer timeSynchronizer,
             ExchangeEventPublisher exchangeEventPublisher,
             RestAssistant restAssistant,
@@ -45,7 +45,7 @@ public class BinanceOrderExecutor extends AbstractExchangeOrderExecutor {
                 BinanceApiSpec.ORDER_ID_PREFIX,
                 BinanceApiSpec.MAX_ORDER_ID_LENGTH,
                 tradingPairSymbolRegistry,
-                orderBookDataSource,
+                orderBookTracker,
                 exchangeEventPublisher,
                 mainExecutor,
                 ioExecutor
