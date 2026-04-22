@@ -1,6 +1,7 @@
-package com.hotak.noonchibot.connector.bybit;
+package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.*;
+import com.hotak.noonchibot.connector.TradingRuleRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.core.TestMainExecutor;
@@ -21,9 +22,9 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-public class BybitOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
-    public BybitOrderExecutorTest() {
-        super(BybitApiSpec.ORDER_REALTIME_PATH_URL, BybitApiSpec.ACCOUNTS_PATH_URL, BybitApiSpec.MY_TRADES_PATH_URL);
+class SpotOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
+    public SpotOrderExecutorTest() {
+        super(SpotApiSpec.ORDER_PATH_URL, SpotApiSpec.ACCOUNTS_PATH_URL, SpotApiSpec.MY_TRADES_PATH_URL);
     }
 
     @Override
@@ -43,7 +44,7 @@ public class BybitOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
             ExchangeEventPublisher exchangeEventPublisher,
             TimeSynchronizer timeSynchronizer
     ) {
-        return new BybitOrderExecutor(
+        return new SpotOrderExecutor(
                 orderIdGenerator,
                 orderTracker,
                 tradingRuleRegistry,
@@ -61,39 +62,34 @@ public class BybitOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
     protected Exception createOrderNotFoundException() {
         return new ExchangeApiException(
                 HttpStatusCode.valueOf(400),
-                "{\"retCode\":" + BybitApiSpec.ORDER_NOT_EXIST_ERROR_CODE + "}"
+                "{\"code\":" + SpotApiSpec.UNKNOWN_ORDER_DURING_CANCELLATION_ERROR_CODE + "}"
         );
     }
 
     protected JsonNode createOrderStatusResponse(String exchangeOrderId, OrderState state) {
-        String bybitStatus = BybitApiSpec.ORDER_STATE.entrySet().stream()
+        String binanceStatus = SpotApiSpec.ORDER_STATE.entrySet().stream()
                 .filter(e -> e.getValue() == state)
                 .map(Map.Entry::getKey)
                 .findFirst()
                 .orElseThrow();
         ObjectNode result = objectMapper.createObjectNode();
-        ArrayNode list = result.putObject("result").putArray("list");
-        ObjectNode order = list.addObject();
-        order.put("orderId", exchangeOrderId);
-        order.put("orderStatus", bybitStatus);
-        order.put("updatedTime", Instant.now().toEpochMilli());
+        result.put("orderId", exchangeOrderId);
+        result.put("status", binanceStatus);
+        result.put("updateTime", Instant.now().toEpochMilli());
         return result;
     }
 
     protected JsonNode createAccountBalanceResponse(Map<String, BigDecimal> lockedAsset, Map<String, BigDecimal> freeAsset) {
         ObjectNode accountInfo = objectMapper.createObjectNode();
-        accountInfo.put("time", Instant.now().toEpochMilli());
-        ArrayNode coins = accountInfo.putObject("result").putArray("list").addObject().putArray("coin");
+        ArrayNode balances = accountInfo.putArray("balances");
         Set<String> allAssets = new HashSet<>();
         allAssets.addAll(freeAsset.keySet());
         allAssets.addAll(lockedAsset.keySet());
         for (String asset : allAssets) {
-            BigDecimal free = freeAsset.getOrDefault(asset, BigDecimal.ZERO);
-            BigDecimal locked = lockedAsset.getOrDefault(asset, BigDecimal.ZERO);
-            ObjectNode entry = coins.addObject();
-            entry.put("coin", asset);
-            entry.put("walletBalance", free.add(locked).toPlainString());
-            entry.put("availableToWithdraw", free.toPlainString());
+            ObjectNode entry = balances.addObject();
+            entry.put("asset", asset);
+            entry.put("free", freeAsset.getOrDefault(asset, BigDecimal.ZERO).toPlainString());
+            entry.put("locked", lockedAsset.getOrDefault(asset, BigDecimal.ZERO).toPlainString());
         }
         return accountInfo;
     }
@@ -101,16 +97,16 @@ public class BybitOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
     @Override
     protected JsonNode createOrderPlacementResponse(String exchangeOrderId) {
         ObjectNode result = objectMapper.createObjectNode();
-        result.put("retCode", 0);
-        result.putObject("result").put("orderId", exchangeOrderId);
+        result.put("orderId", exchangeOrderId);
+        result.put("transactTime", Instant.now().toEpochMilli());
         return result;
     }
 
     @Override
     protected JsonNode createCancelResponse(String exchangeOrderId) {
         ObjectNode result = objectMapper.createObjectNode();
-        result.put("retCode", 0);
-        result.putObject("result").put("orderId", exchangeOrderId);
+        result.put("orderId", exchangeOrderId);
+        result.put("status", "CANCELED");
         return result;
     }
 }

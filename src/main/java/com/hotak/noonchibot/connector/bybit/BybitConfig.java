@@ -155,13 +155,13 @@ public class BybitConfig {
     }
 
     @Bean
-    public BybitTradingRuleRegistry bybitTradingRuleRegistry(
+    public BybitTradingRuleRegistryAbstract bybitTradingRuleRegistry(
             @Qualifier("bybitRestAssistant") RestAssistant restAssistant,
             @Qualifier("bybitTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
             TaskScheduler taskScheduler,
             ObjectMapper objectMapper
     ) {
-        return new BybitTradingRuleRegistry(
+        return new BybitTradingRuleRegistryAbstract(
                 restAssistant,
                 new BybitTradingRuleParser(tradingPairSymbolRegistry),
                 taskScheduler,

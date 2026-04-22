@@ -1,5 +1,7 @@
 package com.hotak.noonchibot.core.trade.fee;
 
+import java.util.concurrent.CompletableFuture;
+
 public interface TradeFeeSchemaLoader {
-    TradeFeeSchema get(String tradingPair);
+    CompletableFuture<TradeFeeSchema> get(String tradingPair);
 }

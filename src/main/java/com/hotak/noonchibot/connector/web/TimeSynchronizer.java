@@ -1,13 +1,14 @@
 package com.hotak.noonchibot.connector.web;
 
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
 
 /**
  * thread-safe
@@ -16,13 +17,14 @@ import java.util.List;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class TimeSynchronizer {
+public class TimeSynchronizer implements LifecycleComponent {
     private static final int MAX_SAMPLES = 5;
     private static final Duration UPDATE_INTERVAL = Duration.ofMinutes(30);
 
     private volatile List<Double> timeOffsetSamples = List.of();
     private final ServerTimeProvider serverTimeProvider;
     private final TaskScheduler taskScheduler;
+    private ScheduledFuture<?> scheduledTask;
 
     /**
      * @return ms 단위 반환
@@ -41,7 +43,7 @@ public class TimeSynchronizer {
     }
 
     public void scheduleUpdate() {
-        taskScheduler.scheduleAtFixedRate(() -> {
+        scheduledTask = taskScheduler.scheduleAtFixedRate(() -> {
             try {
                 updateServerTimeOffset();
             } catch (Exception e) {
@@ -89,5 +91,17 @@ public class TimeSynchronizer {
 
     private static double getSystemMs() {
         return System.nanoTime() / 1e6;
+    }
+
+    @Override
+    public void start() {
+        scheduleUpdate();
+    }
+
+    @Override
+    public void shutdown() {
+        if(scheduledTask != null) {
+            scheduledTask.cancel(true);
+        }
     }
 }

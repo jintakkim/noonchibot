@@ -4,7 +4,6 @@ import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
 import com.hotak.noonchibot.core.IoExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -14,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 @Slf4j
-public abstract class AbstractFundingInfoDataSource extends AbstractWebsocketDataSource implements FundingInfoDataSource, SmartLifecycle {
+public abstract class AbstractFundingInfoDataSource extends AbstractWebsocketDataSource implements FundingInfoDataSource {
     private final Map<String, Set<FundingInfoMessageStream>> streamsByPair = new HashMap<>();
 
     public AbstractFundingInfoDataSource(WsAssistant wsAssistant, String publicWsUrl, ObjectMapper objectMapper, IoExecutor ioExecutor) {

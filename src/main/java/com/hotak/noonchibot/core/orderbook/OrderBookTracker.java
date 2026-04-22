@@ -1,16 +1,16 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 import java.util.*;
 import java.util.concurrent.*;
 
 @Slf4j
-public class OrderBookTracker implements SmartLifecycle {
+public class OrderBookTracker implements LifecycleComponent {
     private static final int MAX_PAST_DIFFS = 30;
 
     /// 스냅샷 복구 시 restoreFromSnapshotAndDiffs에 전달할 diff 메시지 윈도우
@@ -22,20 +22,15 @@ public class OrderBookTracker implements SmartLifecycle {
     private final Map<String, OrderBook> orderBooks = new HashMap<>();
     private final Map<String, OrderBookMessageStream> streams = new HashMap<>();
     private final Map<String, Future<?>> streamTasks = new HashMap<>();
-    private final String platformName;
-
-    private volatile boolean running = false;
 
     public OrderBookTracker(
             OrderBookDataSource dataSource,
             MainExecutor mainExecutor,
-            IoExecutor ioExecutor,
-            String platformName
+            IoExecutor ioExecutor
     ) {
         this.dataSource = dataSource;
         this.mainExecutor = mainExecutor;
         this.ioExecutor = ioExecutor;
-        this.platformName = platformName;
     }
 
     @VisibleForTesting
@@ -137,26 +132,16 @@ public class OrderBookTracker implements SmartLifecycle {
 
     @Override
     public void start() {
-        running = true;
+
     }
 
     @Override
-    public void stop() {
-        running = false;
+    public void shutdown() {
         // 모든 stream 구독 해제
         streams.forEach((pair, stream) -> dataSource.unsubscribe(stream));
         // 모든 stream consumer 스레드 종료
         streamTasks.values().forEach(task -> task.cancel(true));
         streamTasks.clear();
         streams.clear();
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
-    }
-
-    public String getPlatformName() {
-        return platformName;
     }
 }

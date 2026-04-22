@@ -1,19 +1,19 @@
 package com.hotak.noonchibot.core.order;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.EventListener;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 import org.springframework.core.task.AsyncTaskExecutor;
 
 import java.time.Instant;
 import java.util.*;
 
 @Slf4j
-public class OrderTracker implements SmartLifecycle {
+public class OrderTracker implements LifecycleComponent {
     public static final int LOST_ORDER_COUNT_LIMIT = 2;
     private static final String LOST_ERROR_TYPE = "lost";
 
@@ -30,8 +30,6 @@ public class OrderTracker implements SmartLifecycle {
     private final EventListener<OrderUpdateEvent> orderUpdateEventListener;
     private final EventListener<TradeUpdateEvent> tradeUpdateEventListener;
     private final EventListener<OrderLostEvent> orderLostEventListener;
-
-    private volatile boolean running = false;
 
     public OrderTracker(
             ExchangeEventPublisher eventPublisher,
@@ -222,21 +220,14 @@ public class OrderTracker implements SmartLifecycle {
         eventSubscriber.subscribe(OrderUpdateEvent.class, orderUpdateEventListener);
         eventSubscriber.subscribe(TradeUpdateEvent.class, tradeUpdateEventListener);
         eventSubscriber.subscribe(OrderLostEvent.class, orderLostEventListener);
-        running = true;
     }
 
     @Override
-    public void stop() {
+    public void shutdown() {
         eventSubscriber.unsubscribe(OrderRequestSentEvent.class, orderRequestEventListener);
         eventSubscriber.unsubscribe(OrderUpdateEvent.class, orderUpdateEventListener);
         eventSubscriber.unsubscribe(TradeUpdateEvent.class, tradeUpdateEventListener);
         eventSubscriber.unsubscribe(OrderLostEvent.class, orderLostEventListener);
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 
     public Collection<InFlightOrder> getAll() {

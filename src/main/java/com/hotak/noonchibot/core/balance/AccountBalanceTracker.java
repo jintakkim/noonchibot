@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.balance;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.core.event.BalanceSnapshotEvent;
 import com.hotak.noonchibot.core.event.BalanceUpdateEvent;
 import com.hotak.noonchibot.core.event.EventListener;
@@ -26,8 +27,7 @@ import java.util.Set;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class AccountBalanceTracker implements SmartLifecycle {
-    public final String platformName;
+public class AccountBalanceTracker implements LifecycleComponent {
     private final Map<String, BigDecimal> accountBalances = new HashMap<>();
     private final Map<String, BigDecimal> accountAvailableBalances = new HashMap<>();
 
@@ -37,8 +37,6 @@ public class AccountBalanceTracker implements SmartLifecycle {
     private Instant lastSnapshotTimestamp;
     private Instant lastUpdateTimestamp;
     private final ExchangeEventSubscriber eventSubscriber;
-
-    public volatile boolean running = false;
 
     public BigDecimal getAvailableBalance(String currency) {
         return accountAvailableBalances.get(currency);
@@ -94,18 +92,11 @@ public class AccountBalanceTracker implements SmartLifecycle {
     public void start() {
         eventSubscriber.subscribe(BalanceSnapshotEvent.class, snapshotEventListener);
         eventSubscriber.subscribe(BalanceUpdateEvent.class, updateEventListener);
-        running = true;
     }
 
     @Override
-    public void stop() {
+    public void shutdown() {
         eventSubscriber.unsubscribe(BalanceSnapshotEvent.class, snapshotEventListener);
         eventSubscriber.unsubscribe(BalanceUpdateEvent.class, updateEventListener);
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }

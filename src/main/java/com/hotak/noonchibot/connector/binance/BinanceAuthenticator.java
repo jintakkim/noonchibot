@@ -15,7 +15,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class BinanceAuthenticator implements Authenticator {
+class BinanceAuthenticator implements Authenticator {
     private final String apiKey;
     private final Mac mac;
     private final TimeSynchronizer timeSynchronizer;

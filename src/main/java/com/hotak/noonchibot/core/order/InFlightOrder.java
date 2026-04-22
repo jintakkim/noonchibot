@@ -107,7 +107,6 @@ public class InFlightOrder {
             throw new InFlightUpdateFailedException("주문 ID가 일치하지 않습니다.");
         }
         if(processedTradeIds.contains(tradeUpdateEvent.tradeId())) {
-            log.warn("이미 처리된 거래 건 입니다(tradeId: {})", tradeUpdateEvent.tradeId());
             return;
         }
         executedAmountBase = executedAmountBase.add(tradeUpdateEvent.fillBaseAmount());

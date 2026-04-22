@@ -19,4 +19,16 @@ spring:
 binance:
     api_key: ${BINANCE_API_KEY}
     secret_key: ${BINANCE_SECRET_KEY}
+    spot:
+        trading-pair-symbol-map:
+            "BTC-USDT": "BTCUSDT"
+            "ETH-USDT": "ETHUSDT"
+            "SOL-USDT": "SOLUSDT"
+    derivative:
+        trading-pair-symbol-map:
+            "BTC-USDT": "BTCUSDT"
+            "ETH-USDT": "ETHUSDT"
+            "SOL-USDT": "SOLUSDT"
+
+
 

@@ -20,7 +20,6 @@ import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
@@ -151,12 +150,12 @@ public class BybitDerivativeConfig {
     }
 
     @Bean
-    public BybitTradingRuleRegistry bybitDerivativeTradingRuleRegistry(
+    public BybitTradingRuleRegistryAbstract bybitDerivativeTradingRuleRegistry(
             @Qualifier("bybitDerivativeRestAssistant") RestAssistant restAssistant,
             @Qualifier("bybitDerivativeTradingPairSymbolRegistry") TradingPairSymbolRegistry tradingPairSymbolRegistry,
             TaskScheduler taskScheduler
     ) {
-        return new BybitTradingRuleRegistry(
+        return new BybitTradingRuleRegistryAbstract(
                 restAssistant,
                 new BybitDerivativeTradingRuleParser(tradingPairSymbolRegistry),
                 taskScheduler,

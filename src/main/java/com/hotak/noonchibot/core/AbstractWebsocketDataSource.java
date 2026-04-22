@@ -1,11 +1,11 @@
 package com.hotak.noonchibot.core;
 
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.web.WebsocketDisconnectedException;
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsConnection;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
@@ -14,18 +14,17 @@ import java.util.concurrent.Future;
 
 @RequiredArgsConstructor
 @Slf4j
-public abstract class AbstractWebsocketDataSource implements SmartLifecycle {
+public abstract class AbstractWebsocketDataSource implements LifecycleComponent {
     private final WsAssistant wsAssistant;
     private final String wsUrl;
     protected final ObjectMapper objectMapper;
     private final IoExecutor ioExecutor;
 
-    private volatile Future<?> connectionFuture;
-    private volatile boolean running = false;
+    private Future<?> connectionFuture;
     protected volatile WsConnection wsConnection;
 
     private void connectionLoop() {
-        while (running && !Thread.currentThread().isInterrupted()) {
+        while (!Thread.currentThread().isInterrupted()) {
             try {
                 wsConnection = wsAssistant.connect(URI.create(wsUrl));
                 onConnected();
@@ -55,18 +54,11 @@ public abstract class AbstractWebsocketDataSource implements SmartLifecycle {
 
     @Override
     public void start() {
-        running = true;
         connectionFuture = ioExecutor.submit(this::connectionLoop);
     }
 
     @Override
-    public void stop() {
-        running = false;
+    public void shutdown() {
         if (connectionFuture != null) connectionFuture.cancel(true);
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }
