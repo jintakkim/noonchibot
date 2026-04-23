@@ -14,10 +14,8 @@ import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.order.TimeInForce;
 import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
-import com.hotak.noonchibot.core.orderbook.OrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
@@ -25,11 +23,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-public class BybitOrderExecutor extends AbstractExchangeOrderExecutor {
+class SpotOrderExecutor extends AbstractExchangeOrderExecutor {
     private final TimeSynchronizer timeSynchronizer;
     private final RestAssistant restAssistant;
 
-    public BybitOrderExecutor(
+    public SpotOrderExecutor(
             OrderIdGenerator orderIdGenerator,
             OrderTracker orderTracker,
             TradingRuleRegistry tradingRuleRegistry,
@@ -42,13 +40,13 @@ public class BybitOrderExecutor extends AbstractExchangeOrderExecutor {
             IoExecutor ioExecutor
     ) {
         super(
-                BybitApiSpec.PLATFORM_NAME,
+                SpotApiSpec.PLATFORM_NAME,
                 orderIdGenerator,
                 orderTracker,
                 tradingRuleRegistry,
                 true,
-                BybitApiSpec.ORDER_ID_PREFIX,
-                BybitApiSpec.MAX_ORDER_ID_LENGTH,
+                SpotApiSpec.ORDER_ID_PREFIX,
+                SpotApiSpec.MAX_ORDER_ID_LENGTH,
                 tradingPairSymbolRegistry,
                 orderBookTracker,
                 exchangeEventPublisher,
@@ -75,7 +73,7 @@ public class BybitOrderExecutor extends AbstractExchangeOrderExecutor {
     protected boolean isRequestExceptionRelatedToTimeSynchronizer(Exception e) {
         String message = e.getMessage();
         return message != null
-                && message.contains(String.valueOf(BybitApiSpec.TIMESTAMP_ERROR_CODE));
+                && message.contains(String.valueOf(SpotApiSpec.TIMESTAMP_ERROR_CODE));
     }
 
     @Override
@@ -83,8 +81,8 @@ public class BybitOrderExecutor extends AbstractExchangeOrderExecutor {
         String message = e.getMessage();
         if (message == null) return false;
 
-        return message.contains(String.valueOf(BybitApiSpec.ORDER_NOT_EXIST_ERROR_CODE))
-                || message.contains(String.valueOf(BybitApiSpec.UNKNOWN_ORDER_ERROR_CODE));
+        return message.contains(String.valueOf(SpotApiSpec.ORDER_NOT_EXIST_ERROR_CODE))
+                || message.contains(String.valueOf(SpotApiSpec.UNKNOWN_ORDER_ERROR_CODE));
     }
 
     @Override
@@ -103,36 +101,31 @@ public class BybitOrderExecutor extends AbstractExchangeOrderExecutor {
 
         if (inFlightOrder.getOrderType() == OrderType.LIMIT) {
             body.put("price", inFlightOrder.getPrice().toPlainString());
-            if(!inFlightOrder.isPostOnly()) {
-                body.put("timeInForce", BybitApiSpec.TIME_IN_FORCE_API_VALUE.get(inFlightOrder.getTimeInForce()));
+            if (inFlightOrder.isPostOnly()) {
+                body.put("timeInForce", "PostOnly");
+            } else {
+                body.put("timeInForce", SpotApiSpec.TIME_IN_FORCE_API_VALUE.get(inFlightOrder.getTimeInForce()));
             }
         }
 
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.POST)
-                .pathUrl(BybitApiSpec.ORDER_CREATE_PATH_URL)
+                .pathUrl(SpotApiSpec.ORDER_CREATE_PATH_URL)
                 .authRequired(true)
                 .body(body)
                 .build();
 
-        try {
-            JsonNode response = restAssistant.executeRequestAndGetJsonBody(request);
-            int retCode = response.path("retCode").asInt();
+        JsonNode response = restAssistant.executeRequestAndGetJsonBody(request);
+        int retCode = response.path("retCode").asInt();
 
-            if (retCode == 0) {
-                String exchangeOrderId = response.path("result").path("orderId").asString();
-                return new OrderPlacedDto(exchangeOrderId, Instant.ofEpochMilli(timeSynchronizer.serverTime()));
-            } else if (retCode == 10002 || retCode == 10016) {
-                return new OrderPlacedDto("UNKNOWN", Instant.ofEpochMilli(timeSynchronizer.serverTime()));
-            } else {
-                String retMsg = response.path("retMsg").asString();
-                throw new RuntimeException("Bybit API Order Failed: [" + retCode + "] " + retMsg);
-            }
-        } catch (ExchangeApiException e) {
-            if (e.httpStatusCode == HttpStatusCode.valueOf(503) && e.getMessage().contains("Unknown error, please check your request or try again later.")) {
-                return new OrderPlacedDto("UNKNOWN", Instant.ofEpochMilli(timeSynchronizer.serverTime()));
-            }
-            throw e;
+        if (retCode == 0) {
+            String exchangeOrderId = response.path("result").path("orderId").asString();
+            return new OrderPlacedDto(exchangeOrderId, Instant.ofEpochMilli(timeSynchronizer.serverTime()));
+        } else if (retCode == 10016) {
+            return new OrderPlacedDto("UNKNOWN", Instant.ofEpochMilli(timeSynchronizer.serverTime()));
+        } else {
+            String retMsg = response.path("retMsg").asString();
+            throw new RuntimeException("Bybit API Order Failed: [" + retCode + "] " + retMsg);
         }
     }
 
@@ -147,7 +140,7 @@ public class BybitOrderExecutor extends AbstractExchangeOrderExecutor {
 
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.POST)
-                .pathUrl(BybitApiSpec.ORDER_CANCEL_PATH_URL)
+                .pathUrl(SpotApiSpec.ORDER_CANCEL_PATH_URL)
                 .body(body)
                 .authRequired(true)
                 .build();
