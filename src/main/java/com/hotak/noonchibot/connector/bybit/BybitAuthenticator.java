@@ -54,10 +54,10 @@ public class BybitAuthenticator implements Authenticator {
         String rawData = timestamp + apiKey + recvWindow + payload;
         String signature = generateSignature(rawData);
         HttpHeaders headers = new HttpHeaders(requestWithSortedParams.headers());
-        headers.add("X-BAPI-API-KEY", apiKey);
-        headers.add("X-BAPI-SIGN", signature);
-        headers.add("X-BAPI-TIMESTAMP", String.valueOf(timestamp));
-        headers.add("X-BAPI-RECV-WINDOW", recvWindow);
+        headers.set("X-BAPI-API-KEY", apiKey);
+        headers.set("X-BAPI-SIGN", signature);
+        headers.set("X-BAPI-TIMESTAMP", String.valueOf(timestamp));
+        headers.set("X-BAPI-RECV-WINDOW", recvWindow);
         return requestWithSortedParams.toBuilder().headers(headers).build();
     }
 
@@ -65,7 +65,7 @@ public class BybitAuthenticator implements Authenticator {
     public WsRequest wsAuthenticate(WsRequest wsRequest) { return wsRequest; }
 
     public Map<String, Object> generateWsAuthParams() {
-        long expires = timeSynchronizer.serverTime() + 5000;
+        long expires = timeSynchronizer.serverTime() + 10000;
         String rawData = "GET/realtime" + expires;
         String signature = generateSignature(rawData);
 
@@ -95,18 +95,21 @@ public class BybitAuthenticator implements Authenticator {
 
     private String encode(Map<String, Object> params) {
         if (params == null || params.isEmpty()) return "";
-        return new TreeMap<>(params).entrySet().stream()
-                .map(e -> e.getKey() + "=" + e.getValue())
+        return params.entrySet().stream()
+                .map(e -> e.getKey() + "=" + toStringValue(e.getValue()))
                 .collect(Collectors.joining("&"));
     }
 
     private String encodeJsonBody(Object body) {
         if (body == null) return "";
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (Exception e) {
-            return "";
-        }
+        return objectMapper.writeValueAsString(body);
+    }
+
+    private String toStringValue(Object value) {
+        if (value instanceof String s) return s;
+        if (value instanceof Number n) return n.toString();
+        if (value instanceof List<?> list) return objectMapper.writeValueAsString(list);
+        throw new IllegalArgumentException("Unsupported param type: " + value.getClass().getSimpleName());
     }
 
     private Mac getMac() {
