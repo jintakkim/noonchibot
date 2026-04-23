@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.connector.derivative.bybit;
+package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingRuleParser;
@@ -7,30 +7,33 @@ import com.hotak.noonchibot.core.order.OrderType;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 @RequiredArgsConstructor
-public class BybitDerivativeTradingRuleParser implements TradingRuleParser {
+class DerivativeTradingRuleParser implements TradingRuleParser {
+    private static final Set<OrderType> SUPPORTED_ORDER_TYPES =
+            Set.of(OrderType.LIMIT, OrderType.MARKET);
+
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
 
     @Override
     public List<TradingRule> parse(JsonNode body) {
         List<TradingRule> rules = new ArrayList<>();
-
-        JsonNode list = body.path("result").path("list");
-        if (!list.isArray()) return rules;
-
+        JsonNode list = body.get("result").get("list");
+        if (list == null || !list.isArray()) {
+            return rules;
+        }
         for (JsonNode symbol : list) {
-            if (!"Trading".equals(symbol.path("status").asString())) continue;
+            if (!"Trading".equals(symbol.get("status").asString())) continue;
 
             String exchangeSymbol = symbol.get("symbol").asString();
             String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol, false);
-            if (tradingPair == null) continue; // symbolRegistry에 없으면 무시
+            if (tradingPair == null) continue;
 
-            JsonNode priceFilter = symbol.get("priceFilter");
             JsonNode lotSizeFilter = symbol.get("lotSizeFilter");
-
-            String settleCoin = symbol.get("settleCoin").asString();
+            JsonNode priceFilter = symbol.get("priceFilter");
 
             rules.add(new TradingRule(
                     tradingPair,
@@ -39,10 +42,10 @@ public class BybitDerivativeTradingRuleParser implements TradingRuleParser {
                     priceFilter.get("tickSize").asDecimal(),
                     lotSizeFilter.get("qtyStep").asDecimal(),
                     lotSizeFilter.get("minNotionalValue").asDecimal(),
-                    symbol.get("priceScale").asInt(),
-                    Set.of(OrderType.LIMIT, OrderType.MARKET),
-                    settleCoin, // buyOrderCollateralToken
-                    settleCoin     // sellOrderCollateralToken
+                    symbol.get("priceScale").asInt(),              
+                    SUPPORTED_ORDER_TYPES,
+                    symbol.get("quoteCoin").asString(),
+                    symbol.get("baseCoin").asString()
             ));
         }
         return rules;
