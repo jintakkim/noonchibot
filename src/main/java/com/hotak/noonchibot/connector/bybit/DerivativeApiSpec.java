@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.connector.derivative.bybit;
+package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.throttle.RateLimit;
 import com.hotak.noonchibot.core.order.OrderState;
