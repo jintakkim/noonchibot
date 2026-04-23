@@ -73,7 +73,7 @@ public final class DerivativeApiSpec {
                     List.of(new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1))),
             RateLimit.endpoint(EXCHANGE_INFO_PATH_URL, Duration.ofSeconds(5), UNLIMITED, DEFAULT_WEIGHT,
                     List.of(new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1))),
-            
+
             RateLimit.endpoint(ORDER_CREATE_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
