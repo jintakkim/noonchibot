@@ -3,7 +3,6 @@ package com.hotak.noonchibot.connector.bybit;
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.PollScheduler;
-import com.hotak.noonchibot.connector.derivative.bybit.DerivativeApiSpec;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;

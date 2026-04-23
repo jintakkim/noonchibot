@@ -24,8 +24,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
-class SpotExchangeAdapterFactory {
-    public static ExchangeAdapter create(
+class DerivativeExchangeAdapterFactory {
+    public static DerivativeExchangeAdapter create(
             BybitConfig.Properties props,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor,
@@ -38,13 +38,13 @@ class SpotExchangeAdapterFactory {
     ) {
         ExchangeLifeCycleRegistry lifeCycleRegistry = new ExchangeLifeCycleRegistry();
         ExchangeEventBus eventBus = new ExchangeEventBus(mainExecutor);
-        RestClient restClient = RestClient.builder().baseUrl(SpotApiSpec.REST_BASE_URL).build();
-        TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(props.spot().tradingPairSymbolMap());
-        AsyncThrottler throttler = new AsyncThrottlerImpl(SpotApiSpec.RATE_LIMITS, ioExecutor);
+        RestClient restClient = RestClient.builder().baseUrl(DerivativeApiSpec.REST_BASE_URL).build();
+        TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(props.derivative().tradingPairSymbolMap());
+        AsyncThrottler throttler = new AsyncThrottlerImpl(DerivativeApiSpec.RATE_LIMITS, ioExecutor);
         TimeSynchronizer timeSynchronizer = new TimeSynchronizer(
                 new BybitServerTimeProvider(
                         new RestAssistant(restClient, List.of(new ThrottlerLimitIdPreProcessor()), List.of(), null, throttler, objectMapper),
-                        SpotApiSpec.SERVER_TIME_PATH_URL),
+                        DerivativeApiSpec.SERVER_TIME_PATH_URL),
                 taskScheduler
         );
         lifeCycleRegistry.register(timeSynchronizer);
@@ -53,10 +53,18 @@ class SpotExchangeAdapterFactory {
         RestAssistant restAssistant = new RestAssistant(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
         WsAssistant wsAssistant = new WsAssistant(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
 
-        SpotOrderBookDataSource orderBookDataSource = new SpotOrderBookDataSource(wsAssistant, SpotApiSpec.WSS_URL, objectMapper, ioExecutor, taskScheduler, tradingPairSymbolRegistry, restAssistant);
+        DerivativeOrderBookDataSource orderBookDataSource = new DerivativeOrderBookDataSource(
+                wsAssistant,
+                DerivativeApiSpec.WSS_LINEAR_URL,
+                objectMapper,
+                ioExecutor,
+                taskScheduler,
+                tradingPairSymbolRegistry,
+                restAssistant
+        );
         lifeCycleRegistry.register(orderBookDataSource);
 
-        OrderTracker orderTracker = new OrderTracker(eventBus, SpotApiSpec.PLATFORM_NAME, tradeRepository, orderHistoryRepository, ioExecutor, eventBus);
+        OrderTracker orderTracker = new OrderTracker(eventBus, DerivativeApiSpec.PLATFORM_NAME, tradeRepository, orderHistoryRepository, ioExecutor, eventBus);
         lifeCycleRegistry.register(orderTracker);
 
         OrderBookTracker orderBookTracker = new OrderBookTracker(orderBookDataSource, mainExecutor, ioExecutor);
@@ -65,39 +73,38 @@ class SpotExchangeAdapterFactory {
         AccountBalanceTracker accountBalanceTracker = new AccountBalanceTracker(eventBus);
         lifeCycleRegistry.register(accountBalanceTracker);
 
-        TradeFeeSchemaLoader feeSchemaLoader = new SpotTradeFeeSchemaLoader(ioExecutor, mainExecutor, tradingPairSymbolRegistry, restAssistant);
-        SpotUserStreamEventPublisher userStreamEventPublisher = new SpotUserStreamEventPublisher(
+        TradeFeeSchemaLoader feeSchemaLoader = new DerivativeTradeFeeSchemaLoader(ioExecutor, mainExecutor, tradingPairSymbolRegistry, restAssistant);
+        DerivativeUserStreamEventPublisher userStreamEventPublisher = new DerivativeUserStreamEventPublisher(
                 wsAssistant,
                 objectMapper,
-                authenticator,
-                List.of(new SpotExecutionReportParser(tradingPairSymbolRegistry), new SpotBalanceUpdateParser()),
+                tradingPairSymbolRegistry,
                 eventBus,
                 ioExecutor
         );
         lifeCycleRegistry.register(userStreamEventPublisher);
 
-        SpotBalancePoller spotBalancePoller = new SpotBalancePoller(
+        DerivativeBalancePoller balancePoller = new DerivativeBalancePoller(
                 userStreamEventPublisher,
                 ioExecutor,
                 restAssistant,
                 eventBus,
                 taskScheduler
         );
-        lifeCycleRegistry.register(spotBalancePoller);
+        lifeCycleRegistry.register(balancePoller);
 
-        BybitTradingRuleRegistry bybitTradingRuleRegistry = new BybitTradingRuleRegistry(
+        BybitTradingRuleRegistry binanceTradingRuleRegistry = new BybitTradingRuleRegistry(
                 restAssistant,
-                new SpotTradingRuleParser(tradingPairSymbolRegistry),
+                new DerivativeTradingRuleParser(tradingPairSymbolRegistry),
                 taskScheduler,
-                SpotApiSpec.TRADING_RULE_UPDATE_INTERVAL,
-                SpotApiSpec.EXCHANGE_INFO_PATH_URL
+                DerivativeApiSpec.TRADING_RULE_UPDATE_INTERVAL,
+                DerivativeApiSpec.EXCHANGE_INFO_PATH_URL
         );
-        lifeCycleRegistry.register(bybitTradingRuleRegistry);
+        lifeCycleRegistry.register(binanceTradingRuleRegistry);
 
-        SpotOrderExecutor orderExecutor = new SpotOrderExecutor(
+        DerivativeOrderExecutor orderExecutor = new DerivativeOrderExecutor(
                 new StructuredOrderIdGenerator(),
                 orderTracker,
-                bybitTradingRuleRegistry,
+                binanceTradingRuleRegistry,
                 tradingPairSymbolRegistry,
                 orderBookTracker,
                 timeSynchronizer,
@@ -107,7 +114,7 @@ class SpotExchangeAdapterFactory {
                 ioExecutor
         );
 
-        SpotOrderStatusPoller orderStatusPoller = new SpotOrderStatusPoller(
+        DerivativeOrderStatusPoller orderStatusPoller = new DerivativeOrderStatusPoller(
                 restAssistant,
                 eventBus,
                 orderTracker,
@@ -119,7 +126,7 @@ class SpotExchangeAdapterFactory {
         );
         lifeCycleRegistry.register(orderStatusPoller);
 
-        SpotTradePoller tradePoller = new SpotTradePoller(
+        DerivativeTradePoller tradePoller = new DerivativeTradePoller(
                 userStreamEventPublisher,
                 eventBus,
                 restAssistant,
@@ -127,21 +134,19 @@ class SpotExchangeAdapterFactory {
                 orderTracker,
                 tradingPairSymbolRegistry,
                 ioExecutor,
-                mainExecutor,
-                SpotApiSpec.MY_TRADES_PATH_URL
+                mainExecutor
         );
         lifeCycleRegistry.register(tradePoller);
 
-        return new ExchangeAdapter(
-                SpotApiSpec.PLATFORM_NAME,
+        return new DerivativeExchangeAdapter(
+                DerivativeApiSpec.PLATFORM_NAME,
                 orderTracker,
                 orderBookTracker,
                 accountBalanceTracker,
                 feeSchemaLoader,
-                bybitTradingRuleRegistry,
+                binanceTradingRuleRegistry,
                 orderExecutor,
                 lifeCycleRegistry
         );
     }
 }
-
