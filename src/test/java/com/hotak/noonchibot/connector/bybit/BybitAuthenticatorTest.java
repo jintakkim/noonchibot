@@ -152,7 +152,7 @@ public class BybitAuthenticatorTest {
         assertThat(args.get(0)).isEqualTo(API_KEY);
 
         long expires = (Long) args.get(1);
-        assertThat(expires).isEqualTo(TIMESTAMP + 5000L);
+        assertThat(expires).isEqualTo(TIMESTAMP + 10000L);
 
         String expectedSignature = hmacSha256(SECRET_KEY, "GET/realtime" + expires);
         assertThat(args.get(2)).isEqualTo(expectedSignature);
