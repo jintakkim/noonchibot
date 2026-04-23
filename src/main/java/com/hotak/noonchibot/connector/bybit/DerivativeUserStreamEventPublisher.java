@@ -1,5 +1,6 @@
-package com.hotak.noonchibot.connector.derivative.bybit;
+package com.hotak.noonchibot.connector.bybit;
 
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.IoExecutor;
@@ -13,7 +14,6 @@ import com.hotak.noonchibot.core.event.PositionUpdateEvent;
 import com.hotak.noonchibot.core.trade.fee.TokenAmount;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -27,14 +27,13 @@ import static java.lang.Thread.sleep;
 
 @Slf4j
 @RequiredArgsConstructor
-public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, WebsocketStatus {
+public class DerivativeUserStreamEventPublisher implements LifecycleComponent, WebsocketStatus {
     private final WsAssistant wsAssistant;
     private final ObjectMapper objectMapper;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final ExchangeEventPublisher exchangeEventPublisher;
     private final IoExecutor ioExecutor;
 
-    private volatile boolean running = false;
     private volatile ScheduledFuture<?> scheduledFuture;
     private volatile WsConnection wsConnection;
     private volatile Future<?> connectionFuture;
@@ -44,7 +43,7 @@ public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, 
         while (!Thread.currentThread().isInterrupted()) {
             try {
 
-                this.wsConnection = wsAssistant.connect(URI.create(BybitDerivativeApiSpec.WSS_API_URL));
+                this.wsConnection = wsAssistant.connect(URI.create(DerivativeApiSpec.WSS_API_URL));
                 while (true) {
                     WsResponse response = wsConnection.take();
                     processMessage(response.data());
@@ -66,8 +65,10 @@ public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, 
                     Thread.currentThread().interrupt();
                 }
             } finally {
-                wsConnection.disconnect();
-                wsConnection = null;
+                if (wsConnection != null) {
+                    wsConnection.disconnect();
+                    wsConnection = null;
+                }
             }
         }
     }
@@ -136,8 +137,8 @@ public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, 
 
                     OrderUpdateEvent orderUpdate = new OrderUpdateEvent(
                             tradingPair,
-                            Instant.ofEpochMilli(eventMessage.get("execTime").asLong()),
-                            BybitDerivativeApiSpec.ORDER_STATE.get(order.get("orderStatus").asString()),
+                            Instant.ofEpochMilli(order.get("updatedTime").asLong()),
+                            DerivativeApiSpec.ORDER_STATE.get(order.get("orderStatus").asString()),
                             clientOrderId,
                             exchangeOrderId
                     );
@@ -152,14 +153,27 @@ public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, 
                     if (coinArray == null || !coinArray.isArray()) continue;
 
                     for (JsonNode coinNode : coinArray) {
+                        // availableToWithdraw 는 deprecated.
+                        // isolated margin: walletBalance - locked - totalOrderIM - totalPositionIM - bonus
+                        BigDecimal walletBalance = coinNode.get("walletBalance").asDecimal();
+                        BigDecimal locked = coinNode.get("locked").asDecimal();
+                        BigDecimal orderIM = coinNode.get("totalOrderIM").asDecimal();
+                        BigDecimal positionIM = coinNode.get("totalPositionIM").asDecimal();
+                        BigDecimal bonus = coinNode.get("bonus").asDecimal();
+                        BigDecimal available = walletBalance
+                                .subtract(locked)
+                                .subtract(orderIM)
+                                .subtract(positionIM)
+                                .subtract(bonus);
+
                         BalanceUpdateEvent balanceUpdate = new BalanceUpdateEvent(
                                 coinNode.get("coin").asString(),
-                                coinNode.get("walletBalance").asDecimal(),
-                                coinNode.get("availableToWithdraw").asDecimal(),
+                                walletBalance,
+                                available,
                                 timestamp
                         );
 
-                    exchangeEventPublisher.publish(balanceUpdate);
+                        exchangeEventPublisher.publish(balanceUpdate);
                     }
                 }
             }
@@ -168,7 +182,7 @@ public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, 
                     String exchangeSymbol = pos.path("symbol").asString();
                     String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
 
-                   PositionUpdateEvent posUpdate = new PositionUpdateEvent(
+                    PositionUpdateEvent posUpdate = new PositionUpdateEvent(
                             tradingPair,
                             PositionSide.valueOf(pos.path("side").asString().toUpperCase()),
                             pos.path("size").asDecimal(),
@@ -177,7 +191,7 @@ public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, 
                             Instant.ofEpochMilli(pos.path("updatedTime").asLong())
                     );
 
-                   exchangeEventPublisher.publish(posUpdate);
+                    exchangeEventPublisher.publish(posUpdate);
                 }
             }
         }
@@ -186,21 +200,16 @@ public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, 
     @Override
     public void start() {
         connectionFuture = ioExecutor.submit(this::connectionLoop);
-        running = true;
     }
 
     @Override
-    public void stop() {
-        if (connectionFuture != null) {
-            connectionFuture.cancel(true);
-            connectionFuture = null;
+    public void shutdown() {
+        if(scheduledFuture != null && !scheduledFuture.isDone()) {
+            scheduledFuture.cancel(true);
         }
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
+        connectionFuture.cancel(true);
+        connectionFuture = null;
+        scheduledFuture = null;
     }
 
     @Override
@@ -213,4 +222,3 @@ public class BybitDerivativeUserStreamEventPublisher implements SmartLifecycle, 
         return lastRecvTime;
     }
 }
-
