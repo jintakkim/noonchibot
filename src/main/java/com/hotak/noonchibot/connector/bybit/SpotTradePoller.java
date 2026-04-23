@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.bybit;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.PollScheduler;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
@@ -13,7 +14,6 @@ import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.trade.fee.TokenAmount;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
-public class BybitTradePoller implements SmartLifecycle {
+class SpotTradePoller implements LifecycleComponent {
     private final ExchangeEventPublisher eventPublisher;
     private final RestAssistant restAssistant;
     private final OrderTracker orderTracker;
@@ -34,9 +34,8 @@ public class BybitTradePoller implements SmartLifecycle {
     private final MainExecutor mainExecutor;
     private final PollScheduler pollScheduler;
     private final String tradePathUrl;
-    private volatile boolean running = false;
 
-    public BybitTradePoller(
+    public SpotTradePoller(
             WebsocketStatus websocketStatus,
             ExchangeEventPublisher eventPublisher,
             RestAssistant restAssistant,
@@ -62,7 +61,7 @@ public class BybitTradePoller implements SmartLifecycle {
     @VisibleForTesting
     void pollData() {
         orderTracker.getAll().stream()
-                .map(order -> new BybitTradePoller.TradePollRequest(order.getClientOrderId(), order.getExchangeOrderId(), order.getTradingPair()))
+                .map(order -> new TradePollRequest(order.getClientOrderId(), order.getExchangeOrderId(), order.getTradingPair()))
                 .forEach(request -> CompletableFuture
                         .supplyAsync(() -> fetchAllTradeUpdatesForOrder(request), ioExecutor)
                         .thenAccept(tradeEvents -> tradeEvents.forEach(eventPublisher::publish)));
@@ -81,22 +80,22 @@ public class BybitTradePoller implements SmartLifecycle {
                 .params(Map.of(
                         "category", "spot",
                         "symbol", symbol,
-                        "orderId", tradePollRequest.exchangeOrderId
+                        "orderId", tradePollRequest.exchangeOrderId,
+                        // Bybit은 trade 메시지를 받을 때 페이지네이션을 이용한다.
+                        // 디폴트는 50이나 안전하게 100으로 요청
+                        "limit", "100"
                 ))
                 .authRequired(true)
-                .throttlerLimitId(BybitApiSpec.MY_TRADES_PATH_URL)
-                .weightOverrides(Map.of("REQUEST_WEIGHT", 5))
+                .throttlerLimitId(SpotApiSpec.MY_TRADES_PATH_URL)
                 .build();
 
         JsonNode responseBody = restAssistant.executeRequestAndGetJsonBody(request);
 
         List<TradeUpdateEvent> tradeUpdateEvents = new ArrayList<>();
-
         JsonNode resultNode = responseBody.get("result");
-        if (resultNode != null && resultNode.has("list") && resultNode.get("list").isArray()) {
-            for (JsonNode trade : resultNode.get("list")) {
-                tradeUpdateEvents.add(parseTradeUpdate(trade, tradePollRequest.clientOrderId, tradePollRequest.tradingPair));
-            }
+
+        for (JsonNode trade : resultNode.get("list")) {
+            tradeUpdateEvents.add(parseTradeUpdate(trade, tradePollRequest.clientOrderId, tradePollRequest.tradingPair));
         }
 
         return tradeUpdateEvents;
@@ -123,17 +122,10 @@ public class BybitTradePoller implements SmartLifecycle {
     @Override
     public void start() {
         pollScheduler.start(() -> mainExecutor.execute(this::pollData));
-        running = true;
     }
 
     @Override
-    public void stop() {
+    public void shutdown() {
         pollScheduler.stop();
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }
