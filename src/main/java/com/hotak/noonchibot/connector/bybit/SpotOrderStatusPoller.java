@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.bybit;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.PollScheduler;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
@@ -15,18 +16,18 @@ import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
-public class BybitOrderStatusPoller implements SmartLifecycle {
+class SpotOrderStatusPoller implements LifecycleComponent {
     private final RestAssistant restAssistant;
     private final ExchangeEventPublisher eventPublisher;
     private final OrderTracker orderTracker;
@@ -34,10 +35,8 @@ public class BybitOrderStatusPoller implements SmartLifecycle {
     private final IoExecutor ioExecutor;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final PollScheduler pollScheduler;
-    private final String orderPathUrl;
-    private volatile boolean running = false;
 
-    public BybitOrderStatusPoller(
+    public SpotOrderStatusPoller(
             RestAssistant restAssistant,
             ExchangeEventPublisher eventPublisher,
             OrderTracker orderTracker,
@@ -45,8 +44,7 @@ public class BybitOrderStatusPoller implements SmartLifecycle {
             IoExecutor ioExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             WebsocketStatus websocketStatus,
-            TaskScheduler scheduler,
-            String orderPathUrl
+            TaskScheduler scheduler
     ) {
         this.restAssistant = restAssistant;
         this.eventPublisher = eventPublisher;
@@ -54,37 +52,44 @@ public class BybitOrderStatusPoller implements SmartLifecycle {
         this.mainExecutor = mainExecutor;
         this.ioExecutor = ioExecutor;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
-        this.orderPathUrl = orderPathUrl;
         this.pollScheduler = new PollScheduler(websocketStatus, scheduler);
     }
+
+    private record OrderPollRequest(String tradingPair, String clientOrderId) {}
 
     @VisibleForTesting
     void pollData() {
         Collection<InFlightOrder> ordersToUpdate = orderTracker.getAll();
-        if (ordersToUpdate.isEmpty()) return;
-        ordersToUpdate.forEach(order ->
+        List<SpotOrderStatusPoller.OrderPollRequest> requests = ordersToUpdate.stream()
+                .map(order -> new SpotOrderStatusPoller.OrderPollRequest(order.getTradingPair(), order.getClientOrderId()))
+                .toList();
+        if(requests.isEmpty()) return;
+        requests.forEach(req ->
                 CompletableFuture
-                        .supplyAsync(() -> fetchOrderStatus(order), ioExecutor)
-                        .thenAccept(eventPublisher::publish)
+                        .supplyAsync(() -> fetchOrderStatus(req.tradingPair(), req.clientOrderId()), ioExecutor)
+                        .thenAccept(this::publishOrderStatus)
         );
+    }
+
+    private void publishOrderStatus(OrderUpdateEvent event) {
+        if (event == null) return;
+        eventPublisher.publish(event);
     }
 
     private boolean isOrderNotFoundDuringStatusUpdateException(Exception e) {
         String message = e.getMessage();
         return message != null
-                && message.contains(String.valueOf(BybitApiSpec.ORDER_NOT_EXIST_ERROR_CODE));
+                && message.contains(String.valueOf(SpotApiSpec.ORDER_NOT_EXIST_ERROR_CODE));
     }
 
-    private OrderUpdateEvent fetchOrderStatus(InFlightOrder order) {
-        String tradingPair = order.getTradingPair();
-        String clientOrderId = order.getClientOrderId();
+    private OrderUpdateEvent fetchOrderStatus(String tradingPair, String clientOrderId) {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
 
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
-                .pathUrl(orderPathUrl)
+                .pathUrl(SpotApiSpec.ORDER_REALTIME_PATH_URL)
                 .params(Map.of(
-                        "category", "linear",
+                        "category", "spot",
                         "symbol", symbol,
                         "orderLinkId", clientOrderId
                 ))
@@ -92,8 +97,14 @@ public class BybitOrderStatusPoller implements SmartLifecycle {
                 .build();
         try {
             JsonNode response = restAssistant.executeRequestAndGetJsonBody(request);
-            JsonNode updatedOrder = response.get("result").get("list").get(0);
-            OrderState newState = BybitApiSpec.ORDER_STATE.get(updatedOrder.get("orderStatus").asString());
+            JsonNode list = response.get("result").get("list");
+            if (list.isEmpty()) {
+                // realtime에 없다면 이미 체결/취소되어 사라졌거나 존재하지 않는 주문이다
+                eventPublisher.publish(new OrderLostEvent(clientOrderId));
+                return null;
+            }
+            JsonNode updatedOrder = list.get(0);
+            OrderState newState = SpotApiSpec.ORDER_STATE.get(updatedOrder.get("orderStatus").asString());
             log.info("{}:{}", tradingPair, updatedOrder);
             return new OrderUpdateEvent(
                     tradingPair,
@@ -114,17 +125,10 @@ public class BybitOrderStatusPoller implements SmartLifecycle {
     @Override
     public void start() {
         pollScheduler.start(() -> mainExecutor.execute(this::pollData));
-        running = true;
     }
 
     @Override
-    public void stop() {
+    public void shutdown() {
         pollScheduler.stop();
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }
