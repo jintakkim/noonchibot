@@ -31,7 +31,7 @@ public class OrderBookTrackerTest {
         mainExecutor = new TestMainExecutor();
         ioExecutor = new VirtualThreadIoExecutor();
         orderBook = spy(new OrderBook(false));
-        tracker = new OrderBookTracker(dataSource, mainExecutor, ioExecutor, "test-platform");
+        tracker = new OrderBookTracker(dataSource, mainExecutor, ioExecutor);
         when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);
     }
 
