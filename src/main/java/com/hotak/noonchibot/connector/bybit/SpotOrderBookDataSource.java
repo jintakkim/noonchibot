@@ -15,29 +15,30 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Slf4j
-public class BybitOrderBookDataSource extends AbstractOrderBookDataSource {
+public class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
 
     private final RestAssistant restAssistant;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
-    private final TimeSynchronizer timeSynchronizer;
 
-    public BybitOrderBookDataSource(
+    public SpotOrderBookDataSource(
             WsAssistant wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant,
-            TimeSynchronizer timeSynchronizer
+            RestAssistant restAssistant
     ) {
         super(wsAssistant, publicWsUrl, objectMapper, ioExecutor, taskScheduler, false);
         this.restAssistant = restAssistant;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
-        this.timeSynchronizer = timeSynchronizer;
     }
 
     @Override
@@ -45,7 +46,7 @@ public class BybitOrderBookDataSource extends AbstractOrderBookDataSource {
         String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
-                .pathUrl(BybitApiSpec.SNAPSHOT_PATH_URL)
+                .pathUrl(SpotApiSpec.SNAPSHOT_PATH_URL)
                 .params(Map.of("category", "spot", "symbol", exchangeSymbol, "limit", "200"))
                 .build();
         JsonNode result = restAssistant.executeRequestAndGetJsonBody(request).get("result");
@@ -73,12 +74,12 @@ public class BybitOrderBookDataSource extends AbstractOrderBookDataSource {
 
     @Override
     protected boolean isErrorMessage(JsonNode msg) {
-        return msg.has("ret_code") && msg.get("ret_code").asInt() != 0;
+        return msg.has("op") && msg.has("success") && !msg.get("success").asBoolean();
     }
 
     @Override
     protected boolean isAckMessage(JsonNode msg) {
-        return msg.has("op") && msg.has("success");
+        return msg.has("op") && msg.has("success") && msg.get("success").asBoolean();
     }
 
     @Override
@@ -96,12 +97,11 @@ public class BybitOrderBookDataSource extends AbstractOrderBookDataSource {
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
         Instant eventTime = Instant.ofEpochMilli(msg.get("ts").asLong());
 
-        // Bybit publicTrade data는 배열이지만 보통 1건씩 옴 — 첫 번째만 사용
         JsonNode trade = msg.get("data").get(0);
         TradeType tradeType = "Buy".equals(trade.get("S").asString()) ? TradeType.BUY : TradeType.SELL;
         BigDecimal price = trade.get("p").asDecimal();
         BigDecimal amount = trade.get("v").asDecimal();
-        long tradeId = trade.get("T").asLong(); // timestamp as trade id
+        long tradeId = trade.get("T").asLong();
 
         return new OrderBookMessage.TradeMessage(eventTime, tradingPair, tradeId, price, amount, tradeType);
     }
