@@ -122,5 +122,4 @@ final class SpotApiSpec {
     public static final int TIMESTAMP_ERROR_CODE = -1021;
 
     public static final Duration TRADING_RULE_UPDATE_INTERVAL = Duration.ofHours(1);
-
 }
