@@ -31,12 +31,12 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-class BybitOrderStatusPollerTest {
+class SpotOrderStatusPollerTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private RestAssistant restAssistant;
     private OrderTracker orderTracker;
     private TradingPairSymbolRegistry symbolRegistry;
-    private BybitOrderStatusPoller poller;
+    private SpotOrderStatusPoller poller;
     private TestExchangeEventPublisher testExchangeEventPublisher;
 
     @BeforeEach
@@ -45,7 +45,7 @@ class BybitOrderStatusPollerTest {
         orderTracker = Mockito.mock(OrderTracker.class);
         testExchangeEventPublisher = new TestExchangeEventPublisher();
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of("BTC-USDT", "BTCUSDT"));
-        poller = new BybitOrderStatusPoller(
+        poller = new SpotOrderStatusPoller(
                 restAssistant,
                 testExchangeEventPublisher,
                 orderTracker,
@@ -53,8 +53,7 @@ class BybitOrderStatusPollerTest {
                 Runnable::run,
                 symbolRegistry,
                 Mockito.mock(WebsocketStatus.class),
-                mock(TaskScheduler.class),
-                BybitApiSpec.ORDER_REALTIME_PATH_URL
+                mock(TaskScheduler.class)
         );
     }
 
@@ -92,7 +91,7 @@ class BybitOrderStatusPollerTest {
         when(restAssistant.executeRequestAndGetJsonBody(any()))
                 .thenThrow(new ExchangeApiException(
                         HttpStatusCode.valueOf(400),
-                        "{\"retCode\":" + BybitApiSpec.ORDER_NOT_EXIST_ERROR_CODE + ",\"retMsg\":\"Order does not exist\"}"));
+                        "{\"retCode\":" + SpotApiSpec.ORDER_NOT_EXIST_ERROR_CODE + ",\"retMsg\":\"Order does not exist\"}"));
 
         poller.pollData();
 

@@ -21,9 +21,9 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-public class BybitOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
-    public BybitOrderExecutorTest() {
-        super(BybitApiSpec.ORDER_REALTIME_PATH_URL, BybitApiSpec.ACCOUNTS_PATH_URL, BybitApiSpec.MY_TRADES_PATH_URL);
+public class SpotOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
+    public SpotOrderExecutorTest() {
+        super(SpotApiSpec.ORDER_REALTIME_PATH_URL, SpotApiSpec.ACCOUNTS_PATH_URL, SpotApiSpec.MY_TRADES_PATH_URL);
     }
 
     @Override
@@ -43,7 +43,7 @@ public class BybitOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
             ExchangeEventPublisher exchangeEventPublisher,
             TimeSynchronizer timeSynchronizer
     ) {
-        return new BybitOrderExecutor(
+        return new SpotOrderExecutor(
                 orderIdGenerator,
                 orderTracker,
                 tradingRuleRegistry,
@@ -61,12 +61,12 @@ public class BybitOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
     protected Exception createOrderNotFoundException() {
         return new ExchangeApiException(
                 HttpStatusCode.valueOf(400),
-                "{\"retCode\":" + BybitApiSpec.ORDER_NOT_EXIST_ERROR_CODE + "}"
+                "{\"retCode\":" + SpotApiSpec.ORDER_NOT_EXIST_ERROR_CODE + "}"
         );
     }
 
     protected JsonNode createOrderStatusResponse(String exchangeOrderId, OrderState state) {
-        String bybitStatus = BybitApiSpec.ORDER_STATE.entrySet().stream()
+        String bybitStatus = SpotApiSpec.ORDER_STATE.entrySet().stream()
                 .filter(e -> e.getValue() == state)
                 .map(Map.Entry::getKey)
                 .findFirst()

@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.connector.derivative.bybit;
+package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
@@ -27,7 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-public class BybitDerivativeOrderBookDataSourceTest extends AbstractOrderBookDataSourceTest {
+public class DerivativeOrderBookDataSourceTest extends AbstractOrderBookDataSourceTest {
 
     private static final TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(
             Map.of("BTC-USDT", "BTCUSDT", "ETH-USDT", "ETHUSDT")
@@ -42,9 +42,9 @@ public class BybitDerivativeOrderBookDataSourceTest extends AbstractOrderBookDat
             TaskScheduler taskScheduler
     ) {
         restAssistant = Mockito.mock(RestAssistant.class);
-        return new BybitDerivativeOrderBookDataSource(
+        return new DerivativeOrderBookDataSource(
                 wsAssistant,
-                BybitDerivativeApiSpec.WSS_LINEAR_URL,
+                DerivativeApiSpec.WSS_LINEAR_URL,
                 objectMapper,
                 ioExecutor,
                 taskScheduler,

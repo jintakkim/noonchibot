@@ -29,12 +29,12 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-class BybitTradePollerTest {
+class SpotTradePollerTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private RestAssistant restAssistant;
     private OrderTracker orderTracker;
     private TradingPairSymbolRegistry symbolRegistry;
-    private BybitTradePoller poller;
+    private SpotTradePoller poller;
     private TestExchangeEventPublisher testExchangeEventPublisher;
 
     @BeforeEach
@@ -43,7 +43,7 @@ class BybitTradePollerTest {
         testExchangeEventPublisher = new TestExchangeEventPublisher();
         orderTracker = Mockito.mock(OrderTracker.class);
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of("BTC-USDT", "BTCUSDT"));
-        poller = new BybitTradePoller(
+        poller = new SpotTradePoller(
                 Mockito.mock(WebsocketStatus.class),
                 testExchangeEventPublisher,
                 restAssistant,
@@ -52,7 +52,7 @@ class BybitTradePollerTest {
                 symbolRegistry,
                 Runnable::run,
                 new TestMainExecutor(),
-                BybitApiSpec.MY_TRADES_PATH_URL
+                SpotApiSpec.MY_TRADES_PATH_URL
         );
     }
 

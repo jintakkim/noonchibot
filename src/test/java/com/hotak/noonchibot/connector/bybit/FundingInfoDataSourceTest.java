@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.connector.derivative.bybit;
+package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
@@ -24,7 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class BybitFundingInfoDataSourceTest extends AbstractFundingInfoDataSourceTest {
+public class FundingInfoDataSourceTest extends AbstractFundingInfoDataSourceTest {
     private TradingPairSymbolRegistry symbolRegistry;
     private RestAssistant mockRestAssistant;
 
@@ -32,9 +32,9 @@ public class BybitFundingInfoDataSourceTest extends AbstractFundingInfoDataSourc
     protected AbstractFundingInfoDataSource createDataSource(WsAssistant wsAssistant, IoExecutor ioExecutor) {
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of("BTC-USDT", "BTCUSDT", "ETH-USDT", "ETHUSDT"));
         mockRestAssistant = Mockito.mock(RestAssistant.class);
-        return new BybitFundingInfoDataSource(
+        return new FundingInfoDataSource(
                 wsAssistant,
-                BybitDerivativeApiSpec.WSS_LINEAR_URL,
+                DerivativeApiSpec.WSS_LINEAR_URL,
                 objectMapper,
                 ioExecutor,
                 symbolRegistry,
