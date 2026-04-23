@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @RequiredArgsConstructor
-public class BybitExecutionReportParser implements UserStreamEventParser {
+class SpotExecutionReportParser implements UserStreamEventParser {
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
 
     @Override
@@ -49,15 +49,6 @@ public class BybitExecutionReportParser implements UserStreamEventParser {
                     event.get("isMaker").asBoolean()
             ));
         }
-
-        events.add(new OrderUpdateEvent(
-                tradingPair,
-                Instant.ofEpochMilli(event.get("updatedTime").asLong()),
-                BybitApiSpec.ORDER_STATE.get(event.get("orderStatus").asString()),
-                clientOrderId,
-                event.get("orderId").asString(),
-                null
-        ));
 
         return events;
     }
