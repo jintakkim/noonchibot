@@ -10,10 +10,10 @@ import org.springframework.scheduling.TaskScheduler;
 import java.time.Duration;
 import java.util.Map;
 
-public class BybitTradingRuleRegistryAbstract extends AbstractPollingTradingRuleRegistry {
+public class BybitTradingRuleRegistry extends AbstractPollingTradingRuleRegistry {
     private final String requestPath;
 
-    public BybitTradingRuleRegistryAbstract(
+    public BybitTradingRuleRegistry(
             RestAssistant restAssistant,
             TradingRuleParser parser,
             TaskScheduler scheduler,
@@ -24,6 +24,7 @@ public class BybitTradingRuleRegistryAbstract extends AbstractPollingTradingRule
         this.requestPath = requestPath;
     }
 
+    // Bybit은 여러 심볼에 대해 info를 요청할 수 없다. 필드를 비우면 spot에 대한 모든 심볼이 반환된다.
     @Override
     protected RestRequest createRequest() {
         return RestRequest.builder()
