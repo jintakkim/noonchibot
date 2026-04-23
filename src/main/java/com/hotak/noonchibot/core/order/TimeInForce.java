@@ -12,5 +12,10 @@ public enum TimeInForce {
     /**
      * 전량 채결아니면 취소
      */
-    FOK
+    FOK,
+    /**
+     * 즉시 체결이 되는 상황이라면 주문을 넣지 않음 (메이커로만 주문)
+     * 업비트는 POST_ONLY가 TimeInForce 값으로 들어간다
+     */
+    POST_ONLY
 }
