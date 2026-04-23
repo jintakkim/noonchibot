@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.bybit;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.PollScheduler;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
@@ -8,7 +9,6 @@ import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.event.BalanceSnapshotEvent;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
-import org.springframework.context.SmartLifecycle;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -19,14 +19,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-public class BybitBalancePoller implements SmartLifecycle {
+public class SpotBalancePoller implements LifecycleComponent {
     private final RestAssistant restAssistant;
     private final ExchangeEventPublisher eventPublisher;
     private final IoExecutor ioExecutor;
     private final PollScheduler pollScheduler;
-    private volatile boolean running = false;
 
-    public BybitBalancePoller(
+    public SpotBalancePoller(
             WebsocketStatus websocketStatus,
             IoExecutor ioExecutor,
             RestAssistant restAssistant,
@@ -47,16 +46,13 @@ public class BybitBalancePoller implements SmartLifecycle {
                     Map<String, BigDecimal> totalBalances = new HashMap<>();
                     Map<String, BigDecimal> availableBalances = new HashMap<>();
                     JsonNode coinList = accountInfo.get("result").get("list").get(0).get("coin");
-                    if (coinList != null && coinList.isArray()) {
-                        for (JsonNode entry : coinList) {
-                            String asset = entry.get("coin").asString();
-                            // Bybit UNIFIED 응답에서 availableToWithdraw 는 코인이 담보로 쓰일 때 빈 문자열("")이 와서 믿을 수 없다.
-                            // walletBalance(보유량) - locked(주문에 묶인 양) 로 가용 잔고를 계산한다.
-                            BigDecimal walletBalance = entry.get("walletBalance").asDecimal();
-                            BigDecimal lockedAmount = entry.get("locked").asDecimal();
-                            totalBalances.put(asset, walletBalance);
-                            availableBalances.put(asset, walletBalance.subtract(lockedAmount));
-                        }
+                    for (JsonNode entry : coinList) {
+                        String asset = entry.get("coin").asString();
+                        // Bybit은 free 필드를 제공하지 않고 총 자산(walletBalance)과 locked 만 제공한다.
+                        BigDecimal walletBalance = entry.get("walletBalance").asDecimal();
+                        BigDecimal locked = entry.get("locked").asDecimal();
+                        totalBalances.put(asset, walletBalance);
+                        availableBalances.put(asset, walletBalance.subtract(locked));
                     }
                     return new BalanceSnapshotEvent(totalBalances, availableBalances, updateTime);
                 })
@@ -68,26 +64,17 @@ public class BybitBalancePoller implements SmartLifecycle {
                 RestRequest.builder()
                         .method(HttpMethod.GET)
                         .authRequired(true)
-                        .pathUrl(BybitApiSpec.ACCOUNTS_PATH_URL)
+                        .pathUrl(SpotApiSpec.ACCOUNTS_PATH_URL)
                         .params(Map.of("accountType", "UNIFIED"))
                         .build()
         ));
     }
 
     @Override
-    public void start() {
-        pollScheduler.start(this::pollData);
-        running = true;
-    }
+    public void start() { pollScheduler.start(this::pollData); }
 
     @Override
-    public void stop() {
+    public void shutdown() {
         pollScheduler.stop();
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }
