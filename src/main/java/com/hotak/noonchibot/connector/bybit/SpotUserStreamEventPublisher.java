@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.connector.bybit;
 
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.UserStreamEventParser;
@@ -21,7 +22,7 @@ import static java.lang.Thread.sleep;
 
 @Slf4j
 @RequiredArgsConstructor
-public class BybitUserStreamEventPublisher implements WebsocketStatus, SmartLifecycle {
+public class SpotUserStreamEventPublisher implements WebsocketStatus, LifecycleComponent {
     private final WsAssistant wsAssistant;
     private final ObjectMapper objectMapper;
     private final BybitAuthenticator bybitAuthenticator;
@@ -31,13 +32,12 @@ public class BybitUserStreamEventPublisher implements WebsocketStatus, SmartLife
 
     private volatile Instant lastRecvTime;
     private volatile WsConnection wsConnection;
-    private volatile boolean running = false;
     private volatile Future<?> connection;
 
     private void connectionLoop() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                this.wsConnection = wsAssistant.connect(URI.create(BybitApiSpec.WSS_API_URL));
+                this.wsConnection = wsAssistant.connect(URI.create(SpotApiSpec.WSS_API_URL));
                 subscribeUserStream();
                 while (true) {
                     processMessage();
@@ -59,10 +59,8 @@ public class BybitUserStreamEventPublisher implements WebsocketStatus, SmartLife
                     Thread.currentThread().interrupt();
                 }
             } finally {
-                if (wsConnection != null) {
-                    wsConnection.disconnect();
-                    wsConnection = null;
-                }
+                wsConnection.disconnect();
+                wsConnection = null;
             }
         }
     }
@@ -78,7 +76,7 @@ public class BybitUserStreamEventPublisher implements WebsocketStatus, SmartLife
 
         wsConnection.send(new WsRequest(Map.of(
                 "op", "subscribe",
-                "args", List.of("execution", "wallet")
+                "args", List.of("execution", "order", "wallet")
         ), false));
 
         WsResponse subResponse = wsConnection.take();
@@ -117,18 +115,11 @@ public class BybitUserStreamEventPublisher implements WebsocketStatus, SmartLife
     @Override
     public void start() {
         connection = ioExecutor.submit(this::connectionLoop);
-        running = true;
     }
 
     @Override
-    public void stop() {
+    public void shutdown() {
         connection.cancel(true);
         connection = null;
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }
