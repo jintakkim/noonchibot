@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.connector.derivative.bybit;
+package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public class BybitFundingInfoDataSource extends AbstractFundingInfoDataSource {
+public class FundingInfoDataSource extends AbstractFundingInfoDataSource {
     @RequiredArgsConstructor
     @Getter
     private enum MessageMethod {
@@ -32,7 +32,7 @@ public class BybitFundingInfoDataSource extends AbstractFundingInfoDataSource {
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
 
-    public BybitFundingInfoDataSource(
+    public FundingInfoDataSource(
             WsAssistant wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
@@ -89,7 +89,7 @@ public class BybitFundingInfoDataSource extends AbstractFundingInfoDataSource {
         JsonNode response = restAssistant.executeRequestAndGetJsonBody(
                 RestRequest.builder()
                         .method(HttpMethod.GET)
-                        .pathUrl(BybitDerivativeApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
+                        .pathUrl(DerivativeApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
                         .params(Map.of(
                                 "category", "linear",
                                 "symbol", symbol

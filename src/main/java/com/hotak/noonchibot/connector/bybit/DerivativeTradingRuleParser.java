@@ -42,7 +42,7 @@ class DerivativeTradingRuleParser implements TradingRuleParser {
                     priceFilter.get("tickSize").asDecimal(),
                     lotSizeFilter.get("qtyStep").asDecimal(),
                     lotSizeFilter.get("minNotionalValue").asDecimal(),
-                    symbol.get("priceScale").asInt(),              
+                    symbol.get("priceScale").asInt(),
                     SUPPORTED_ORDER_TYPES,
                     symbol.get("quoteCoin").asString(),
                     symbol.get("baseCoin").asString()
