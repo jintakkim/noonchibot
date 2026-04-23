@@ -1,15 +1,15 @@
-package com.hotak.noonchibot.connector.derivative.bybit;
+package com.hotak.noonchibot.connector.bybit;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.PollScheduler;
+import com.hotak.noonchibot.connector.derivative.bybit.DerivativeApiSpec;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.event.BalanceSnapshotEvent;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
-import org.springframework.context.SmartLifecycle;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -20,24 +20,20 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-public class BybitDerivativeBalancePoller implements SmartLifecycle {
+class DerivativeBalancePoller implements LifecycleComponent {
     private final RestAssistant restAssistant;
     private final ExchangeEventPublisher eventPublisher;
     private final IoExecutor ioExecutor;
-    private final MainExecutor mainExecutor;
     private final PollScheduler pollScheduler;
-    private volatile boolean running = false;
 
-    public BybitDerivativeBalancePoller(
+    public DerivativeBalancePoller(
             WebsocketStatus websocketStatus,
             IoExecutor ioExecutor,
-            MainExecutor mainExecutor,
             RestAssistant restAssistant,
             ExchangeEventPublisher eventPublisher,
             TaskScheduler taskScheduler
     ) {
         this.ioExecutor = ioExecutor;
-        this.mainExecutor = mainExecutor;
         this.restAssistant = restAssistant;
         this.eventPublisher = eventPublisher;
         this.pollScheduler = new PollScheduler(websocketStatus, taskScheduler);
@@ -47,26 +43,31 @@ public class BybitDerivativeBalancePoller implements SmartLifecycle {
     void pollData() {
         fetchBalances()
                 .thenApply(response -> {
+                    Instant updateTime = Instant.ofEpochMilli(response.get("time").asLong());
                     Map<String, BigDecimal> totalBalances = new HashMap<>();
                     Map<String, BigDecimal> availableBalances = new HashMap<>();
-
-                    JsonNode list = response.get("result").get("list");
-                    if (list == null || list.isEmpty()) {
-                        return new BalanceSnapshotEvent(totalBalances, availableBalances, Instant.now());
-                    }
-
-                    JsonNode coins = list.get(0).get("coin");
-                    for (JsonNode entry : coins) {
+                    JsonNode coinList = response.get("result").get("list").get(0).get("coin");
+                    for (JsonNode entry : coinList) {
                         String asset = entry.get("coin").asString();
-                        totalBalances.put(asset, entry.get("walletBalance").asDecimal());
-                        availableBalances.put(asset, entry.get("availableToWithdraw").asDecimal());
+                        // availableToWithdraw 는  deprecated.
+                        // isolated margin: walletBalance - totalPositionIM - totalOrderIM - locked - bonus
+                        BigDecimal walletBalance = entry.get("walletBalance").asDecimal();
+                        BigDecimal locked = entry.get("locked").asDecimal();
+                        BigDecimal orderIM = entry.get("totalOrderIM").asDecimal();
+                        BigDecimal positionIM = entry.get("totalPositionIM").asDecimal();
+                        BigDecimal bonus = entry.get("bonus").asDecimal();
+
+                        totalBalances.put(asset, walletBalance);
+                        availableBalances.put(asset,
+                                walletBalance
+                                        .subtract(locked)
+                                        .subtract(orderIM)
+                                        .subtract(positionIM)
+                                        .subtract(bonus));
                     }
-                    return new BalanceSnapshotEvent(totalBalances, availableBalances, Instant.now());
+                    return new BalanceSnapshotEvent(totalBalances, availableBalances, updateTime);
                 })
-                .thenAcceptAsync(eventPublisher::publish, mainExecutor)
-                .exceptionally(ex -> {
-                    return null;
-                });
+                .thenAccept(eventPublisher::publish);
     }
 
     private CompletableFuture<JsonNode> fetchBalances() {
@@ -74,7 +75,7 @@ public class BybitDerivativeBalancePoller implements SmartLifecycle {
                 RestRequest.builder()
                         .method(HttpMethod.GET)
                         .authRequired(true)
-                        .pathUrl(BybitDerivativeApiSpec.ACCOUNTS_PATH_URL)
+                        .pathUrl(DerivativeApiSpec.ACCOUNTS_PATH_URL)
                         .params(Map.of("accountType", "UNIFIED"))
                         .build()
         ));
@@ -82,18 +83,11 @@ public class BybitDerivativeBalancePoller implements SmartLifecycle {
 
     @Override
     public void start() {
-        pollScheduler.start(() -> mainExecutor.execute(this::pollData));
-        running = true;
+        pollScheduler.start(this::pollData);
     }
 
     @Override
-    public void stop() {
+    public void shutdown() {
         pollScheduler.stop();
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }
