@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
-public final class DerivativeApiSpec {
+final class DerivativeApiSpec {
     public static final String ORDER_ID_PREFIX = "";
     public static final int MAX_ORDER_ID_LENGTH = 36;
 
