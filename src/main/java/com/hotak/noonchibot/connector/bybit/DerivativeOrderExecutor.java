@@ -16,7 +16,6 @@ import com.hotak.noonchibot.core.order.TimeInForce;
 import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;

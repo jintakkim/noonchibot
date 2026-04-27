@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 @Slf4j
-public class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
+class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
 
     private final RestAssistant restAssistant;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;

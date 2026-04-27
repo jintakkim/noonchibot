@@ -10,7 +10,7 @@ import org.springframework.scheduling.TaskScheduler;
 import java.time.Duration;
 import java.util.Map;
 
-public class BybitTradingRuleRegistry extends AbstractPollingTradingRuleRegistry {
+class BybitTradingRuleRegistry extends AbstractPollingTradingRuleRegistry {
     private final String requestPath;
 
     public BybitTradingRuleRegistry(

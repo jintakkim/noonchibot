@@ -19,7 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-public class SpotBalancePoller implements LifecycleComponent {
+class SpotBalancePoller implements LifecycleComponent {
     private final RestAssistant restAssistant;
     private final ExchangeEventPublisher eventPublisher;
     private final IoExecutor ioExecutor;

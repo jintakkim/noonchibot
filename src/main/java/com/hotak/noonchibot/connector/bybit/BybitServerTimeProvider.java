@@ -8,7 +8,7 @@ import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
 
 @RequiredArgsConstructor
-public class BybitServerTimeProvider implements ServerTimeProvider {
+class BybitServerTimeProvider implements ServerTimeProvider {
     private final RestAssistant restAssistant;
     private final String pathUrl;
 

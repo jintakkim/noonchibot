@@ -10,6 +10,7 @@ import com.hotak.noonchibot.core.datatype.TradeType;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
+import jakarta.transaction.NotSupportedException;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
@@ -117,18 +118,25 @@ class DerivativeOrderBookDataSource extends AbstractOrderBookDataSource {
     }
 
     @Override
-    protected OrderBookMessage.TradeMessage parseTradeMessage(JsonNode msg) {
+    protected List<OrderBookMessage.TradeMessage> parseTradeMessage(JsonNode msg) {
         JsonNode data = msg.get("data");
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(data.get("s").asString());
         TradeType tradeType = msg.get("m").asBoolean() ? TradeType.SELL : TradeType.BUY;
-        return new OrderBookMessage.TradeMessage(
-                Instant.ofEpochMilli(data.get("T").asLong()),
-                tradingPair,
-                data.get("a").asLong(),         // aggregate trade id
-                data.get("p").asDecimal(),         // price
-                data.get("q").asDecimal(),         // quantity
-                tradeType
+        return List.of(
+                    new OrderBookMessage.TradeMessage(
+                    Instant.ofEpochMilli(data.get("T").asLong()),
+                    tradingPair,
+                    data.get("a").asLong(),         // aggregate trade id
+                    data.get("p").asDecimal(),         // price
+                    data.get("q").asDecimal(),         // quantity
+                    tradeType
+            )
         );
+    }
+
+    @Override
+    protected OrderBookMessage.SnapshotMessage parseSnapshotMessage(JsonNode msg) {
+        throw new UnsupportedOperationException("Binance WebSocket streams only support diff and trade messages");
     }
 
     private void sendDiffRequest(MessageMethod method, Collection<String> tradingPairs) {

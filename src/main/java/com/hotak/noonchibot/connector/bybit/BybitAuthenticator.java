@@ -16,7 +16,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class BybitAuthenticator implements Authenticator {
+class BybitAuthenticator implements Authenticator {
     private final String apiKey;
     private final Mac mac;
     private final TimeSynchronizer timeSynchronizer;

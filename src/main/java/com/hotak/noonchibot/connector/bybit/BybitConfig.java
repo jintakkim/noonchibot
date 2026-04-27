@@ -19,7 +19,7 @@ import java.util.Map;
 @Configuration
 @Profile("!test")
 @EnableConfigurationProperties(BybitConfig.Properties.class)
-public class BybitConfig {
+class BybitConfig {
 
     @ConfigurationProperties(prefix = "bybit")
     public record Properties(

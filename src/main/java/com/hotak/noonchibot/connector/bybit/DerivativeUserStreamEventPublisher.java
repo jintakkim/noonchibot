@@ -27,7 +27,7 @@ import static java.lang.Thread.sleep;
 
 @Slf4j
 @RequiredArgsConstructor
-public class DerivativeUserStreamEventPublisher implements LifecycleComponent, WebsocketStatus {
+class DerivativeUserStreamEventPublisher implements LifecycleComponent, WebsocketStatus {
     private final WsAssistant wsAssistant;
     private final ObjectMapper objectMapper;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;

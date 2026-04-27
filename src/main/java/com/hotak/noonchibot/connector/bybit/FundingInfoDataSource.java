@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public class FundingInfoDataSource extends AbstractFundingInfoDataSource {
+class FundingInfoDataSource extends AbstractFundingInfoDataSource {
     @RequiredArgsConstructor
     @Getter
     private enum MessageMethod {

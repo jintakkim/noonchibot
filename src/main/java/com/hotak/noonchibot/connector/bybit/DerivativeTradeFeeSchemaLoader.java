@@ -6,7 +6,6 @@ import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
@@ -15,16 +14,15 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
-public class DerivativeTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
+class DerivativeTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
     private final RestAssistant restAssistant;
 
     public DerivativeTradeFeeSchemaLoader(
             IoExecutor ioExecutor,
-            MainExecutor mainExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant
     ) {
-        super(ioExecutor, mainExecutor, tradingPairSymbolRegistry);
+        super(ioExecutor, tradingPairSymbolRegistry);
         this.restAssistant = restAssistant;
     }
 
