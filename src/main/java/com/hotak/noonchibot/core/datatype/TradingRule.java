@@ -5,6 +5,18 @@ import com.hotak.noonchibot.core.order.OrderType;
 import java.math.BigDecimal;
 import java.util.Set;
 
+/**
+ * @param tradingPair
+ * @param minOrderSize
+ * @param maxOrderSize nullable if unlimited
+ * @param minPriceIncrement nullable 동적으로 가격에 따라 바뀌는 거래소에 경우
+ * @param minBaseAmountIncrement
+ * @param minNotionalSize
+ * @param maxPriceSignificantDigits
+ * @param supportedOrderTypes
+ * @param buyOrderCollateralToken
+ * @param sellOrderCollateralToken
+ */
 public record TradingRule(
         String tradingPair,
         // 최소 주문 수량 ex) BTC/USDT: 0.0001 BTC

@@ -102,7 +102,7 @@ public class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
         };
     }
 
-    protected OrderBookMessage.TradeMessage parseTradeMessage(JsonNode msg) {
+    protected List<OrderBookMessage.TradeMessage> parseTradeMessage(JsonNode msg) {
         String exchangeSymbol = msg.get("s").asString();
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
         Instant eventTime = Instant.ofEpochMilli(msg.get("E").asLong());
@@ -111,7 +111,12 @@ public class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
         long tradeId = msg.get("t").asLong();
         BigDecimal price = msg.get("p").asDecimal();
         BigDecimal amount = msg.get("q").asDecimal();
-        return new OrderBookMessage.TradeMessage(eventTime, tradingPair, tradeId, price, amount, tradeType);
+        return List.of(new OrderBookMessage.TradeMessage(eventTime, tradingPair, tradeId, price, amount, tradeType));
+    }
+
+    @Override
+    protected OrderBookMessage.SnapshotMessage parseSnapshotMessage(JsonNode msg) {
+        throw new UnsupportedOperationException("Binance WebSocket streams only support diff and trade messages");
     }
 
     protected OrderBookMessage.DiffMessage parseDiffMessage(JsonNode msg) {

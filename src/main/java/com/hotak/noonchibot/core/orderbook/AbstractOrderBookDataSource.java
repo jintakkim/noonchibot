@@ -10,6 +10,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -110,8 +111,7 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
             return;
         }
         if(type == OrderBookMessage.Type.TRADE) {
-            OrderBookMessage.TradeMessage tradeMessage = parseTradeMessage(msg);
-            castMessageToStream(tradeMessage.getTradingPair(), tradeMessage);
+            parseTradeMessage(msg).forEach(message -> castMessageToStream(message.getTradingPair(), message));
         }
     }
 
@@ -126,9 +126,12 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
     protected abstract void sendUnsubscribe(String tradingPair);
     protected abstract boolean isErrorMessage(JsonNode msg);
     protected abstract boolean isAckMessage(JsonNode msg);
+
+    // for ws
     protected abstract OrderBookMessage.Type parseMessageType(JsonNode msg);
     protected abstract OrderBookMessage.DiffMessage parseDiffMessage(JsonNode msg);
-    protected abstract OrderBookMessage.TradeMessage parseTradeMessage(JsonNode msg);
+    protected abstract List<OrderBookMessage.TradeMessage> parseTradeMessage(JsonNode msg);
+    protected abstract OrderBookMessage.SnapshotMessage parseSnapshotMessage(JsonNode msg);
 
     @Override
     protected void onConnected() {

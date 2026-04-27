@@ -91,7 +91,7 @@ class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
     }
 
     @Override
-    protected OrderBookMessage.TradeMessage parseTradeMessage(JsonNode msg) {
+    protected List<OrderBookMessage.TradeMessage> parseTradeMessage(JsonNode msg) {
         String topic = msg.get("topic").asString();
         String exchangeSymbol = topic.substring(topic.lastIndexOf('.') + 1);
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
@@ -103,7 +103,12 @@ class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
         BigDecimal amount = trade.get("v").asDecimal();
         long tradeId = trade.get("T").asLong();
 
-        return new OrderBookMessage.TradeMessage(eventTime, tradingPair, tradeId, price, amount, tradeType);
+        return List.of(new OrderBookMessage.TradeMessage(eventTime, tradingPair, tradeId, price, amount, tradeType));
+    }
+
+    @Override
+    protected OrderBookMessage.SnapshotMessage parseSnapshotMessage(JsonNode msg) {
+        throw new UnsupportedOperationException("Bybit WebSocket streams only support diff and trade messages");
     }
 
     @Override
