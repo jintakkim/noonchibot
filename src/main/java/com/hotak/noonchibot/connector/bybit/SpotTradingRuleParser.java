@@ -7,7 +7,6 @@ import com.hotak.noonchibot.core.order.OrderType;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 
-import java.math.BigDecimal;
 import java.util.*;
 
 @RequiredArgsConstructor

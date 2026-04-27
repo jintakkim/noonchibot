@@ -15,7 +15,6 @@ import com.hotak.noonchibot.core.order.OrderHistoryRepository;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
-import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
@@ -65,7 +64,9 @@ class SpotExchangeAdapterFactory {
         AccountBalanceTracker accountBalanceTracker = new AccountBalanceTracker(eventBus);
         lifeCycleRegistry.register(accountBalanceTracker);
 
-        TradeFeeSchemaLoader feeSchemaLoader = new SpotTradeFeeSchemaLoader(ioExecutor, mainExecutor, tradingPairSymbolRegistry, restAssistant);
+        SpotTradeFeeSchemaLoader feeSchemaLoader = new SpotTradeFeeSchemaLoader(ioExecutor, tradingPairSymbolRegistry, restAssistant);
+        lifeCycleRegistry.register(feeSchemaLoader);
+
         SpotUserStreamEventPublisher userStreamEventPublisher = new SpotUserStreamEventPublisher(
                 wsAssistant,
                 objectMapper,

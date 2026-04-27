@@ -99,11 +99,6 @@ final class DerivativeApiSpec {
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 20)
                     ))
-//            RateLimit.endpoint(COMMISSION_RATE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
-//                    List.of(
-//                            new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 20),
-//                            new RateLimit.LinkedLimitWeightPair("RAW_REQUESTS", 1)
-//                    ))
     );
 
     public static final Duration TRADING_RULE_UPDATE_INTERVAL = Duration.ofHours(1);

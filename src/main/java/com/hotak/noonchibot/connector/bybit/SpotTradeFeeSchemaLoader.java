@@ -5,7 +5,6 @@ import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -21,11 +20,10 @@ class SpotTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
 
     public SpotTradeFeeSchemaLoader(
             IoExecutor ioExecutor,
-            MainExecutor mainExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant
     ) {
-        super(ioExecutor, mainExecutor, tradingPairSymbolRegistry);
+        super(ioExecutor, tradingPairSymbolRegistry);
         this.restAssistant = restAssistant;
     }
 

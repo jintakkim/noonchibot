@@ -65,7 +65,9 @@ class SpotExchangeAdapterFactory {
             AccountBalanceTracker accountBalanceTracker = new AccountBalanceTracker(eventBus);
             lifeCycleRegistry.register(accountBalanceTracker);
 
-            TradeFeeSchemaLoader feeSchemaLoader = new SpotTradeFeeSchemaLoader(ioExecutor, mainExecutor, tradingPairSymbolRegistry, restAssistant);
+            SpotTradeFeeSchemaLoader feeSchemaLoader = new SpotTradeFeeSchemaLoader(ioExecutor, tradingPairSymbolRegistry, restAssistant);
+            lifeCycleRegistry.register(feeSchemaLoader);
+
             SpotUserStreamEventPublisher userStreamEventPublisher = new SpotUserStreamEventPublisher(
                     wsAssistant,
                     objectMapper,

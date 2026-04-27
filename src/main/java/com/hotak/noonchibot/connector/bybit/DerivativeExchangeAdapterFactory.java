@@ -73,7 +73,9 @@ class DerivativeExchangeAdapterFactory {
         AccountBalanceTracker accountBalanceTracker = new AccountBalanceTracker(eventBus);
         lifeCycleRegistry.register(accountBalanceTracker);
 
-        TradeFeeSchemaLoader feeSchemaLoader = new DerivativeTradeFeeSchemaLoader(ioExecutor, mainExecutor, tradingPairSymbolRegistry, restAssistant);
+        DerivativeTradeFeeSchemaLoader feeSchemaLoader = new DerivativeTradeFeeSchemaLoader(ioExecutor, tradingPairSymbolRegistry, restAssistant);
+        lifeCycleRegistry.register(feeSchemaLoader);
+
         DerivativeUserStreamEventPublisher userStreamEventPublisher = new DerivativeUserStreamEventPublisher(
                 wsAssistant,
                 objectMapper,

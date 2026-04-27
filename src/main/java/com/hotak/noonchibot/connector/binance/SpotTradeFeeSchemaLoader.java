@@ -5,7 +5,6 @@ import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -21,11 +20,10 @@ class SpotTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
 
     public SpotTradeFeeSchemaLoader(
             IoExecutor ioExecutor,
-            MainExecutor mainExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant
             ) {
-        super(ioExecutor, mainExecutor, tradingPairSymbolRegistry);
+        super(ioExecutor, tradingPairSymbolRegistry);
         this.restAssistant = restAssistant;
     }
 
@@ -46,19 +44,15 @@ class SpotTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
 
         BigDecimal makerRate = sumRates(standard.get("maker"), standard.get("buyer"));
         BigDecimal takerRate = sumRates(standard.get("taker"), standard.get("seller"));
-
         boolean bnbDiscountEnabled = discount.get("enabledForAccount").asBoolean()
                 && discount.get("enabledForSymbol").asBoolean();
-
         String feeToken = bnbDiscountEnabled ? "BNB" : null;
-
         if (bnbDiscountEnabled) {
             // Jackson JsonNode에서는 asString(), asDecimal() 대신 asText()를 통해 파싱하는 것이 안전합니다.
             BigDecimal discountRate = new BigDecimal(discount.get("discount").asText());
             makerRate = makerRate.multiply(discountRate);
             takerRate = takerRate.multiply(discountRate);
         }
-
         return new TradeFeeSchema(
                 feeToken,
                 makerRate,
