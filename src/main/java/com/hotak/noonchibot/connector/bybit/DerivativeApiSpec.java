@@ -110,22 +110,23 @@ final class DerivativeApiSpec {
                             new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
                             new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
                     )),
-            RateLimit.endpoint(POSITION_MODE_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
+            RateLimit.endpoint(POSITION_MODE_PATH_URL, Duration.ofSeconds(1), 10, DEFAULT_WEIGHT,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
                             new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
                     )),
-            RateLimit.endpoint(LEVERAGE_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
+            RateLimit.endpoint(LEVERAGE_PATH_URL, Duration.ofSeconds(1), 10, DEFAULT_WEIGHT,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
                             new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
                     )),
+            // Bapi Limit Rate가 존재하지 않는다
             RateLimit.endpoint(MARGIN_MODE_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
                             new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
                     )),
-            RateLimit.endpoint(ACCOUNT_INFO_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
+            RateLimit.endpoint(ACCOUNT_INFO_PATH_URL, Duration.ofSeconds(1), 50, DEFAULT_WEIGHT,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
                             new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
