@@ -17,7 +17,6 @@ public class OrderBook {
     private final NavigableMap<BigDecimal, OrderBookEntry> askBook = new TreeMap<>();
     private BigDecimal bestBid;
     private BigDecimal bestAsk;
-    @Setter
     private BigDecimal lastTradePrice;
     private Instant lastTradeTime;
 

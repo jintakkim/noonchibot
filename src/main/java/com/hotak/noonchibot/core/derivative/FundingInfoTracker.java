@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.derivative;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
@@ -9,7 +10,6 @@ import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessageStream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -20,16 +20,14 @@ import java.util.concurrent.Future;
 
 @Slf4j
 @RequiredArgsConstructor
-public class FundingInfoTracker implements SmartLifecycle {
+public class FundingInfoTracker implements LifecycleComponent {
     private final Map<String, FundingInfo> fundingInfos = new HashMap<>();
-    private final Duration defaultFundingInterval;
     private final String fundingCoin;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final FundingInfoDataSource fundingInfoDataSource;
     private final IoExecutor ioExecutor;
     private final MainExecutor mainExecutor;
     private FundingInfoMessageStream stream;
-    private volatile boolean running = false;
     private volatile Future<?> processTask;
 
     public FundingInfo getFundingInfo(String tradingPair) {
@@ -70,27 +68,20 @@ public class FundingInfoTracker implements SmartLifecycle {
                 }
             }
         });
-        running = true;
     }
 
     @VisibleForTesting
     void registerTradingPairs(Set<String> tradingPairs) {
-        tradingPairSymbolRegistry.getAllTradingPairs()
+        tradingPairs
                 .forEach(tradingPair -> {
-                    FundingInfo info = new FundingInfo(tradingPair, fundingCoin, defaultFundingInterval);
+                    FundingInfo info = new FundingInfo(tradingPair, fundingCoin, null);
                     fundingInfos.put(tradingPair, info);
                 });
     }
 
     @Override
-    public void stop() {
-        running = false;
+    public void shutdown() {
         fundingInfoDataSource.unsubscribe(stream);
         if(processTask != null) processTask.cancel(true);
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }

@@ -10,12 +10,13 @@ import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.balance.AccountBalanceTracker;
+import com.hotak.noonchibot.core.derivative.DerivativeInfoTracker;
+import com.hotak.noonchibot.core.derivative.FundingInfoTracker;
 import com.hotak.noonchibot.core.event.ExchangeEventBus;
 import com.hotak.noonchibot.core.order.OrderHistoryRepository;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
-import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
@@ -25,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 
 class DerivativeExchangeAdapterFactory {
-    public static DerivativeExchangeAdapter create(
+    public static DerivativeExchangeConnector create(
             BinanceConfig.Properties props,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor,
@@ -144,7 +145,39 @@ class DerivativeExchangeAdapterFactory {
         );
         lifeCycleRegistry.register(tradePoller);
 
-        return new DerivativeExchangeAdapter(
+        BinanceFundingInfoDataSource fundingInfoDataSource = new BinanceFundingInfoDataSource(
+                wsAssistant,
+                DerivativeApiSpec.WSS_PUBLIC_URL,
+                objectMapper,
+                ioExecutor,
+                tradingPairSymbolRegistry,
+                restAssistant,
+                taskScheduler
+        );
+        lifeCycleRegistry.register(fundingInfoDataSource);
+
+        FundingInfoTracker fundingInfoTracker = new FundingInfoTracker(
+                "USDT",
+                tradingPairSymbolRegistry,
+                fundingInfoDataSource,
+                ioExecutor,
+                mainExecutor
+        );
+        lifeCycleRegistry.register(fundingInfoTracker);
+
+        DerivativeInfoTracker derivativeInfoTracker = new DerivativeInfoTracker(eventBus);
+        lifeCycleRegistry.register(derivativeInfoTracker);
+
+        BinanceDerivativeAccountConfigurer derivativeAccountConfigurer = new BinanceDerivativeAccountConfigurer(
+                derivativeInfoTracker,
+                eventBus,
+                restAssistant,
+                tradingPairSymbolRegistry,
+                ioExecutor
+        );
+
+
+        return new DerivativeExchangeConnector(
                 DerivativeApiSpec.PLATFORM_NAME,
                 orderTracker,
                 orderBookTracker,
@@ -152,7 +185,9 @@ class DerivativeExchangeAdapterFactory {
                 feeSchemaLoader,
                 binanceTradingRuleRegistry,
                 orderExecutor,
-                lifeCycleRegistry
+                lifeCycleRegistry,
+                fundingInfoTracker,
+                derivativeAccountConfigurer
         );
     }
 }

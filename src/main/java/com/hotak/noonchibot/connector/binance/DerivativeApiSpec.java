@@ -30,6 +30,10 @@ final class DerivativeApiSpec {
     public static final String BALANCE_PATH_URL = "/v2/balance";
     public static final String TRADE_PATH_URL = "/v1/userTrades";
     public static final String COMMISSION_RATE_PATH_URL = "/v1/commissionRate";
+    public static final String FUNDING_INFO_PATH_URL = "/v1/fundingInfo";
+    public static final String POSITION_MODE_PATH_URL = "/fapi/v1/positionSide/dual";
+    public static final String LEVERAGE_PATH_URL = "/fapi/v1/leverage";
+    public static final String MARGIN_TYPE_PATH_URL = "/fapi/v1/marginType";
 
 
     public static final int MAX_REQUEST = 2400;
@@ -98,6 +102,22 @@ final class DerivativeApiSpec {
             RateLimit.endpoint(COMMISSION_RATE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 20)
+                    )),
+            RateLimit.endpoint(FUNDING_INFO_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 0)
+                    )),
+            RateLimit.endpoint(POSITION_MODE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 1)
+                    )),
+            RateLimit.endpoint(LEVERAGE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 1)
+                    )),
+            RateLimit.endpoint(MARGIN_TYPE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 1)
                     ))
     );
 
@@ -107,4 +127,9 @@ final class DerivativeApiSpec {
     public static final int TIMESTAMP_ERROR_CODE = -1021;
 
     public static final int ORDER_NOT_EXIST_ERROR_CODE = -2013;
+
+    public static final int NO_NEED_TO_CHANGE_POSITION_SIDE = -4059;
+    public static final int POSITION_SIDE_CHANGE_EXISTS_OPEN_ORDERS = -4067;
+    public static final int POSITION_SIDE_CHANGE_EXISTS_QUANTITY = -4068;
+    public static final int NO_NEED_TO_CHANGE_MARGIN_TYPE = -4046;
 }

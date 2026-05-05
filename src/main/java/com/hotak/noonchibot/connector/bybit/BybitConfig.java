@@ -37,7 +37,7 @@ class BybitConfig {
     }
 
     @Bean
-    public ExchangeAdapter bybitSpotExchangeAdapter(
+    public ExchangeConnector bybitSpotExchangeAdapter(
             Properties properties,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor,
@@ -60,7 +60,7 @@ class BybitConfig {
     }
 
     @Bean
-    public DerivativeExchangeAdapter bybitDerivativeExchangeAdapter(
+    public DerivativeExchangeConnector bybitDerivativeExchangeAdapter(
             Properties properties,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor,

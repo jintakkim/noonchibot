@@ -7,10 +7,7 @@ import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSourceTest;
-import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
-import com.hotak.noonchibot.core.orderbook.OrderBook;
-import com.hotak.noonchibot.core.orderbook.OrderBookMessageStream;
+import com.hotak.noonchibot.core.orderbook.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -30,7 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-public class DerivativeOrderBookDataSourceTest extends AbstractOrderBookDataSourceTest {
+public class DerivativeOrderBookDataSourceTestTest extends DiffSupportingOrderBookDataSourceTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(
@@ -38,6 +35,10 @@ public class DerivativeOrderBookDataSourceTest extends AbstractOrderBookDataSour
     );
 
     private RestAssistant restAssistant;
+
+    public DerivativeOrderBookDataSourceTestTest() {
+        super("USDT");
+    }
 
     @Override
     protected AbstractOrderBookDataSource createDataSource(WsAssistant wsAssistant, IoExecutor ioExecutor, TaskScheduler taskScheduler) {

@@ -37,7 +37,7 @@ class BinanceConfig {
     }
 
     @Bean
-    public ExchangeAdapter binanceSpotExchangeAdapter(
+    public ExchangeConnector binanceSpotExchangeConnector(
             Properties properties,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor,
@@ -60,7 +60,7 @@ class BinanceConfig {
     }
 
     @Bean
-    public DerivativeExchangeAdapter binanceDerivativeExchangeAdapter(
+    public DerivativeExchangeConnector binanceDerivativeExchangeConnector(
             Properties properties,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor,

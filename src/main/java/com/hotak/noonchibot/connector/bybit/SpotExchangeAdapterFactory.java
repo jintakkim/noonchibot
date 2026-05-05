@@ -24,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 
 class SpotExchangeAdapterFactory {
-    public static ExchangeAdapter create(
+    public static ExchangeConnector create(
             BybitConfig.Properties props,
             MainExecutor mainExecutor,
             IoExecutor ioExecutor,
@@ -133,7 +133,7 @@ class SpotExchangeAdapterFactory {
         );
         lifeCycleRegistry.register(tradePoller);
 
-        return new ExchangeAdapter(
+        return new ExchangeConnector(
                 SpotApiSpec.PLATFORM_NAME,
                 orderTracker,
                 orderBookTracker,

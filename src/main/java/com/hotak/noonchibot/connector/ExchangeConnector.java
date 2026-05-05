@@ -12,7 +12,7 @@ import org.springframework.context.SmartLifecycle;
 
 @Getter
 @RequiredArgsConstructor
-public class ExchangeAdapter implements SmartLifecycle {
+public class ExchangeConnector implements SmartLifecycle {
     private final String platformName;
     private final OrderTracker orderTracker;
     private final OrderBookTracker orderBookTracker;

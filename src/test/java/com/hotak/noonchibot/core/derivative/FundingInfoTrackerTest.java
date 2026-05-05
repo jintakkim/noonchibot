@@ -38,7 +38,6 @@ public class FundingInfoTrackerTest {
         ioExecutor = mock(IoExecutor.class);
         mainExecutor = mock(MainExecutor.class);
         tracker = new FundingInfoTracker(
-                DEFAULT_INTERVAL,
                 DEFAULT_FUNDING_COIN,
                 new SimpleTradingPairSymbolRegistry(DEFAULT_SUBLIST),
                 dataSource,
@@ -204,7 +203,7 @@ public class FundingInfoTrackerTest {
             tracker.start();
 
             // when
-            tracker.stop();
+            tracker.shutdown();
 
             // then
             verify(dataSource).unsubscribe(mockStream);
@@ -220,7 +219,7 @@ public class FundingInfoTrackerTest {
             tracker.start();
 
             // when
-            tracker.stop();
+            tracker.shutdown();
 
             // then
             verify(mockTask).cancel(true);

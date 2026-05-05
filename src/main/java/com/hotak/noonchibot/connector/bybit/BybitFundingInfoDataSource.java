@@ -10,17 +10,18 @@ import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSource;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
-class FundingInfoDataSource extends AbstractFundingInfoDataSource {
+@Slf4j
+public class BybitFundingInfoDataSource extends AbstractFundingInfoDataSource {
     @RequiredArgsConstructor
     @Getter
     private enum MessageMethod {
@@ -28,11 +29,12 @@ class FundingInfoDataSource extends AbstractFundingInfoDataSource {
         UNSUBSCRIBE("unsubscribe");
         private final String apiValue;
     }
+    private static final String CATEGORY_LINEAR = "linear";
 
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
 
-    public FundingInfoDataSource(
+    public BybitFundingInfoDataSource(
             WsAssistant wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
@@ -68,17 +70,31 @@ class FundingInfoDataSource extends AbstractFundingInfoDataSource {
     @Override
     protected FundingInfoMessage parseFundingInfoMessage(JsonNode msg) {
         JsonNode data = msg.get("data");
-        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(
-                data.get("symbol").asString()
-        );
-
+        String type = msg.get("type").asString();
+        String exchangeSymbol = data.get("symbol").asString();
+        String tradingPair = tradingPairSymbolRegistry
+                .convertExchangeSymbolToTradingPair(exchangeSymbol);
+        Instant ts =  Instant.ofEpochMilli(msg.get("ts").asLong());
+        BigDecimal markPrice = null, fundingRate = null;
+        Instant nextFundingTime = null;
+        Duration fundingIntervalHour = null;
+        if(data.has("markPrice")) markPrice = data.get("markPrice").asDecimal();
+        if(data.has("fundingRate")) fundingRate = data.get("fundingRate").asDecimal();
+        if(data.has("nextFundingTime")) nextFundingTime = Instant.ofEpochMilli(data.get("nextFundingTime").asLong());
+        if(data.has("fundingIntervalHour")) fundingIntervalHour =  Duration.ofHours(Long.parseLong(data.get("fundingIntervalHour").asString()));
+        if(type.equals("snapshot")) {
+            if(markPrice == null || fundingRate == null || nextFundingTime == null || fundingIntervalHour == null) {
+                log.warn("Bybit ticker snapshot is missing required fields: tradingPair={}, markPrice={}, fundingRate={}, nextFundingTime={}, fundingInterval={}, raw={}",
+                        tradingPair, markPrice, fundingRate, nextFundingTime, fundingIntervalHour, msg);
+            }
+        }
         return new FundingInfoMessage(
                 tradingPair,
-                Instant.ofEpochMilli(msg.get("ts").asLong()),
-                data.get("markPrice").asDecimal(),
-                data.get("fundingRate").asDecimal(),
-                Instant.ofEpochMilli(data.get("nextFundingTime").asLong()),
-                null
+                ts,
+                markPrice,
+                fundingRate,
+                nextFundingTime,
+                fundingIntervalHour
         );
     }
 
@@ -91,7 +107,7 @@ class FundingInfoDataSource extends AbstractFundingInfoDataSource {
                         .method(HttpMethod.GET)
                         .pathUrl(DerivativeApiSpec.TICKER_PRICE_CHANGE_PATH_URL)
                         .params(Map.of(
-                                "category", "linear",
+                                "category", CATEGORY_LINEAR,
                                 "symbol", symbol
                         ))
                         .build()
@@ -105,7 +121,7 @@ class FundingInfoDataSource extends AbstractFundingInfoDataSource {
                 ticker.get("markPrice").asDecimal(),
                 ticker.get("fundingRate").asDecimal(),
                 Instant.ofEpochMilli(ticker.get("nextFundingTime").asLong()),
-                null
+                Duration.ofHours(Long.parseLong(ticker.get("fundingIntervalHour").asString()))
         );
     }
 
@@ -121,4 +137,3 @@ class FundingInfoDataSource extends AbstractFundingInfoDataSource {
         ), false));
     }
 }
-

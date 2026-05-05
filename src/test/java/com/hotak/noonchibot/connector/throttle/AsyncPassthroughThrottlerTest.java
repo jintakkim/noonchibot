@@ -18,7 +18,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
-public class AsyncThrottlerTest {
+public class AsyncPassthroughThrottlerTest {
     private AsyncThrottlerImpl throttler;
     private TestClock clock;
     private final TaskExecutor executor = new TaskExecutorAdapter(Executors.newVirtualThreadPerTaskExecutor());

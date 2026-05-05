@@ -1,9 +1,9 @@
 package com.hotak.noonchibot.core.derivative;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.core.event.*;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.SmartLifecycle;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -14,14 +14,12 @@ import java.util.Optional;
  * funding-Info, leverage, position에 대한 정보를 관리
  */
 @RequiredArgsConstructor
-public class DerivativeInfoTracker implements SmartLifecycle {
+public class DerivativeInfoTracker implements LifecycleComponent {
     private final ExchangeEventSubscriber eventSubscriber;
     private PositionMode positionMode = null;
     private final Map<String, Integer> leverages = new HashMap<>();
     private final Map<String, Position> positions = new HashMap<>();
     private final Map<String, MarginMode> marginModes = new HashMap<>();
-
-    private volatile boolean running = false;
 
     private final EventListener<PositionUpdateEvent> positionUpdatedListener = this::onPositionUpdated;
     private final EventListener<LeverageChangedEvent> leverageChangedListener = this::onLeverageChanged;
@@ -95,21 +93,13 @@ public class DerivativeInfoTracker implements SmartLifecycle {
         eventSubscriber.subscribe(LeverageChangedEvent.class, leverageChangedListener);
         eventSubscriber.subscribe(MarginModeChangedEvent.class, marginModeChangedListener);
         eventSubscriber.subscribe(PositionModeChangedEvent.class, positionModeChangedListener);
-        running = true;
-
     }
 
     @Override
-    public void stop() {
+    public void shutdown() {
         eventSubscriber.unsubscribe(PositionUpdateEvent.class, positionUpdatedListener);
         eventSubscriber.unsubscribe(LeverageChangedEvent.class, leverageChangedListener);
         eventSubscriber.unsubscribe(MarginModeChangedEvent.class, marginModeChangedListener);
         eventSubscriber.unsubscribe(PositionModeChangedEvent.class, positionModeChangedListener);
-        running = false;
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
     }
 }

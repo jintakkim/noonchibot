@@ -6,26 +6,34 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 public abstract class AbstractOrderBookDataSourceTest {
     protected static final ObjectMapper objectMapper = new ObjectMapper();
 
-    private BlockingQueue<WsResponse> queue;
+    protected BlockingQueue<WsResponse> queue;
+
+    protected AbstractOrderBookDataSource dataSource;
+
+    protected final String quoteAsset;
+    private WsAssistant mockWsAssistant;
+    protected WsConnection mockWsConnection;
+    private IoExecutor ioExecutor;
+    protected TaskScheduler mockTaskScheduler; // 하위 클래스에서 verify 할 수 있도록 protected로 열어둠
+
+    public AbstractOrderBookDataSourceTest(String quoteAsset) {
+        this.quoteAsset = quoteAsset;
+    }
 
     protected abstract AbstractOrderBookDataSource createDataSource(
             WsAssistant wsAssistant,
@@ -34,14 +42,7 @@ public abstract class AbstractOrderBookDataSourceTest {
     );
     protected abstract WsResponse createAckResponse();
     protected abstract JsonNode createErrorNode(String errorMsg);
-    protected abstract JsonNode createDiffMessageNode(String tradingPair);
     protected abstract JsonNode createTradeMessageNode(String tradingPair);
-
-    protected AbstractOrderBookDataSource dataSource;
-    private WsAssistant mockWsAssistant;
-    protected WsConnection mockWsConnection;
-    private IoExecutor ioExecutor;
-    protected TaskScheduler mockTaskScheduler; // 하위 클래스에서 verify 할 수 있도록 protected로 열어둠
 
     @BeforeEach
     void setUp() throws InterruptedException {
@@ -63,12 +64,9 @@ public abstract class AbstractOrderBookDataSourceTest {
     @Test
     @DisplayName("연결(또는 재연결) 시 기존에 구독 중이던 페어들이 있다면 다시 구독 요청을 보낸다")
     void onConnectedResubscribesExistingStreams() {
-        dataSource.subscribeOrderBookStream("BTC-USDT");
-        dataSource.subscribeOrderBookStream("ETH-USDT");
-        // 이전 호출 기록 초기화 (순수하게 onConnected의 동작만 검증하기 위해)
-        Mockito.clearInvocations(mockWsConnection);
+        dataSource.subscribeOrderBookStream(createTradingPair("BTC"));
+        dataSource.subscribeOrderBookStream(createTradingPair("ETH"));
         dataSource.onConnected();
-        // sendSubscribe(Set<String>)에 의해 메시지가 전송되었는지 검증
         verify(mockWsConnection, atLeastOnce()).send(any());
     }
 
@@ -84,24 +82,17 @@ public abstract class AbstractOrderBookDataSourceTest {
     }
 
     @Test
-    @DisplayName("DIFF 메시지 수신 시 파싱되어 해당 페어의 스트림으로 정상 전달(캐스팅)된다")
-    void processMessageCastsDiffToStream() throws InterruptedException {
-        OrderBookMessageStream stream = dataSource.subscribeOrderBookStream("BTC-USDT");
-        JsonNode diffNode = createDiffMessageNode("BTC-USDT");
-        queue.add(new WsResponse(diffNode.toString(), WsResponse.MessageType.TEXT));
-        dataSource.processMessage();
-        OrderBookMessage message = stream.take();
-        assertThat(message).isInstanceOf(OrderBookMessage.DiffMessage.class);
-    }
-
-    @Test
     @DisplayName("TRADE 메시지 수신 시 파싱되어 해당 페어의 스트림으로 정상 전달(캐스팅)된다")
     void processMessageCastsTradeToStream() throws InterruptedException {
-        OrderBookMessageStream stream = dataSource.subscribeOrderBookStream("ETH-USDT");
-        JsonNode tradeNode = createTradeMessageNode("ETH-USDT");
+        OrderBookMessageStream stream = dataSource.subscribeOrderBookStream(createTradingPair("ETH"));
+        JsonNode tradeNode = createTradeMessageNode(createTradingPair("ETH"));
         queue.add(new WsResponse(tradeNode.toString(), WsResponse.MessageType.TEXT));
         dataSource.processMessage();
         OrderBookMessage message = stream.take();
         assertThat(message).isInstanceOf(OrderBookMessage.TradeMessage.class);
+    }
+
+    protected String createTradingPair(String baseAsset) {
+        return baseAsset + "-" + quoteAsset;
     }
 }

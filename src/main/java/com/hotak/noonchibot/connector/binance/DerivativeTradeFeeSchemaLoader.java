@@ -12,7 +12,7 @@ import tools.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 
-public class DerivativeTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
+class DerivativeTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
     private final RestAssistant restAssistant;
 
     public DerivativeTradeFeeSchemaLoader(

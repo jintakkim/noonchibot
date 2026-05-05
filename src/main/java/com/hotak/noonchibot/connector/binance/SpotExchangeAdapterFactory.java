@@ -15,7 +15,6 @@ import com.hotak.noonchibot.core.order.OrderHistoryRepository;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
-import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
@@ -25,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 
 class SpotExchangeAdapterFactory {
-        public static ExchangeAdapter create(
+        public static ExchangeConnector create(
                 BinanceConfig.Properties props,
                 MainExecutor mainExecutor,
                 IoExecutor ioExecutor,
@@ -136,7 +135,7 @@ class SpotExchangeAdapterFactory {
             );
             lifeCycleRegistry.register(tradePoller);
 
-            return new ExchangeAdapter(
+            return new ExchangeConnector(
                     SpotApiSpec.PLATFORM_NAME,
                     orderTracker,
                     orderBookTracker,

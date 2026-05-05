@@ -15,6 +15,8 @@ final class DerivativeApiSpec {
     public static final String ORDER_ID_PREFIX = "";
     public static final int MAX_ORDER_ID_LENGTH = 36;
 
+    public static final String CATEGORY_LINEAR = "linear";
+
     public static final String PLATFORM_NAME = "bybitFuture";
 
     public static final String REST_BASE_URL = "https://api.bybit.com";
@@ -22,6 +24,7 @@ final class DerivativeApiSpec {
     public static final String WSS_LINEAR_URL = "wss://stream.bybit.com/v5/public/linear";
     public static final String WSS_API_URL = "wss://stream.bybit.com/v5/private";
 
+    public static final String ACCOUNT_INFO_PATH_URL = "/v5/account/info";
     public static final String TICKER_PRICE_CHANGE_PATH_URL = "/v5/market/tickers";
     public static final String SNAPSHOT_PATH_URL = "/v5/market/orderbook";
     public static final String SERVER_TIME_PATH_URL = "/v5/market/time";
@@ -32,6 +35,9 @@ final class DerivativeApiSpec {
     public static final String ACCOUNTS_PATH_URL = "/v5/account/wallet-balance";
     public static final String MY_TRADES_PATH_URL = "/v5/execution/list";
     public static final String COMMISSION_RATE_PATH_URL = "/v5/account/fee-rate";
+    public static final String POSITION_MODE_PATH_URL = "/v5/position/switch-mode";
+    public static final String LEVERAGE_PATH_URL = "/v5/position/set-leverage";
+    public static final String MARGIN_MODE_PATH_URL = "/v5/account/set-margin-mode";
 
     public static final Map<TimeInForce, String> TIME_IN_FORCE_API_VALUE = Map.of(
             TimeInForce.FOK, "FOK",
@@ -103,12 +109,36 @@ final class DerivativeApiSpec {
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
                             new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
+                    )),
+            RateLimit.endpoint(POSITION_MODE_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
+                            new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
+                    )),
+            RateLimit.endpoint(LEVERAGE_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
+                            new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
+                    )),
+            RateLimit.endpoint(MARGIN_MODE_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
+                            new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
+                    )),
+            RateLimit.endpoint(ACCOUNT_INFO_PATH_URL, Duration.ofSeconds(1), UNLIMITED, DEFAULT_WEIGHT,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("IP_TOTAL", 1),
+                            new RateLimit.LinkedLimitWeightPair("UID_FEE_RATE", 1)
                     ))
     );
 
     public static final int ORDER_NOT_EXIST_ERROR_CODE = 110001;
     public static final int UNKNOWN_ORDER_ERROR_CODE = 110007;
     public static final int TIMESTAMP_ERROR_CODE = 10002;
+    public static final int SUCCESS_CODE = 0;
+    public static final int POSITION_MODE_HAS_NOT_BEEN_MODIFIED_CODE = 10001;
+    public static final int SET_LEVERAGE_HAS_NOT_BEEN_MODIFIED_CODE = 110043;
+    public static final int MARGIN_MODE_HAS_NOT_BEEN_MODIFIED = 110026;
 
     public static final Duration TRADING_RULE_UPDATE_INTERVAL = Duration.ofHours(1);
 }

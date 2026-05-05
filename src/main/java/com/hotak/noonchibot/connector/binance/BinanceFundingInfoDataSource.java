@@ -10,17 +10,21 @@ import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSource;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.concurrent.ScheduledFuture;
 
-public class FundingInfoDataSource extends AbstractFundingInfoDataSource {
+@Slf4j
+public class BinanceFundingInfoDataSource extends AbstractFundingInfoDataSource {
     @RequiredArgsConstructor
     @Getter
     private enum MessageMethod {
@@ -28,20 +32,27 @@ public class FundingInfoDataSource extends AbstractFundingInfoDataSource {
         private final String apiValue;
     }
 
+    private static final Duration DEFAULT_FUNDING_INTERVAL = Duration.ofHours(8);
+
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
+    private final TaskScheduler taskScheduler;
+    private volatile Map<String, Duration> fundingIntervalCache = Map.of();
+    private volatile ScheduledFuture<?> refreshTask;
 
-    public FundingInfoDataSource(
+    public BinanceFundingInfoDataSource(
             WsAssistant wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
             IoExecutor ioExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant
+            RestAssistant restAssistant,
+            TaskScheduler taskScheduler
     ) {
         super(wsAssistant, publicWsUrl, objectMapper, ioExecutor);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
+        this.taskScheduler = taskScheduler;
     }
 
     @Override
@@ -73,7 +84,7 @@ public class FundingInfoDataSource extends AbstractFundingInfoDataSource {
                 msg.get("p").asDecimal(),
                 msg.get("r").asDecimal(),
                 Instant.ofEpochMilli(msg.get("T").asLong()),
-                null
+                resolveInterval(msg.get("s").asString())
         );
     }
 
@@ -93,7 +104,7 @@ public class FundingInfoDataSource extends AbstractFundingInfoDataSource {
                 data.get("markPrice").asDecimal(),
                 data.get("lastFundingRate").asDecimal(),
                 Instant.ofEpochMilli(data.get("nextFundingTime").asLong()),
-                null
+                resolveInterval(data.get("symbol").asString())
         );
     }
 
@@ -108,5 +119,57 @@ public class FundingInfoDataSource extends AbstractFundingInfoDataSource {
                 "params", params,
                 "id", 1
         ), false));
+    }
+
+    private void loadAllFundingIntervals() {
+        JsonNode response = restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .method(HttpMethod.GET)
+                        .pathUrl(DerivativeApiSpec.FUNDING_INFO_PATH_URL)
+                        .build()
+        );
+        Map<String, Duration> newCache = new HashMap<>();
+        for (JsonNode entry : response) {
+            String symbol = entry.get("symbol").asString();
+            int hours = entry.get("fundingIntervalHours").asInt();
+            newCache.put(symbol, Duration.ofHours(hours));
+        }
+        fundingIntervalCache = Map.copyOf(newCache);
+        log.info("Loaded {} funding intervals", newCache.size());
+    }
+
+    private Duration resolveInterval(String symbol) {
+        return fundingIntervalCache.getOrDefault(symbol, DEFAULT_FUNDING_INTERVAL);
+    }
+
+    @Override
+    public void start() {
+        super.start();
+        loadAllFundingIntervals();
+        Instant now = Instant.now();
+        Instant nextRefresh = now.atZone(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.HOURS)
+                .plusHours(1)
+                .plusMinutes(1)
+                .toInstant();
+        refreshTask = taskScheduler.scheduleAtFixedRate(
+                () -> {
+                    try {
+                        loadAllFundingIntervals();
+                    } catch (Exception e) {
+                        log.warn("Funding interval refresh failed, keeping existing cache", e);
+                    }
+                },
+                nextRefresh,
+                Duration.ofHours(1)
+        );
+    }
+
+    @Override
+    public void shutdown() {
+        super.shutdown();
+        if (refreshTask != null) {
+            refreshTask.cancel(true);
+        }
     }
 }

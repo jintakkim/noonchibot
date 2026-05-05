@@ -29,10 +29,9 @@ public class DerivativeInfoTrackerTest {
     }
 
     @Test
-    @DisplayName("start 시 running=true이고 모든 이벤트에 구독한다")
+    @DisplayName("start 시 모든 이벤트에 구독한다")
     void startSubscribesToAllEvents() {
         tracker.start();
-        assertThat(tracker.isRunning()).isTrue();
 
         verify(eventSubscriber).subscribe(eq(PositionUpdateEvent.class), any());
         verify(eventSubscriber).subscribe(eq(LeverageChangedEvent.class), any());
@@ -44,8 +43,8 @@ public class DerivativeInfoTrackerTest {
     @DisplayName("stop 시 running=false이고 모든 이벤트 구독을 해제한다")
     void stopUnsubscribesFromAllEvents() {
         tracker.start();
-        tracker.stop();
-        assertThat(tracker.isRunning()).isFalse();
+        tracker.shutdown();
+
         verify(eventSubscriber).unsubscribe(eq(PositionUpdateEvent.class), any());
         verify(eventSubscriber).unsubscribe(eq(LeverageChangedEvent.class), any());
         verify(eventSubscriber).unsubscribe(eq(MarginModeChangedEvent.class), any());

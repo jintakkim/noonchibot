@@ -8,7 +8,7 @@ import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
-import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSourceTest;
+import com.hotak.noonchibot.core.orderbook.DiffSupportingOrderBookDataSourceTest;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessageStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,13 +27,17 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-public class DerivativeOrderBookDataSourceTest extends AbstractOrderBookDataSourceTest {
+class DerivativeOrderBookDataSourceTest extends DiffSupportingOrderBookDataSourceTest {
 
     private static final TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(
             Map.of("BTC-USDT", "BTCUSDT", "ETH-USDT", "ETHUSDT")
     );
 
     private RestAssistant restAssistant;
+
+    public DerivativeOrderBookDataSourceTest() {
+        super("USDT");
+    }
 
     @Override
     protected AbstractOrderBookDataSource createDataSource(
