@@ -8,5 +8,5 @@ public record BalanceUpdateEvent(
         BigDecimal totalBalance,
         BigDecimal availableBalance,
         Instant timestamp
-) implements ExchangeEvent {
+) implements Event {
 }

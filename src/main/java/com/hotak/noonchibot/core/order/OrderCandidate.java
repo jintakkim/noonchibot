@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.core.order;
 
-import com.hotak.noonchibot.core.datatype.TradeType;
+import com.hotak.noonchibot.core.trade.TradeType;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 

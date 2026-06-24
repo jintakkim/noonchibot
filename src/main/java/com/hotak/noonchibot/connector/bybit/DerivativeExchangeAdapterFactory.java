@@ -4,16 +4,16 @@ import com.hotak.noonchibot.connector.*;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottlerImpl;
 import com.hotak.noonchibot.connector.throttle.ThrottlerLimitIdPreProcessor;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
-import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.connector.web.WsAssistantImpl;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.balance.AccountBalanceTracker;
 import com.hotak.noonchibot.core.derivative.DerivativeInfoTracker;
 import com.hotak.noonchibot.core.derivative.FundingInfoTracker;
-import com.hotak.noonchibot.core.event.ExchangeEventBus;
-import com.hotak.noonchibot.core.order.OrderHistoryRepository;
+import com.hotak.noonchibot.core.event.EventBus;
+import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
@@ -34,25 +34,25 @@ class DerivativeExchangeAdapterFactory {
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
-            OrderHistoryRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository
 
     ) {
         ExchangeLifeCycleRegistry lifeCycleRegistry = new ExchangeLifeCycleRegistry();
-        ExchangeEventBus eventBus = new ExchangeEventBus(mainExecutor);
+        EventBus eventBus = new EventBus(mainExecutor);
         RestClient restClient = RestClient.builder().baseUrl(DerivativeApiSpec.REST_BASE_URL).build();
         TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(props.derivative().tradingPairSymbolMap());
         AsyncThrottler throttler = new AsyncThrottlerImpl(DerivativeApiSpec.RATE_LIMITS, ioExecutor);
         TimeSynchronizer timeSynchronizer = new TimeSynchronizer(
                 new BybitServerTimeProvider(
-                        new RestAssistant(restClient, List.of(new ThrottlerLimitIdPreProcessor()), List.of(), null, throttler, objectMapper),
+                        new RestAssistantImpl(restClient, List.of(new ThrottlerLimitIdPreProcessor()), List.of(), null, throttler, objectMapper),
                         DerivativeApiSpec.SERVER_TIME_PATH_URL),
                 taskScheduler
         );
         lifeCycleRegistry.register(timeSynchronizer);
 
         BybitAuthenticator authenticator = new BybitAuthenticator(props.apiKey(), props.secretKey(), timeSynchronizer, objectMapper);
-        RestAssistant restAssistant = new RestAssistant(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
-        WsAssistant wsAssistant = new WsAssistant(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
+        RestAssistantImpl restAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
+        WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
 
         DerivativeOrderBookDataSource orderBookDataSource = new DerivativeOrderBookDataSource(
                 wsAssistant,
@@ -141,7 +141,7 @@ class DerivativeExchangeAdapterFactory {
         );
         lifeCycleRegistry.register(tradePoller);
 
-        BybitFundingInfoDataSource fundingInfoDataSource = new BybitFundingInfoDataSource(
+        BybitWsFundingInfoDataSource fundingInfoDataSource = new BybitWsFundingInfoDataSource(
                 wsAssistant,
                 DerivativeApiSpec.WSS_LINEAR_URL,
                 objectMapper,

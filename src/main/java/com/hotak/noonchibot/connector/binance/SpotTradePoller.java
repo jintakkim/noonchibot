@@ -2,17 +2,15 @@ package com.hotak.noonchibot.connector.binance;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.connector.LifecycleComponent;
-import com.hotak.noonchibot.connector.PollScheduler;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
-import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.order.OrderTracker;
-import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
@@ -27,7 +25,7 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 class SpotTradePoller implements LifecycleComponent {
     private final ExchangeEventPublisher eventPublisher;
-    private final RestAssistant restAssistant;
+    private final RestAssistantImpl restAssistant;
     private final OrderTracker orderTracker;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final IoExecutor ioExecutor;
@@ -38,7 +36,7 @@ class SpotTradePoller implements LifecycleComponent {
     public SpotTradePoller(
             WebsocketStatus websocketStatus,
             ExchangeEventPublisher eventPublisher,
-            RestAssistant restAssistant,
+            RestAssistantImpl restAssistant,
             TaskScheduler taskScheduler,
             OrderTracker orderTracker,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,

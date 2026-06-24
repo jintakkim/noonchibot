@@ -3,7 +3,7 @@ package com.hotak.noonchibot.core.orderbook;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.TestMainExecutor;
 import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
-import com.hotak.noonchibot.core.datatype.TradeType;
+import com.hotak.noonchibot.core.trade.TradeType;
 import org.junit.jupiter.api.*;
 
 import java.math.BigDecimal;

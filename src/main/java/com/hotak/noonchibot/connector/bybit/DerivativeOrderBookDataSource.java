@@ -1,14 +1,14 @@
 package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
+import com.hotak.noonchibot.connector.web.WsAssistantImpl;
 import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.datatype.TradeType;
+import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
+import com.hotak.noonchibot.core.trade.TradeType;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
-import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -42,33 +42,33 @@ class DerivativeOrderBookDataSource extends AbstractOrderBookDataSource {
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
 
     // IO 스레드가 put, 메인 스레드가 take
-    private final ConcurrentMap<String, BlockingQueue<OrderBookMessage.SnapshotMessage>> pendingSnapshots
+    private final ConcurrentMap<String, BlockingQueue<OrderBookEvent.SnapshotReceived>> pendingSnapshots
             = new ConcurrentHashMap<>();
 
     public DerivativeOrderBookDataSource(
-            WsAssistant wsAssistant,
+            WsAssistantImpl wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant
+            RestAssistantImpl restAssistant
     ) {
         super(wsAssistant, publicWsUrl, objectMapper, ioExecutor, taskScheduler, false);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
     }
 
     @Override
-    protected OrderBookMessage.SnapshotMessage getOrderBookSnapshot(String tradingPair) {
+    protected OrderBookEvent.SnapshotReceived fetchOrderBookSnapshot(String tradingPair) {
         // IO 스레드가 스냅샷 넣어줄 슬롯 준비
-        BlockingQueue<OrderBookMessage.SnapshotMessage> slot = new ArrayBlockingQueue<>(1);
+        BlockingQueue<OrderBookEvent.SnapshotReceived> slot = new ArrayBlockingQueue<>(1);
         pendingSnapshots.put(tradingPair, slot);
 
         try {
             // Bybit는 이미 구독 중이어도 재구독 시 스냅샷 다시 밀어줌
             sendSubscribe(tradingPair);
 
-            OrderBookMessage.SnapshotMessage snapshot = slot.poll(SNAPSHOT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            OrderBookEvent.SnapshotReceived snapshot = slot.poll(SNAPSHOT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (snapshot == null) {
                 throw new RuntimeException("Orderbook snapshot timeout for " + tradingPair);
             }
@@ -122,16 +122,16 @@ class DerivativeOrderBookDataSource extends AbstractOrderBookDataSource {
     }
 
     @Override
-    protected OrderBookMessage.Type parseMessageType(JsonNode msg) {
+    protected MessageType parseMessageType(JsonNode msg) {
         String topic = msg.path("topic").asString();
         String type = msg.path("type").asString();
 
         if (topic.startsWith(ORDERBOOK_TOPIC_PREFIX)) {
             if ("snapshot".equals(type)) return null; // 스냅샷은 processUnknownMessage에서 따로 처리
-            if ("delta".equals(type)) return OrderBookMessage.Type.DIFF;
+            if ("delta".equals(type)) return MessageType.DIFF;
         }
         if (topic.startsWith(PUBLIC_TRADE_TOPIC_PREFIX)) {
-            return OrderBookMessage.Type.TRADE;
+            return MessageType.TRADE;
         }
         return null;
     }
@@ -142,10 +142,10 @@ class DerivativeOrderBookDataSource extends AbstractOrderBookDataSource {
         String type = msg.path("type").asString();
 
         if (topic.startsWith(ORDERBOOK_TOPIC_PREFIX) && "snapshot".equals(type)) {
-            OrderBookMessage.SnapshotMessage snapshot = parseSnapshotMessage(msg);
+            OrderBookEvent.SnapshotReceived snapshot = parseWsSnapshotEvent(msg);
 
             // 대기 중인 getOrderBookSnapshot 호출자 깨우기
-            BlockingQueue<OrderBookMessage.SnapshotMessage> slot = pendingSnapshots.get(snapshot.getTradingPair());
+            BlockingQueue<OrderBookEvent.SnapshotReceived> slot = pendingSnapshots.get(snapshot.tradingPair());
             if (slot != null) {
                 slot.offer(snapshot);
             }
@@ -153,7 +153,7 @@ class DerivativeOrderBookDataSource extends AbstractOrderBookDataSource {
     }
 
     @Override
-    protected OrderBookMessage.SnapshotMessage parseSnapshotMessage(JsonNode msg) {
+    protected OrderBookEvent.SnapshotReceived parseWsSnapshotEvent(JsonNode msg) {
         JsonNode data = msg.get("data");
         String tradingPair = tradingPairSymbolRegistry
                 .convertExchangeSymbolToTradingPair(data.get("s").asString());
@@ -161,11 +161,11 @@ class DerivativeOrderBookDataSource extends AbstractOrderBookDataSource {
         Instant eventTime = Instant.ofEpochMilli(msg.get("ts").asLong());
         List<OrderBookEntry> bids = parseEntries(data.get("b"));
         List<OrderBookEntry> asks = parseEntries(data.get("a"));
-        return new OrderBookMessage.SnapshotMessage(eventTime, tradingPair, updateId, bids, asks);
+        return new OrderBookEvent.SnapshotReceived(tradingPair, updateId, bids, asks, eventTime);
     }
 
     @Override
-    protected OrderBookMessage.DiffMessage parseDiffMessage(JsonNode msg) {
+    protected OrderBookEvent.DiffReceived parseWsDiffEvent(JsonNode msg) {
         JsonNode data = msg.get("data");
         String tradingPair = tradingPairSymbolRegistry
                 .convertExchangeSymbolToTradingPair(data.get("s").asString());
@@ -173,23 +173,23 @@ class DerivativeOrderBookDataSource extends AbstractOrderBookDataSource {
         Instant eventTime = Instant.ofEpochMilli(msg.get("ts").asLong());
         List<OrderBookEntry> bids = parseEntries(data.get("b"));
         List<OrderBookEntry> asks = parseEntries(data.get("a"));
-        return new OrderBookMessage.DiffMessage(eventTime, tradingPair, updateId, bids, asks);
+        return new OrderBookEvent.DiffReceived(tradingPair, updateId, bids, asks, eventTime);
     }
 
     @Override
-    protected List<OrderBookMessage.TradeMessage> parseTradeMessage(JsonNode msg) {
+    protected List<OrderBookEvent.TradeReceived> parseWsTradeEvents(JsonNode msg) {
         JsonNode data = msg.get("data").get(0); // Bybit는 trade도 배열로 옴
         String tradingPair = tradingPairSymbolRegistry
                 .convertExchangeSymbolToTradingPair(data.get("s").asString());
         TradeType tradeType = "Sell".equals(data.get("S").asString()) ? TradeType.SELL : TradeType.BUY;
         return List.of(
-                new OrderBookMessage.TradeMessage(
-                Instant.ofEpochMilli(data.get("T").asLong()),
+                new OrderBookEvent.TradeReceived(
                 tradingPair,
                 data.get("seq").asLong(),   // sequence
                 data.get("p").asDecimal(),  // price
                 data.get("v").asDecimal(),  // volume
-                tradeType
+                tradeType,
+                Instant.ofEpochMilli(data.get("T").asLong())
                 )
         );
     }

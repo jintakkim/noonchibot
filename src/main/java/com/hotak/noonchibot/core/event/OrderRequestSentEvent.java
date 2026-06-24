@@ -8,5 +8,5 @@ import com.hotak.noonchibot.core.order.InFlightOrder;
  */
 public record OrderRequestSentEvent(
         InFlightOrder inFlightOrder
-) implements ExchangeEvent {
+) implements Event {
 }

@@ -1,98 +1,208 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import com.hotak.noonchibot.connector.web.*;
-import com.hotak.noonchibot.core.*;
+import com.hotak.noonchibot.connector.web.testutils.MockRestAssistant;
+import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
+import com.hotak.noonchibot.connector.web.testutils.MockWsConnection;
+import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
+import com.hotak.noonchibot.connector.web.testutils.RestFixture;
+import com.hotak.noonchibot.core.AbstractWebsocketDataSourceTestUtils;
+import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.TestTaskScheduler;
+import com.hotak.noonchibot.core.event.EventMetadata;
+import com.hotak.noonchibot.core.event.TestEventPublisher;
+import com.hotak.noonchibot.core.event.TestEventSubscriber;
+import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.net.URI;
+import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-public abstract class AbstractOrderBookDataSourceTest {
-    protected static final ObjectMapper objectMapper = new ObjectMapper();
+public abstract class AbstractOrderBookDataSourceTest<T extends AbstractOrderBookDataSource> extends RestClientTest {
+    protected static final ObjectMapper OM = new ObjectMapper();
+    protected static final ObjectMapper objectMapper = OM;
 
-    protected BlockingQueue<WsResponse> queue;
+    protected T dataSource;
+    protected MockWsConnection wsConnection;
+    protected TestTaskScheduler taskScheduler;
+    protected TestEventPublisher eventPublisher;
+    protected TestEventSubscriber eventSubscriber;
+    protected MockWsConnection mockWsConnection;
+    protected TestTaskScheduler mockTaskScheduler;
 
-    protected AbstractOrderBookDataSource dataSource;
-
-    protected final String quoteAsset;
-    private WsAssistant mockWsAssistant;
-    protected WsConnection mockWsConnection;
-    private IoExecutor ioExecutor;
-    protected TaskScheduler mockTaskScheduler; // 하위 클래스에서 verify 할 수 있도록 protected로 열어둠
-
-    public AbstractOrderBookDataSourceTest(String quoteAsset) {
-        this.quoteAsset = quoteAsset;
+    protected AbstractOrderBookDataSourceTest() {
     }
 
-    protected abstract AbstractOrderBookDataSource createDataSource(
-            WsAssistant wsAssistant,
-            IoExecutor ioExecutor,
-            TaskScheduler taskScheduler
-    );
-    protected abstract WsResponse createAckResponse();
-    protected abstract JsonNode createErrorNode(String errorMsg);
-    protected abstract JsonNode createTradeMessageNode(String tradingPair);
+    protected AbstractOrderBookDataSourceTest(String quoteAsset) {
+    }
 
     @BeforeEach
-    void setUp() throws InterruptedException {
-        queue = new LinkedBlockingQueue<>();
-        mockWsAssistant = Mockito.mock(WsAssistant.class);
-        mockWsConnection = Mockito.mock(WsConnection.class);
-        ioExecutor = new VirtualThreadIoExecutor();
-        mockTaskScheduler = Mockito.mock(TaskScheduler.class);
+    void setUpOrderBookDataSource() {
+        eventPublisher = new TestEventPublisher();
+        eventSubscriber = new TestEventSubscriber();
+        taskScheduler = new TestTaskScheduler();
+        wsConnection = new MockWsConnection(URI.create(wsUri()));
+        mockWsConnection = wsConnection;
+        mockTaskScheduler = taskScheduler;
 
-        when(mockWsConnection.take()).thenAnswer(invocation -> queue.take());
-        dataSource = createDataSource(
-                mockWsAssistant,
-                ioExecutor,
-                mockTaskScheduler
+        dataSource = createOrderBookDataSource(
+                new MockWsAssistant(),
+                restAssistant,
+                taskScheduler,
+                eventPublisher,
+                eventSubscriber
         );
-        AbstractWebsocketDataSourceTestUtils.setWsConnection(dataSource, mockWsConnection);
+        AbstractWebsocketDataSourceTestUtils.setWsConnection(dataSource, wsConnection);
+    }
+
+    protected abstract T createOrderBookDataSource(
+            MockWsAssistant wsAssistant,
+            MockRestAssistant restAssistant,
+            TestTaskScheduler taskScheduler,
+            TestEventPublisher eventPublisher,
+            TestEventSubscriber eventSubscriber
+    );
+
+    protected String wsUri() {
+        return "ws://test";
+    }
+
+    protected String testTradingPair() {
+        return "BTC-USDT";
+    }
+
+    protected abstract RestFixture snapshotRestFixture(String tradingPair);
+
+    protected abstract OrderBookEvent.SnapshotReceived expectedRestSnapshot(String tradingPair);
+
+    protected abstract void assertTrackingSubscribeRequests(List<WsRequest> requests);
+
+    protected Optional<WsResponse> diffWsMessage() {
+        return Optional.empty();
+    }
+
+    protected OrderBookEvent.DiffReceived expectedDiff() {
+        throw new UnsupportedOperationException("expectedDiffEvent is not implemented");
+    }
+
+    protected Optional<WsResponse> snapshotWsMessage() {
+        return Optional.empty();
+    }
+
+    protected abstract OrderBookEvent.SnapshotReceived expectedWsSnapshot();
+
+    protected Optional<WsResponse> tradeWsMessage() {
+        return Optional.empty();
+    }
+
+    protected abstract OrderBookEvent.TradeReceived expectedTrade();
+
+    protected Optional<WsResponse> ackMessage() {
+        return Optional.empty();
+    }
+
+    protected abstract WsResponse errorMessage();
+
+    @Test
+    @DisplayName("REST 스냅샷을 파싱한다")
+    void getOrderBookSnapshotParsesCorrectly() {
+        String tradingPair = testTradingPair();
+        runWith(snapshotRestFixture(tradingPair), () -> {
+            OrderBookEvent.SnapshotReceived snapshot = dataSource.fetchOrderBookSnapshot(tradingPair);
+            assertThat(snapshot).isEqualTo(expectedRestSnapshot(tradingPair));
+        });
     }
 
     @Test
-    @DisplayName("연결(또는 재연결) 시 기존에 구독 중이던 페어들이 있다면 다시 구독 요청을 보낸다")
-    void onConnectedResubscribesExistingStreams() {
-        dataSource.subscribeOrderBookStream(createTradingPair("BTC"));
-        dataSource.subscribeOrderBookStream(createTradingPair("ETH"));
-        dataSource.onConnected();
-        verify(mockWsConnection, atLeastOnce()).send(any());
+    @DisplayName("tracking 요청 수신 시 WS를 구독하고 REST 스냅샷 이벤트를 발행한다")
+    void trackingRequestSubscribesWsAndPublishesRestSnapshot() {
+        String tradingPair = testTradingPair();
+        runWith(snapshotRestFixture(tradingPair), () -> {
+            dataSource.trackingOrderBook(
+                    new OrderBookEvent.TrackingRequested(tradingPair),
+                    null
+            );
+            assertTrackingSubscribeRequests(wsConnection.sentRequests);
+            assertThat(eventPublisher.only(OrderBookEvent.SnapshotReceived.class))
+                    .isEqualTo(expectedRestSnapshot(tradingPair));
+        });
     }
 
     @Test
-    @DisplayName("에러 메시지 수신 시 WebsocketSubscriptionFailedException 예외가 발생한다")
-    void processMessageThrowsExceptionOnError() {
-        JsonNode errorNode = createErrorNode("invalid symbol");
-        queue.add(new WsResponse(errorNode.toString(), WsResponse.MessageType.TEXT));
+    @DisplayName("중복 tracking 요청 수신 시 추가 구독과 스냅샷 요청을 하지 않는다")
+    void duplicateTrackingRequestIsIgnored() {
+        String tradingPair = testTradingPair();
+        runWith(snapshotRestFixture(tradingPair), () -> {
+            dataSource.trackingOrderBook(
+                    new OrderBookEvent.TrackingRequested(tradingPair),
+                    null
+            );
+            dataSource.trackingOrderBook(
+                    new OrderBookEvent.TrackingRequested(tradingPair),
+                    null
+            );
 
-        // processMessage()는 예외를 던져야 함
-        assertThatThrownBy(() -> dataSource.processMessage())
-                .isInstanceOf(WebsocketSubscriptionFailedException.class);
+            assertTrackingSubscribeRequests(wsConnection.sentRequests);
+            assertThat(eventPublisher.countEventsOfType(OrderBookEvent.SnapshotReceived.class)).isEqualTo(1);
+        });
     }
 
     @Test
-    @DisplayName("TRADE 메시지 수신 시 파싱되어 해당 페어의 스트림으로 정상 전달(캐스팅)된다")
-    void processMessageCastsTradeToStream() throws InterruptedException {
-        OrderBookMessageStream stream = dataSource.subscribeOrderBookStream(createTradingPair("ETH"));
-        JsonNode tradeNode = createTradeMessageNode(createTradingPair("ETH"));
-        queue.add(new WsResponse(tradeNode.toString(), WsResponse.MessageType.TEXT));
-        dataSource.processMessage();
-        OrderBookMessage message = stream.take();
-        assertThat(message).isInstanceOf(OrderBookMessage.TradeMessage.class);
+    @DisplayName("diff 메시지 수신 시 DiffReceived 이벤트를 발행한다")
+    void diffMessagePublishesDiffEvent() {
+        assumeTrue(diffWsMessage().isPresent(), "이 거래소는 diff 메시지를 사용하지 않음");
+
+        dataSource.processMessage(diffWsMessage().get());
+
+        assertThat(eventPublisher.getFirstEventOfType(OrderBookEvent.DiffReceived.class))
+                .hasValue(expectedDiff());
     }
 
-    protected String createTradingPair(String baseAsset) {
-        return baseAsset + "-" + quoteAsset;
+    @Test
+    @DisplayName("snapshot 메시지 수신 시 SnapshotReceived 이벤트를 발행한다")
+    void snapshotMessagePublishesSnapshotEvent() {
+        assumeTrue(snapshotWsMessage().isPresent(), "이 거래소는 snapshot 메시지를 사용하지 않음");
+
+        dataSource.processMessage(snapshotWsMessage().get());
+
+        assertThat(eventPublisher.getFirstEventOfType(OrderBookEvent.SnapshotReceived.class))
+                .hasValue(expectedWsSnapshot());
+    }
+
+    @Test
+    @DisplayName("trade 메시지 수신 시 TradeReceived 이벤트를 발행한다")
+    void tradeMessagePublishesTradeEvent() {
+        assumeTrue(tradeWsMessage().isPresent(), "이 거래소는 trade 메시지를 사용하지 않음");
+
+        dataSource.processMessage(tradeWsMessage().get());
+
+        assertThat(eventPublisher.getFirstEventOfType(OrderBookEvent.TradeReceived.class))
+                .hasValue(expectedTrade());
+    }
+
+    @Test
+    @DisplayName("ack 메시지는 무시되고 이벤트를 발행하지 않는다")
+    void ackMessageDoesNotPublishEvent() {
+        assumeTrue(ackMessage().isPresent(), "이 거래소는 ack 메시지를 사용하지 않음");
+
+        dataSource.processMessage(ackMessage().get());
+        assertThat(eventPublisher.totalCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("error 메시지 수신 시 예외를 던진다")
+    void errorMessageThrows() {
+        assertThatThrownBy(() -> dataSource.processMessage(errorMessage()))
+                .isInstanceOf(WebsocketErrorMessageReceivedException.class);
     }
 }

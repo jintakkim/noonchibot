@@ -2,7 +2,7 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.core.datatype.UserStreamEventParser;
 import com.hotak.noonchibot.core.event.BalanceUpdateEvent;
-import com.hotak.noonchibot.core.event.ExchangeEvent;
+import com.hotak.noonchibot.core.event.Event;
 import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
@@ -17,9 +17,9 @@ class SpotBalanceUpdateParser implements UserStreamEventParser {
     }
 
     @Override
-    public List<ExchangeEvent> parse(JsonNode msg) {
+    public List<Event> parse(JsonNode msg) {
         Instant eventTime = Instant.ofEpochMilli(msg.get("creationTime").asLong());
-        List<ExchangeEvent> events = new ArrayList<>();
+        List<Event> events = new ArrayList<>();
         JsonNode coinList = msg.get("data").get(0).get("coin");
         for (JsonNode balance : coinList) {
             BigDecimal walletBalance = balance.get("walletBalance").asDecimal();

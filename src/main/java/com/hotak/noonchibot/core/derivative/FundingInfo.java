@@ -40,8 +40,12 @@ public class FundingInfo {
         if(nextFundingTime != null) this.nextFundingTime = nextFundingTime;
     }
 
+    void update(Duration fundingInterval) {
+        if(fundingInterval != null) this.fundingInterval = fundingInterval;
+    }
+
     boolean isInitialized() {
-        return markPrice != null && fundingRate != null && nextFundingTime != null;
+        return markPrice != null && fundingRate != null && nextFundingTime != null && fundingInterval != null;
     }
 
 }

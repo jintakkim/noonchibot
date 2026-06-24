@@ -25,7 +25,10 @@ repositories {
 }
 
 dependencies {
+    implementation 'org.web3j:core:4.12.0'
+    implementation 'org.msgpack:jackson-dataformat-msgpack:0.9.11'
     implementation "com.google.guava:guava:33.5.0-jre"
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
     implementation 'org.springframework.boot:spring-boot-starter'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
@@ -37,6 +40,7 @@ dependencies {
     runtimeOnly 'com.mysql:mysql-connector-j'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.wiremock:wiremock-standalone:3.4.2'
+
 }
 
 tasks.named('test') {

@@ -22,7 +22,7 @@ import static org.mockito.Mockito.*;
 
 class WsAssistantTest {
 
-    private WsAssistant wsAssistant;
+    private WsAssistantImpl wsAssistant;
     private WebSocketClient webSocketClient;
     private ObjectMapper objectMapper;
 
@@ -30,7 +30,7 @@ class WsAssistantTest {
     void setUp() {
         webSocketClient = mock(WebSocketClient.class);
         objectMapper = new ObjectMapper();
-        wsAssistant = new WsAssistant(
+        wsAssistant = new WsAssistantImpl(
                 webSocketClient,
                 new WebSocketHttpHeaders(),
                 List.of(),
@@ -43,7 +43,7 @@ class WsAssistantTest {
     @Test
     @DisplayName("connect 호출 시 새로운 WsConnection을 반환한다")
     void connectReturnsNewConnection() {
-        WsConnection conn = connectWithMockSession();
+        WsConnectionImpl conn = connectWithMockSession();
         assertThat(conn).isNotNull();
         assertThat(conn.isConnected()).isTrue();
     }
@@ -51,15 +51,15 @@ class WsAssistantTest {
     @Test
     @DisplayName("connect를 두 번 호출하면 서로 다른 WsConnection을 반환한다")
     void connectReturnsDifferentConnections() {
-        WsConnection first = connectWithMockSession();
-        WsConnection second = connectWithMockSession();
+        WsConnectionImpl first = connectWithMockSession();
+        WsConnectionImpl second = connectWithMockSession();
         assertThat(second).isNotSameAs(first);
     }
 
     @Test
     @DisplayName("연결 후 메시지를 수신할 수 있다")
     void receivesMessageAfterConnect() throws InterruptedException {
-        WsConnection conn = connectWithMockSession();
+        WsConnectionImpl conn = connectWithMockSession();
         conn.handleTextMessage(null, new TextMessage("message"));
         WsResponse response = conn.take();
         assertThat(response.data()).contains("message");
@@ -68,7 +68,7 @@ class WsAssistantTest {
     @Test
     @DisplayName("의도적인 연결 해제 시 take에서 null이 반환된다")
     void returnsNullOnIntentionalDisconnect() throws InterruptedException {
-        WsConnection conn = connectWithMockSession();
+        WsConnectionImpl conn = connectWithMockSession();
         conn.disconnect();
         conn.afterConnectionClosed(null, CloseStatus.NORMAL);
         assertThat(conn.take()).isNull();
@@ -77,7 +77,7 @@ class WsAssistantTest {
     @Test
     @DisplayName("비의도적인 연결 해제 시 take에서 예외가 발생한다")
     void throwsOnUnintentionalDisconnect() {
-        WsConnection conn = connectWithMockSession();
+        WsConnectionImpl conn = connectWithMockSession();
         conn.afterConnectionClosed(null, CloseStatus.GOING_AWAY);
         assertThatThrownBy(conn::take).isInstanceOf(WebsocketDisconnectedException.class);
     }
@@ -86,14 +86,14 @@ class WsAssistantTest {
     @DisplayName("preProcessor가 등록되었다면 send 시 preProcessor가 적용된다")
     void appliesPreProcessorsOnSend() {
         WsPreProcessor wsPreProcessor = mock(WsPreProcessor.class);
-        wsAssistant = new WsAssistant(
+        wsAssistant = new WsAssistantImpl(
                 webSocketClient, new WebSocketHttpHeaders(),
                 List.of(wsPreProcessor), List.of(),
                 objectMapper, null
         );
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
-        WsConnection conn = connectWithMockSession(session);
+        WsConnectionImpl conn = connectWithMockSession(session);
         WsRequest request = new WsRequest(Map.of("method", "SUBSCRIBE"), false);
         when(wsPreProcessor.process(any(WsRequest.class))).thenReturn(request);
         conn.send(request);
@@ -107,7 +107,7 @@ class WsAssistantTest {
         WsRequest authRequest = new WsRequest(Map.of("method", "SUBSCRIBE", "signed", true), true);
         when(authenticator.wsAuthenticate(any())).thenReturn(authRequest);
 
-        wsAssistant = new WsAssistant(
+        wsAssistant = new WsAssistantImpl(
                 webSocketClient, new WebSocketHttpHeaders(),
                 List.of(), List.of(),
                 objectMapper, authenticator
@@ -115,7 +115,7 @@ class WsAssistantTest {
 
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
-        WsConnection conn = connectWithMockSession(session);
+        WsConnectionImpl conn = connectWithMockSession(session);
         conn.send(new WsRequest(Map.of("method", "SUBSCRIBE"), true));
         verify(authenticator).wsAuthenticate(any());
     }
@@ -126,13 +126,13 @@ class WsAssistantTest {
         WsPostProcessor uppercase = resp -> new WsResponse(
                 resp.data().toUpperCase(), resp.messageType()
         );
-        wsAssistant = new WsAssistant(
+        wsAssistant = new WsAssistantImpl(
                 webSocketClient, new WebSocketHttpHeaders(),
                 List.of(), List.of(uppercase),
                 objectMapper, null
         );
 
-        WsConnection conn = connectWithMockSession();
+        WsConnectionImpl conn = connectWithMockSession();
         conn.handleTextMessage(null, new TextMessage("hello"));
 
         WsResponse response = conn.take();
@@ -142,7 +142,7 @@ class WsAssistantTest {
     @Test
     @DisplayName("여러 메시지를 순서대로 수신한다")
     void receivesMessagesInOrder() throws InterruptedException {
-        WsConnection conn = connectWithMockSession();
+        WsConnectionImpl conn = connectWithMockSession();
 
         conn.handleTextMessage(null, new TextMessage("first"));
         conn.handleTextMessage(null, new TextMessage("second"));
@@ -153,16 +153,16 @@ class WsAssistantTest {
         assertThat(conn.take().data()).isEqualTo("third");
     }
 
-    private WsConnection connectWithMockSession() {
+    private WsConnectionImpl connectWithMockSession() {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
         return connectWithMockSession(session);
     }
 
-    private WsConnection connectWithMockSession(WebSocketSession session) {
-        when(webSocketClient.execute(any(WsConnection.class), any(WebSocketHttpHeaders.class), any(URI.class)))
+    private WsConnectionImpl connectWithMockSession(WebSocketSession session) {
+        when(webSocketClient.execute(any(WsConnectionImpl.class), any(WebSocketHttpHeaders.class), any(URI.class)))
                 .thenAnswer(invocation -> {
-                    WsConnection conn = invocation.getArgument(0);
+                    WsConnectionImpl conn = invocation.getArgument(0);
                     conn.afterConnectionEstablished(session);
                     return CompletableFuture.completedFuture(null);
                 });

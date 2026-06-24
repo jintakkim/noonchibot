@@ -20,11 +20,11 @@ import static org.mockito.Mockito.verify;
 public class DerivativeInfoTrackerTest {
 
     private DerivativeInfoTracker tracker;
-    private ExchangeEventSubscriber eventSubscriber;
+    private EventSubscriber eventSubscriber;
 
     @BeforeEach
     void setup() {
-        eventSubscriber = mock(ExchangeEventSubscriber.class);
+        eventSubscriber = mock(EventSubscriber.class);
         tracker = new DerivativeInfoTracker(eventSubscriber);
     }
 

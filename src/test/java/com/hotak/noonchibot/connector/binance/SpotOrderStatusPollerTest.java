@@ -3,15 +3,15 @@ package com.hotak.noonchibot.connector.binance;
 import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.TestMainExecutor;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
-import com.hotak.noonchibot.core.datatype.TradeType;
+import com.hotak.noonchibot.core.order.OrderUpdateDto;
+import com.hotak.noonchibot.core.trade.TradeType;
 import com.hotak.noonchibot.core.event.OrderLostEvent;
-import com.hotak.noonchibot.core.event.TestExchangeEventPublisher;
+import com.hotak.noonchibot.core.event.MockEventPublisher;
 import com.hotak.noonchibot.core.order.*;
-import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,17 +33,17 @@ import static org.mockito.Mockito.*;
 
 class SpotOrderStatusPollerTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    private RestAssistant restAssistant;
+    private RestAssistantImpl restAssistant;
     private OrderTracker orderTracker;
     private TradingPairSymbolRegistry symbolRegistry;
     private SpotOrderStatusPoller poller;
-    private TestExchangeEventPublisher testExchangeEventPublisher;
+    private MockEventPublisher testExchangeEventPublisher;
 
     @BeforeEach
     void setUp() {
-        restAssistant = Mockito.mock(RestAssistant.class);
+        restAssistant = Mockito.mock(RestAssistantImpl.class);
         orderTracker = Mockito.mock(OrderTracker.class);
-        testExchangeEventPublisher = new TestExchangeEventPublisher();
+        testExchangeEventPublisher = new MockEventPublisher();
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of("BTC-USDT", "BTCUSDT"));
         poller = new SpotOrderStatusPoller(
                 restAssistant,
@@ -77,7 +77,7 @@ class SpotOrderStatusPollerTest {
         assertThat(testExchangeEventPublisher.getPublishedEvents())
                 .hasSize(1)
                 .first()
-                .isInstanceOfSatisfying(OrderUpdateEvent.class, event -> {
+                .isInstanceOfSatisfying(OrderUpdateDto.class, event -> {
                     assertThat(event.newState()).isEqualTo(OrderState.PARTIALLY_FILLED);
                     assertThat(event.exchangeOrderId()).isEqualTo("12345");
                 });
@@ -131,9 +131,9 @@ class SpotOrderStatusPollerTest {
 
         poller.pollData();
 
-        assertThat(testExchangeEventPublisher.getEventsOfType(OrderUpdateEvent.class))
+        assertThat(testExchangeEventPublisher.getEventsOfType(OrderUpdateDto.class))
                 .hasSize(2)
-                .extracting(OrderUpdateEvent::exchangeOrderId)
+                .extracting(OrderUpdateDto::exchangeOrderId)
                 .containsExactlyInAnyOrder("111", "222");
     }
 

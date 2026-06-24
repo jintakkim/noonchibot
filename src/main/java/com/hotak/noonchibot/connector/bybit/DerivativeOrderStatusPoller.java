@@ -2,17 +2,16 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.connector.LifecycleComponent;
-import com.hotak.noonchibot.connector.PollScheduler;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.event.OrderLostEvent;
-import com.hotak.noonchibot.core.event.OrderUpdateEvent;
+import com.hotak.noonchibot.core.order.OrderUpdateDto;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderTracker;
@@ -31,7 +30,7 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 @RequiredArgsConstructor
 class DerivativeOrderStatusPoller implements LifecycleComponent {
-    private final RestAssistant restAssistant;
+    private final RestAssistantImpl restAssistant;
     private final ExchangeEventPublisher eventPublisher;
     private final OrderTracker orderTracker;
     private final MainExecutor mainExecutor;
@@ -40,7 +39,7 @@ class DerivativeOrderStatusPoller implements LifecycleComponent {
     private final PollScheduler pollScheduler;
 
     public DerivativeOrderStatusPoller(
-            RestAssistant restAssistant,
+            RestAssistantImpl restAssistant,
             ExchangeEventPublisher eventPublisher,
             OrderTracker orderTracker,
             MainExecutor mainExecutor,
@@ -84,7 +83,7 @@ class DerivativeOrderStatusPoller implements LifecycleComponent {
                 && message.contains(String.valueOf(DerivativeApiSpec.ORDER_NOT_EXIST_ERROR_CODE));
     }
 
-    private OrderUpdateEvent fetchOrderStatus(String tradingPair, String clientOrderId) {
+    private OrderUpdateDto fetchOrderStatus(String tradingPair, String clientOrderId) {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
 
         RestRequest request = RestRequest.builder()
@@ -102,7 +101,7 @@ class DerivativeOrderStatusPoller implements LifecycleComponent {
             JsonNode updatedOrder = response.get("result").get("list").get(0);
             OrderState newState = DerivativeApiSpec.ORDER_STATE.get(updatedOrder.get("orderStatus").asString());
             log.info("{}:{}", tradingPair, updatedOrder);
-            return new OrderUpdateEvent(
+            return new OrderUpdateDto(
                     tradingPair,
                     Instant.ofEpochMilli(updatedOrder.get("updatedTime").asLong()),
                     newState,

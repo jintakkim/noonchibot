@@ -22,7 +22,7 @@ import static java.lang.Thread.sleep;
 @Slf4j
 @RequiredArgsConstructor
 class SpotUserStreamEventPublisher implements WebsocketStatus, LifecycleComponent {
-    private final WsAssistant wsAssistant;
+    private final WsAssistantImpl wsAssistant;
     private final ObjectMapper objectMapper;
     private final BybitAuthenticator bybitAuthenticator;
     private final List<UserStreamEventParser> userStreamEventParsers;
@@ -30,7 +30,7 @@ class SpotUserStreamEventPublisher implements WebsocketStatus, LifecycleComponen
     private final IoExecutor ioExecutor;
 
     private volatile Instant lastRecvTime;
-    private volatile WsConnection wsConnection;
+    private volatile WsConnectionImpl wsConnection;
     private volatile Future<?> connection;
 
     private void connectionLoop() {

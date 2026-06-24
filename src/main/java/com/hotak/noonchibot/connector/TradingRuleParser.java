@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.connector;
 
-import com.hotak.noonchibot.core.datatype.TradingRule;
+import com.hotak.noonchibot.core.trade.TradingRule;
 import tools.jackson.databind.JsonNode;
 
 import java.util.List;

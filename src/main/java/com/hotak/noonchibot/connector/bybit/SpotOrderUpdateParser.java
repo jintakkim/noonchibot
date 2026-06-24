@@ -2,8 +2,8 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.core.datatype.UserStreamEventParser;
-import com.hotak.noonchibot.core.event.ExchangeEvent;
-import com.hotak.noonchibot.core.event.OrderUpdateEvent;
+import com.hotak.noonchibot.core.event.Event;
+import com.hotak.noonchibot.core.order.OrderUpdateDto;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 
@@ -21,14 +21,14 @@ class SpotOrderUpdateParser implements UserStreamEventParser {
     }
 
     @Override
-    public List<ExchangeEvent> parse(JsonNode msg) {
-        List<ExchangeEvent> events = new ArrayList<>();
+    public List<Event> parse(JsonNode msg) {
+        List<Event> events = new ArrayList<>();
         // Bybit order 스트림은 data 배열에 여러 주문이 올 수 있다
         for (JsonNode order : msg.get("data")) {
             String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(
                     order.get("symbol").asString());
 
-            events.add(new OrderUpdateEvent(
+            events.add(new OrderUpdateDto(
                     tradingPair,
                     Instant.ofEpochMilli(order.get("updatedTime").asLong()),
                     SpotApiSpec.ORDER_STATE.get(order.get("orderStatus").asString()),

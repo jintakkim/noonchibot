@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.connector.bybit;
 
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.ServerTimeProvider;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +9,7 @@ import tools.jackson.databind.JsonNode;
 
 @RequiredArgsConstructor
 class BybitServerTimeProvider implements ServerTimeProvider {
-    private final RestAssistant restAssistant;
+    private final RestAssistantImpl restAssistant;
     private final String pathUrl;
 
     @Override

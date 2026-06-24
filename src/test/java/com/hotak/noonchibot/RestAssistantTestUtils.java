@@ -2,7 +2,6 @@ package com.hotak.noonchibot;
 
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import org.mockito.Mockito;
 import tools.jackson.databind.JsonNode;
 
 import java.util.Map;

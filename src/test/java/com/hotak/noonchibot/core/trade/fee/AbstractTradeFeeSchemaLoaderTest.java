@@ -4,6 +4,7 @@ import com.hotak.noonchibot.connector.AbstractTradeFeeSchemaLoader;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
+import com.hotak.noonchibot.core.trade.TradeFeeSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

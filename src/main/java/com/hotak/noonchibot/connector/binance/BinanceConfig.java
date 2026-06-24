@@ -1,9 +1,10 @@
 package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.*;
+import com.hotak.noonchibot.connector.binance.derivative.DerivativeExchangeAdapterFactory;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
-import com.hotak.noonchibot.core.order.OrderHistoryRepository;
+import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -20,6 +21,7 @@ import java.util.Map;
 @Profile("!test")
 @EnableConfigurationProperties(BinanceConfig.Properties.class)
 class BinanceConfig {
+
 
     @ConfigurationProperties(prefix = "binance")
     public record Properties(
@@ -45,7 +47,7 @@ class BinanceConfig {
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
-            OrderHistoryRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository
     ) {
         return SpotExchangeAdapterFactory.create(
                 properties,
@@ -68,7 +70,7 @@ class BinanceConfig {
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
-            OrderHistoryRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository
     ) {
         return DerivativeExchangeAdapterFactory.create(
                 properties,

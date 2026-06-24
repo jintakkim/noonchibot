@@ -1,11 +1,10 @@
 package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
+import com.hotak.noonchibot.core.order.OrderUpdateDto;
 import com.hotak.noonchibot.core.datatype.UserStreamEventParser;
-import com.hotak.noonchibot.core.event.ExchangeEvent;
-import com.hotak.noonchibot.core.event.OrderUpdateEvent;
-import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import com.hotak.noonchibot.core.event.Event;
+import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 
@@ -24,8 +23,8 @@ class SpotExecutionReportParser implements UserStreamEventParser {
     }
 
     @Override
-    public List<ExchangeEvent> parse(JsonNode event) {
-        List<ExchangeEvent> events = new ArrayList<>();
+    public List<Event> parse(JsonNode event) {
+        List<Event> events = new ArrayList<>();
         String executionType = event.get("x").asString();
         String clientOrderId = "CANCELED".equals(executionType) ? event.get("C").asString() : event.get("c").asString();
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(event.get("s").asString());
@@ -50,7 +49,7 @@ class SpotExecutionReportParser implements UserStreamEventParser {
             ));
         }
 
-        events.add(new OrderUpdateEvent(
+        events.add(new OrderUpdateDto(
                 tradingPair,
                 Instant.ofEpochMilli(event.get("E").asLong()),
                 SpotApiSpec.ORDER_STATE.get(event.get("X").asString()),

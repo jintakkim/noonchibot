@@ -3,7 +3,7 @@ package com.hotak.noonchibot.connector.bybit;
 import com.hotak.noonchibot.RestAssistantTestUtils;
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.derivative.*;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
@@ -29,17 +29,17 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
-class BybitDerivativeAccountConfigurerTest extends AbstractDerivativeAccountConfigurerTest<BybitDerivativeAccountConfigurer> {
+class BybitDerivativeAccountConfigurerTest extends DerivativeAccountConfigurerTest<BybitDerivativeAccountConfigurer> {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    private RestAssistant mockRestAssistant;
+    private RestAssistantImpl mockRestAssistant;
     private TradingPairSymbolRegistry symbolRegistry;
 
     @Override
     protected BybitDerivativeAccountConfigurer createConfigurer(
             DerivativeInfoTracker tracker, ExchangeEventPublisher publisher) {
-        mockRestAssistant = Mockito.mock(RestAssistant.class);
+        mockRestAssistant = Mockito.mock(RestAssistantImpl.class);
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of(
                 "BTC-USDT", "BTCUSDT",
                 "ETH-USDT", "ETHUSDT"

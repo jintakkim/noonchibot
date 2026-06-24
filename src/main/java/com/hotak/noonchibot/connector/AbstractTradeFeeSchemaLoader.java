@@ -1,8 +1,8 @@
 package com.hotak.noonchibot.connector;
 
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.trade.fee.TradeFeeSchema;
-import com.hotak.noonchibot.core.trade.fee.TradeFeeSchemaLoader;
+import com.hotak.noonchibot.core.trade.TradeFeeSchema;
+import com.hotak.noonchibot.core.trade.TradeFeeSchemaLoader;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 

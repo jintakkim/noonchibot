@@ -2,7 +2,7 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingRuleParser;
-import com.hotak.noonchibot.core.datatype.TradingRule;
+import com.hotak.noonchibot.core.trade.TradingRule;
 import com.hotak.noonchibot.core.order.OrderType;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;

@@ -2,16 +2,15 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.connector.LifecycleComponent;
-import com.hotak.noonchibot.connector.PollScheduler;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.event.OrderLostEvent;
-import com.hotak.noonchibot.core.event.OrderUpdateEvent;
+import com.hotak.noonchibot.core.order.OrderUpdateDto;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderTracker;
@@ -28,7 +27,7 @@ import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 class SpotOrderStatusPoller implements LifecycleComponent {
-    private final RestAssistant restAssistant;
+    private final RestAssistantImpl restAssistant;
     private final ExchangeEventPublisher eventPublisher;
     private final OrderTracker orderTracker;
     private final MainExecutor mainExecutor;
@@ -37,7 +36,7 @@ class SpotOrderStatusPoller implements LifecycleComponent {
     private final PollScheduler pollScheduler;
 
     public SpotOrderStatusPoller(
-            RestAssistant restAssistant,
+            RestAssistantImpl restAssistant,
             ExchangeEventPublisher eventPublisher,
             OrderTracker orderTracker,
             MainExecutor mainExecutor,
@@ -71,7 +70,7 @@ class SpotOrderStatusPoller implements LifecycleComponent {
         );
     }
 
-    private void publishOrderStatus(OrderUpdateEvent event) {
+    private void publishOrderStatus(OrderUpdateDto event) {
         if (event == null) return;
         eventPublisher.publish(event);
     }
@@ -82,7 +81,7 @@ class SpotOrderStatusPoller implements LifecycleComponent {
                 && message.contains(String.valueOf(SpotApiSpec.ORDER_NOT_EXIST_ERROR_CODE));
     }
 
-    private OrderUpdateEvent fetchOrderStatus(String tradingPair, String clientOrderId) {
+    private OrderUpdateDto fetchOrderStatus(String tradingPair, String clientOrderId) {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
 
         RestRequest request = RestRequest.builder()
@@ -106,7 +105,7 @@ class SpotOrderStatusPoller implements LifecycleComponent {
             JsonNode updatedOrder = list.get(0);
             OrderState newState = SpotApiSpec.ORDER_STATE.get(updatedOrder.get("orderStatus").asString());
             log.info("{}:{}", tradingPair, updatedOrder);
-            return new OrderUpdateEvent(
+            return new OrderUpdateDto(
                     tradingPair,
                     Instant.ofEpochMilli(updatedOrder.get("updatedTime").asLong()),
                     newState,

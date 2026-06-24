@@ -1,3 +1,3 @@
 package com.hotak.noonchibot.core.event;
 
-public record OrderLostEvent(String clientOrderId) implements ExchangeEvent {}
+public record OrderLostEvent(String clientOrderId) implements Event {}

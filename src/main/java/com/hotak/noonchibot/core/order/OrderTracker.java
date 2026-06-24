@@ -1,192 +1,117 @@
 package com.hotak.noonchibot.core.order;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.connector.LifecycleComponent;
-import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.datatype.*;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
-import com.hotak.noonchibot.core.event.EventListener;
+import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.task.AsyncTaskExecutor;
 
-import java.time.Instant;
+import java.time.Duration;
 import java.util.*;
 
 @Slf4j
-public class OrderTracker implements LifecycleComponent {
-    public static final int LOST_ORDER_COUNT_LIMIT = 2;
-    private static final String LOST_ERROR_TYPE = "lost";
-
-    private final ExchangeEventPublisher eventPublisher;
-    private final String platformName;
+public class OrderTracker implements OrderedLifecycleAware {
+    private final EventPublisher eventPublisher;
     private final TradeRepository tradeRepository;
-    private final OrderHistoryRepository orderHistoryRepository;
-    private final AsyncTaskExecutor ioExecutor;
-    private final ExchangeEventSubscriber eventSubscriber;
+    private final OrderSnapshotRepository orderSnapshotRepository;
+    private final Cache<String, OrderView> recentClosedOrders = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofMinutes(5))
+            .maximumSize(1000)
+            .build();
+    private final EventSubscriber eventSubscriber;
     private final Map<String, InFlightOrder> inFlightOrders = new HashMap<>();
-    private final Map<String, Integer> orderNotFoundRecords = new HashMap<>();
+    private final Set<Subscription> subscriptions = new HashSet<>();
 
-    private final EventListener<OrderRequestSentEvent> orderRequestEventListener;
-    private final EventListener<OrderUpdateEvent> orderUpdateEventListener;
-    private final EventListener<TradeUpdateEvent> tradeUpdateEventListener;
-    private final EventListener<OrderLostEvent> orderLostEventListener;
 
     public OrderTracker(
-            ExchangeEventPublisher eventPublisher,
-            String platformName,
+            EventPublisher eventPublisher,
             TradeRepository tradeRepository,
-            OrderHistoryRepository orderHistoryRepository,
-            IoExecutor ioExecutor,
-            ExchangeEventSubscriber eventSubscriber
+            OrderSnapshotRepository orderSnapshotRepository,
+            EventSubscriber eventSubscriber
     ) {
         this.eventPublisher = eventPublisher;
-        this.platformName = platformName;
         this.tradeRepository = tradeRepository;
-        this.orderHistoryRepository = orderHistoryRepository;
-        this.ioExecutor = ioExecutor;
+        this.orderSnapshotRepository = orderSnapshotRepository;
         this.eventSubscriber = eventSubscriber;
-
-        this.orderRequestEventListener = event -> startTrackingOrder(event.inFlightOrder());
-        this.orderUpdateEventListener = this::processOrderUpdate;
-        this.tradeUpdateEventListener = this::processTradeUpdate;
-        this.orderLostEventListener = event -> processOrderNotFound(event.clientOrderId());
     }
 
-    @VisibleForTesting
     void startTrackingOrder(InFlightOrder inFlightOrder) {
         inFlightOrders.put(inFlightOrder.getClientOrderId(), inFlightOrder);
     }
 
-    @VisibleForTesting
-    void processTradeUpdate(TradeUpdateEvent tradeUpdateEvent) {
-        if (tradeUpdateEvent.clientOrderId() == null && tradeUpdateEvent.exchangeOrderId() == null) throw new IllegalArgumentException("TradeUpdate에 오더 아이디 정보가 없습니다.");
+    void processTradeUpdate(TradeEvent.Received event) {
+        if (event.clientOrderId() == null && event.exchangeOrderId() == null)
+            throw new IllegalArgumentException("TradeUpdate에 오더 아이디 정보가 없습니다.");
 
-        InFlightOrder trackedInFlightOrder = getInFlightOrderById(tradeUpdateEvent.clientOrderId(), tradeUpdateEvent.exchangeOrderId());
+        InFlightOrder trackedInFlightOrder = getInFlightOrder(event.clientOrderId(), event.exchangeOrderId());
         if (trackedInFlightOrder == null) {
-            log.error("can't find tracked inFlightOrder (client inFlightOrder id: {}, exchange inFlightOrder id: {})", tradeUpdateEvent.clientOrderId(), tradeUpdateEvent.exchangeOrderId());
+            log.error("can't find tracked inFlightOrder (client inFlightOrder id: {}, exchange inFlightOrder id: {})", event.clientOrderId(), event.exchangeOrderId());
             return;
         }
-        trackedInFlightOrder.updateWithTradeUpdate(tradeUpdateEvent);
-        ioExecutor.execute(() -> tradeRepository.save(tradeUpdateEvent.toTrade(platformName)));
-        triggerOrderFilledEvent(trackedInFlightOrder, tradeUpdateEvent);
+        event.fills().forEach(fill -> {
+            trackedInFlightOrder.updateWithTradeUpdate(
+                    fill.tradeId(),
+                    event.clientOrderId(),
+                    event.exchangeOrderId(),
+                    fill.fillTimestamp(),
+                    fill.fillPrice(),
+                    fill.fillBaseAmount(),
+                    fill.fillQuoteAmount(),
+                    fill.fee(),
+                    fill.isMaker()
+            );
+        });
     }
 
-    @VisibleForTesting
-    void processOrderUpdate(OrderUpdateEvent orderUpdateEvent) {
-        if (orderUpdateEvent.clientOrderId() == null && orderUpdateEvent.exchangeOrderId() == null) throw new IllegalArgumentException("OrderUpdate에 오더 아이디 정보가 없습니다.");
-        InFlightOrder inFlightOrder = getInFlightOrderById(orderUpdateEvent.clientOrderId(), orderUpdateEvent.exchangeOrderId());
-        if(inFlightOrder == null) {
-            log.warn("트레킹되지 않은 오더의 업데이트 이벤트가 발생했습니다.");
-            return;
-        }
+    void processOrderUpdate(OrderEvent.StatusReceived event) {
+        InFlightOrder inFlightOrder = findInFlightOrderOrElseThrow(event.clientOrderId(), event.exchangeOrderId());
         OrderState prevState = inFlightOrder.getCurrentState();
-        inFlightOrder.updateWithOrderUpdate(orderUpdateEvent);
-        if(isOrderCreation(prevState, inFlightOrder)) triggerCreatedEvent(inFlightOrder);
-        if(inFlightOrder.isDone()) {
-            inFlightOrders.remove(inFlightOrder.getClientOrderId());
-            orderNotFoundRecords.remove(inFlightOrder.getClientOrderId());
-            OrderState currentState = inFlightOrder.getCurrentState();
-            if (currentState == OrderState.CANCELED) {
-                triggerCanceledEvent(inFlightOrder);
-            }
-            if(currentState == OrderState.FILLED) {
-                triggerCompletedEvent(inFlightOrder);
-            }
-            if(currentState == OrderState.FAILED) {
-                triggerFailureEvent(inFlightOrder, orderUpdateEvent);
-            }
-            ioExecutor.execute(() -> {
-                boolean isLostUpdate = isOrderLostUpdate(orderUpdateEvent);
-                orderHistoryRepository.save(OrderHistory.from(inFlightOrder, isLostUpdate, platformName));
-            });
-        }
-    }
-
-    private boolean isOrderCreation(OrderState prevState, InFlightOrder inFlightOrder) {
-        return prevState == OrderState.PENDING_CREATE && inFlightOrder.getCurrentState() == OrderState.OPEN;
-    }
-
-    @VisibleForTesting
-    void processOrderNotFound(String clientOrderId) {
-        InFlightOrder inFlightOrder = getInFlightOrderByClientId(clientOrderId);
-        if(inFlightOrder == null) return; // ignore
-        log.warn("주문 (clientId: {} exchangeId: {})을 소실된 주문으로 처리합니다.", clientOrderId, inFlightOrder.getExchangeOrderId());
-        orderNotFoundRecords.merge(clientOrderId, 1, Integer::sum);
-        if (orderNotFoundRecords.get(clientOrderId) > LOST_ORDER_COUNT_LIMIT && !inFlightOrder.getCurrentState().isTerminal()) {
-            processOrderUpdate(new OrderUpdateEvent(
-                    inFlightOrder.getTradingPair(),
-                    Instant.now(),
-                    OrderState.FAILED,
-                    clientOrderId,
-                    inFlightOrder.getExchangeOrderId(),
-                    new OrderUpdateEvent.OrderFailure(LOST_ERROR_TYPE, "order lost")
-            ));
-        }
-    }
-
-    private void triggerCreatedEvent(InFlightOrder inFlightOrder) {
-        if (inFlightOrder.getTradeType() == TradeType.BUY) {
-            BuyOrderCreatedEvent event = new BuyOrderCreatedEvent(
-                    inFlightOrder.getLastUpdateTimestamp(), inFlightOrder.getOrderType(), inFlightOrder.getTradingPair(),
-                    inFlightOrder.getAmount(), inFlightOrder.getPrice(), inFlightOrder.getClientOrderId(),
-                    inFlightOrder.getCreationTimestamp(), inFlightOrder.getExchangeOrderId()
-            );
-            eventPublisher.publish(event);
-
-        } else {
-            SellOrderCreatedEvent event = new SellOrderCreatedEvent(
-                    inFlightOrder.getLastUpdateTimestamp(), inFlightOrder.getOrderType(), inFlightOrder.getTradingPair(),
-                    inFlightOrder.getAmount(), inFlightOrder.getPrice(), inFlightOrder.getClientOrderId(),
-                    inFlightOrder.getCreationTimestamp(), inFlightOrder.getExchangeOrderId()
-            );
-            eventPublisher.publish(event);
-        }
-    }
-
-    private void triggerCanceledEvent(InFlightOrder inFlightOrder) {
-        eventPublisher.publish(new OrderCanceledEvent(inFlightOrder.getLastUpdateTimestamp(), inFlightOrder.getClientOrderId(), inFlightOrder.getExchangeOrderId()));
-    }
-
-    private void triggerOrderFilledEvent(InFlightOrder inFlightOrder, TradeUpdateEvent tradeUpdateEvent) {
-        eventPublisher.publish(
-                new OrderFilledEvent(
-                        inFlightOrder.getLastUpdateTimestamp(), inFlightOrder.getClientOrderId(), inFlightOrder.getTradingPair(),
-                        inFlightOrder.getTradeType(), inFlightOrder.getOrderType(), tradeUpdateEvent.fillBaseAmount(), tradeUpdateEvent.fillPrice(),
-                        tradeUpdateEvent.fee(), tradeUpdateEvent.tradeId(), tradeUpdateEvent.exchangeOrderId()
-                )
+        inFlightOrder.updateWithOrderUpdate(
+                event.clientOrderId(),
+                event.exchangeOrderId(),
+                event.orderState(),
+                event.timestamp()
         );
-    }
-
-    private void triggerCompletedEvent(InFlightOrder inFlightOrder) {
-        if (inFlightOrder.getTradeType() == TradeType.BUY) {
-            BuyOrderCompletedEvent event = new BuyOrderCompletedEvent(
-                    inFlightOrder.getLastUpdateTimestamp(), inFlightOrder.getOrderType(), inFlightOrder.getTradingPair(),
-                    inFlightOrder.getAmount(), inFlightOrder.getPrice(), inFlightOrder.getClientOrderId(),
-                    inFlightOrder.getCreationTimestamp(), inFlightOrder.getExchangeOrderId()
-            );
-            eventPublisher.publish(event);
-
-        } else {
-            SellOrderCompletedEvent event = new SellOrderCompletedEvent(
-                    inFlightOrder.getLastUpdateTimestamp(), inFlightOrder.getOrderType(), inFlightOrder.getTradingPair(),
-                    inFlightOrder.getAmount(), inFlightOrder.getPrice(), inFlightOrder.getClientOrderId(),
-                    inFlightOrder.getCreationTimestamp(), inFlightOrder.getExchangeOrderId()
-            );
-            eventPublisher.publish(event);
-        }
-    }
-
-    private void triggerFailureEvent(InFlightOrder inFlightOrder, OrderUpdateEvent orderUpdateEvent) {
-        OrderFailureEvent event = new OrderFailureEvent(
-                inFlightOrder.getLastUpdateTimestamp(),
+        if(isOrderStateNotChanged(prevState, inFlightOrder.getCurrentState())) return;
+        eventPublisher.publish(new OrderEvent.SnapshotUpdateRequested(
                 inFlightOrder.getClientOrderId(),
-                inFlightOrder.getOrderType(),
-                orderUpdateEvent.orderFailure()
-        );
-        eventPublisher.publish(event);
+                inFlightOrder.getExchangeOrderId(),
+                inFlightOrder.getCurrentState(),
+                inFlightOrder.getLastUpdateTimestamp()
+        ));
+
+        if(inFlightOrder.isDone()) {
+            recentClosedOrders.put(inFlightOrder.getClientOrderId(), inFlightOrder.toView());
+            inFlightOrders.remove(inFlightOrder.getClientOrderId());
+        }
     }
 
-    public InFlightOrder getInFlightOrderById(String clientOrderId, String exchangeOrderId) {
+    /**
+     * liquidation, adl, settlement 같은 거래소 시스템에서 발생 시킨 이벤트 처리.
+     */
+    void processSystemOrderOccur() {
+        set
+    }
+
+    private boolean isOrderStateNotChanged(OrderState prevState, OrderState currentState) {
+        return prevState == currentState;
+    }
+
+    public InFlightOrder findInFlightOrderOrElseThrow(String clientOrderId, String exchangeOrderId) {
+        InFlightOrder inFlightOrder = getInFlightOrder(clientOrderId, exchangeOrderId);
+        if(inFlightOrder == null) {
+            throw new IllegalArgumentException(
+                    String.format("clientOrderId: %s, exchangeOrderId: %s 에 해당하는 주문을 찾을 수 없습니다.",
+                            clientOrderId,
+                            exchangeOrderId
+                    ));
+        }
+        return inFlightOrder;
+    }
+
+    public InFlightOrder getInFlightOrder(String clientOrderId, String exchangeOrderId) {
         if(clientOrderId != null) {
             InFlightOrder order = inFlightOrders.get(clientOrderId);
             if(order != null) return order;
@@ -202,35 +127,41 @@ public class OrderTracker implements LifecycleComponent {
     }
 
     public InFlightOrder getInFlightOrderByClientId(String clientOrderId) {
-        return getInFlightOrderById(clientOrderId, null);
+        return getInFlightOrder(clientOrderId, null);
     }
 
     public InFlightOrder getInFlightOrderByExchangeId(String exchangeOrderId) {
-        return getInFlightOrderById(null, exchangeOrderId);
+        return getInFlightOrder(null, exchangeOrderId);
     }
 
-    private boolean isOrderLostUpdate(OrderUpdateEvent event) {
-        if(event.orderFailure() == null) return false;
-        return event.orderFailure().errorType().equals(LOST_ERROR_TYPE);
-    }
-
-    @Override
-    public void start() {
-        eventSubscriber.subscribe(OrderRequestSentEvent.class, orderRequestEventListener);
-        eventSubscriber.subscribe(OrderUpdateEvent.class, orderUpdateEventListener);
-        eventSubscriber.subscribe(TradeUpdateEvent.class, tradeUpdateEventListener);
-        eventSubscriber.subscribe(OrderLostEvent.class, orderLostEventListener);
-    }
-
-    @Override
-    public void shutdown() {
-        eventSubscriber.unsubscribe(OrderRequestSentEvent.class, orderRequestEventListener);
-        eventSubscriber.unsubscribe(OrderUpdateEvent.class, orderUpdateEventListener);
-        eventSubscriber.unsubscribe(TradeUpdateEvent.class, tradeUpdateEventListener);
-        eventSubscriber.unsubscribe(OrderLostEvent.class, orderLostEventListener);
-    }
-
-    public Collection<InFlightOrder> getAll() {
+    public Collection<InFlightOrder> getAllInFlightOrders() {
         return inFlightOrders.values();
+    }
+
+    public Optional<OrderView> getOrderByClientId(String clientOrderId) {
+        InFlightOrder inFlightOrder = inFlightOrders.get(clientOrderId);
+        if(inFlightOrder != null) return Optional.of(inFlightOrder.toView());
+        return Optional.ofNullable(recentClosedOrders.getIfPresent(clientOrderId));
+    }
+
+    @Override
+    public void onStart() {
+        subscriptions.add(
+                eventSubscriber.subscribe(OrderEvent.StatusReceived.class, this::processOrderUpdate, ExecutionPolicy.sequential())
+        );
+        subscriptions.add(
+                eventSubscriber.subscribe(TradeEvent.Received.class, this::processTradeUpdate, ExecutionPolicy.sequential())
+        );
+    }
+
+    @Override
+    public void onShutdown() {
+        subscriptions.forEach(Subscription::close);
+        subscriptions.clear();
+    }
+
+    @Override
+    public int phase() {
+        return Phases.ORDER_TRACKER_SETUP;
     }
 }

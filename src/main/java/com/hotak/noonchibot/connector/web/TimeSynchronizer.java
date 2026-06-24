@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.connector.web;
 
-import com.hotak.noonchibot.connector.LifecycleComponent;
+import com.hotak.noonchibot.core.config.Phases;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.TaskScheduler;
@@ -17,7 +17,7 @@ import java.util.concurrent.ScheduledFuture;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class TimeSynchronizer implements LifecycleComponent {
+public class TimeSynchronizer implements OrderedLifecycleAware {
     private static final int MAX_SAMPLES = 5;
     private static final Duration UPDATE_INTERVAL = Duration.ofMinutes(30);
 
@@ -94,14 +94,20 @@ public class TimeSynchronizer implements LifecycleComponent {
     }
 
     @Override
-    public void start() {
+    public void onStart() {
         scheduleUpdate();
     }
 
     @Override
-    public void shutdown() {
+    public void onShutdown() {
         if(scheduledTask != null) {
             scheduledTask.cancel(true);
+            scheduledTask = null;
         }
+    }
+
+    @Override
+    public int phase() {
+        return Phases.TIME_SYNCHRONIZATION;
     }
 }

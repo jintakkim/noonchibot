@@ -2,12 +2,10 @@ package com.hotak.noonchibot.connector.binance;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.connector.LifecycleComponent;
-import com.hotak.noonchibot.connector.PollScheduler;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
-import com.hotak.noonchibot.core.event.BalanceSnapshotEvent;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
@@ -20,7 +18,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 class SpotBalancePoller implements LifecycleComponent {
-    private final RestAssistant restAssistant;
+    private final RestAssistantImpl restAssistant;
     private final ExchangeEventPublisher eventPublisher;
     private final IoExecutor ioExecutor;
     private final PollScheduler pollScheduler;
@@ -28,7 +26,7 @@ class SpotBalancePoller implements LifecycleComponent {
     public SpotBalancePoller(
             WebsocketStatus websocketStatus,
             IoExecutor ioExecutor,
-            RestAssistant restAssistant,
+            RestAssistantImpl restAssistant,
             ExchangeEventPublisher eventPublisher,
             TaskScheduler taskScheduler
     ) {

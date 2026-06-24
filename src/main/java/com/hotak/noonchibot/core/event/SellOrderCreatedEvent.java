@@ -14,5 +14,5 @@ public record SellOrderCreatedEvent(
         String orderId,
         Instant creationTimestamp,
         String exchangeOrderId
-) implements ExchangeEvent {}
+) implements Event {}
 

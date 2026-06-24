@@ -6,4 +6,4 @@ public record OrderCanceledEvent(
     Instant timestamp,
     String orderId,
     String exchangeOrderId
-) implements ExchangeEvent {}
+) implements Event {}

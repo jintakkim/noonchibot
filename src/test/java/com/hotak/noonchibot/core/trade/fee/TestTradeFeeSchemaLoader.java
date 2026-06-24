@@ -1,5 +1,8 @@
 package com.hotak.noonchibot.core.trade.fee;
 
+import com.hotak.noonchibot.core.trade.TradeFeeSchema;
+import com.hotak.noonchibot.core.trade.TradeFeeSchemaLoader;
+
 public class TestTradeFeeSchemaLoader implements TradeFeeSchemaLoader {
     private TradeFeeSchema tradeFeeSchema;
 

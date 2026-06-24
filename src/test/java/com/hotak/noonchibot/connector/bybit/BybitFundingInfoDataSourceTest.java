@@ -2,12 +2,11 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.connector.web.WsAssistantImpl;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.orderbook.AbstractFundingInfoDataSourceTest;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,26 +27,26 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class BybitFundingInfoDataSourceTest extends AbstractFundingInfoDataSourceTest<BybitFundingInfoDataSource> {
+public class BybitFundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<BybitWsFundingInfoDataSource> {
 
     private TradingPairSymbolRegistry symbolRegistry;
-    private RestAssistant mockRestAssistant;
+    private RestAssistantImpl mockRestAssistant;
 
     protected BybitFundingInfoDataSourceTest() {
         super("USDT");
     }
 
     @Override
-    protected BybitFundingInfoDataSource createDataSource(
-            WsAssistant wsAssistant,
+    protected BybitWsFundingInfoDataSource createDataSource(
+            WsAssistantImpl wsAssistant,
             IoExecutor ioExecutor
     ) {
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of(
                 "BTC-USDT", "BTCUSDT",
                 "ETH-USDT", "ETHUSDT"
         ));
-        mockRestAssistant = Mockito.mock(RestAssistant.class);
-        return new BybitFundingInfoDataSource(
+        mockRestAssistant = Mockito.mock(RestAssistantImpl.class);
+        return new BybitWsFundingInfoDataSource(
                 wsAssistant,
                 DerivativeApiSpec.WSS_LINEAR_URL,
                 objectMapper,

@@ -2,13 +2,11 @@ package com.hotak.noonchibot.core.balance;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.connector.LifecycleComponent;
-import com.hotak.noonchibot.core.event.BalanceSnapshotEvent;
 import com.hotak.noonchibot.core.event.BalanceUpdateEvent;
 import com.hotak.noonchibot.core.event.EventListener;
-import com.hotak.noonchibot.core.event.ExchangeEventSubscriber;
+import com.hotak.noonchibot.core.event.EventSubscriber;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -36,7 +34,7 @@ public class AccountBalanceTracker implements LifecycleComponent {
 
     private Instant lastSnapshotTimestamp;
     private Instant lastUpdateTimestamp;
-    private final ExchangeEventSubscriber eventSubscriber;
+    private final EventSubscriber eventSubscriber;
 
     public BigDecimal getAvailableBalance(String currency) {
         return accountAvailableBalances.get(currency);

@@ -3,7 +3,7 @@ package com.hotak.noonchibot.connector.bybit;
 import com.hotak.noonchibot.connector.*;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
-import com.hotak.noonchibot.core.order.OrderHistoryRepository;
+import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -45,7 +45,7 @@ class BybitConfig {
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
-            OrderHistoryRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository
     ) {
         return SpotExchangeAdapterFactory.create(
                 properties,
@@ -68,7 +68,7 @@ class BybitConfig {
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
-            OrderHistoryRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository
     ) {
         return DerivativeExchangeAdapterFactory.create(
                 properties,

@@ -1,35 +1,43 @@
 package com.hotak.noonchibot.core;
 
-import com.hotak.noonchibot.connector.LifecycleComponent;
-import com.hotak.noonchibot.connector.web.WebsocketDisconnectedException;
-import com.hotak.noonchibot.connector.web.WsAssistant;
-import com.hotak.noonchibot.connector.web.WsConnection;
+import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.web.*;
+import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.Future;
 
 @RequiredArgsConstructor
 @Slf4j
-public abstract class AbstractWebsocketDataSource implements LifecycleComponent {
+public abstract class AbstractWebsocketDataSource implements LifecycleAware, WebsocketStatus {
     private final WsAssistant wsAssistant;
-    private final String wsUrl;
     protected final ObjectMapper objectMapper;
     private final IoExecutor ioExecutor;
-
-    private Future<?> connectionFuture;
+    private volatile Instant lastRecvTime;
+    private volatile Future<?> connectionFuture;
     protected volatile WsConnection wsConnection;
 
     private void connectionLoop() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                wsConnection = wsAssistant.connect(URI.create(wsUrl));
-                onConnected();
+                doConnection();
                 while (true) {
-                    processMessage();
+                    WsResponse res = wsConnection.take();
+                    lastRecvTime = Instant.now();
+                    try {
+                        processMessage(res);
+                    } catch (WebsocketErrorMessageReceivedException e) {
+                        if(e instanceof WebsocketSubscriptionFailedException) {
+                            log.error("subscription failed", e);
+                            return;
+                        }
+                        log.error("server-side error message received: {}", e.getMessage());
+                    }
                 }
             } catch (WebsocketDisconnectedException e) {
                 log.warn("disconnected, reconnecting in 1s");
@@ -49,16 +57,37 @@ public abstract class AbstractWebsocketDataSource implements LifecycleComponent 
         }
     }
 
-    protected abstract void onConnected();
-    protected abstract void processMessage() throws InterruptedException;
+    @VisibleForTesting
+    void doConnection() {
+        wsConnection = wsAssistant.connect(connectionUri());
+        onConnected();
+    }
+
+    protected abstract URI connectionUri();
 
     @Override
-    public void start() {
+    public Instant getLastRecvTime() {
+        return lastRecvTime;
+    }
+
+    @Override
+    public boolean isConnected() {
+        return wsConnection != null && wsConnection.isConnected();
+    }
+
+    protected abstract void onConnected();
+    protected abstract void processMessage(WsResponse wsResponse);
+
+    @Override
+    public void onStart() {
         connectionFuture = ioExecutor.submit(this::connectionLoop);
     }
 
     @Override
-    public void shutdown() {
-        if (connectionFuture != null) connectionFuture.cancel(true);
+    public void onShutdown() {
+        if (connectionFuture != null) {
+            connectionFuture.cancel(true);
+            connectionFuture = null;
+        }
     }
 }

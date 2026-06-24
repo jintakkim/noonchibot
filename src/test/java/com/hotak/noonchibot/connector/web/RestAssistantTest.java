@@ -19,7 +19,6 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.http.HttpClient;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -32,7 +31,7 @@ import static org.assertj.core.api.Assertions.*;
 @WireMockTest
 public class RestAssistantTest {
 
-    private RestAssistant restAssistant;
+    private RestAssistantImpl restAssistant;
     private RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -43,7 +42,7 @@ public class RestAssistantTest {
                 .baseUrl(wm.getHttpBaseUrl())
                 .build();
 
-        restAssistant = new RestAssistant(
+        restAssistant = new RestAssistantImpl(
                 restClient,
                 List.of(),
                 List.of(),
@@ -106,7 +105,7 @@ public class RestAssistantTest {
                 .withHeader("X-API-KEY", equalTo("test-key"))
                 .willReturn(okJson("{\"balance\":\"1000\"}")));
 
-        restAssistant = new RestAssistant(
+        restAssistant = new RestAssistantImpl(
                 restClient, List.of(), List.of(),
                 new TestAuthenticator(),
                 new NoOpAsyncThrottler(),
@@ -132,7 +131,7 @@ public class RestAssistantTest {
         stubFor(get("/api/orders")
                 .willReturn(aResponse().withStatus(200).withBody("{\"code\":-1003}")));
 
-        restAssistant = new RestAssistant(
+        restAssistant = new RestAssistantImpl(
                 restClient,
                 List.of(),
                 List.of(response -> {
@@ -163,7 +162,7 @@ public class RestAssistantTest {
                 .willReturn(okJson("{\"symbol\":\"BTCUSDT\"}")));
 
         NoOpAsyncThrottler throttler = new NoOpAsyncThrottler();
-        restAssistant = new RestAssistant(
+        restAssistant = new RestAssistantImpl(
                 restClient, List.of(), List.of(),
                 null, throttler, objectMapper
         );
@@ -276,7 +275,7 @@ public class RestAssistantTest {
                         .withStatus(429)
                         .withBody("{\"code\":-1003,\"msg\":\"Too many requests\"}")));
 
-        restAssistant = new RestAssistant(
+        restAssistant = new RestAssistantImpl(
                 restClient,
                 List.of(),
                 List.of(response -> {
@@ -309,7 +308,7 @@ public class RestAssistantTest {
                         .withStatus(400)
                         .withBody("{\"code\":-1021,\"msg\":\"Timestamp error\"}")));
 
-        restAssistant = new RestAssistant(
+        restAssistant = new RestAssistantImpl(
                 restClient,
                 List.of(),
                 List.of(response -> {

@@ -2,7 +2,7 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.AbstractPollingTradingRuleRegistry;
 import com.hotak.noonchibot.connector.TradingRuleParser;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
@@ -14,7 +14,7 @@ class BybitTradingRuleRegistry extends AbstractPollingTradingRuleRegistry {
     private final String requestPath;
 
     public BybitTradingRuleRegistry(
-            RestAssistant restAssistant,
+            RestAssistantImpl restAssistant,
             TradingRuleParser parser,
             TaskScheduler scheduler,
             Duration pollingInterval,

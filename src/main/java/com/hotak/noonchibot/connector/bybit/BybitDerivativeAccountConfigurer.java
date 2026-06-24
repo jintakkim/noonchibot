@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.derivative.AbstractDerivativeAccountConfigurer;
@@ -22,14 +22,14 @@ public class BybitDerivativeAccountConfigurer extends AbstractDerivativeAccountC
     private static final int POSITION_MODE_HEDGE = 3;
 
     private final IoExecutor ioExecutor;
-    private final RestAssistant restAssistant;
+    private final RestAssistantImpl restAssistant;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
 
     public BybitDerivativeAccountConfigurer(
             DerivativeInfoTracker tracker,
             ExchangeEventPublisher eventPublisher,
             IoExecutor ioExecutor,
-            RestAssistant restAssistant,
+            RestAssistantImpl restAssistant,
             TradingPairSymbolRegistry tradingPairSymbolRegistry
             ) {
         super(tracker, eventPublisher);

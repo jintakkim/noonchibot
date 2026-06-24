@@ -1,13 +1,11 @@
 package com.hotak.noonchibot.core.event;
 
 import com.hotak.noonchibot.core.order.OrderType;
-import com.hotak.noonchibot.core.datatype.PositionAction;
-import com.hotak.noonchibot.core.datatype.TradeType;
-import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import com.hotak.noonchibot.core.trade.TradeType;
+import com.hotak.noonchibot.core.trade.TokenAmount;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 
 public record OrderFilledEvent(
         Instant timestamp,
@@ -20,4 +18,4 @@ public record OrderFilledEvent(
         TokenAmount tradeFee,
         String exchangeTradeId,
         String exchangeOrderId
-) implements ExchangeEvent {}
+) implements Event {}

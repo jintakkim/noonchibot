@@ -7,7 +7,6 @@ import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.MainExecutor;
-import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.order.*;
 import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
@@ -88,7 +87,7 @@ class SpotOrderExecutor extends AbstractExchangeOrderExecutor {
      * 따라서 해당 조건일때 리턴되는 ExchangeOrderId는 "UNKNOWN" 이다.
      */
     @Override
-    protected OrderPlacedDto placeOrder(InFlightOrder inFlightOrder) {
+    protected OrderPlaceResult placeOrder(InFlightOrder inFlightOrder) {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(inFlightOrder.getTradingPair());
         String tradeTypeApiValue = inFlightOrder.getTradeType() == TradeType.BUY ? "BUY" : "SELL";
         String orderTypeApiValue = orderTypeToApiValue(inFlightOrder.getOrderType(), inFlightOrder.isPostOnly());
@@ -117,10 +116,10 @@ class SpotOrderExecutor extends AbstractExchangeOrderExecutor {
         JsonNode orderResult = restAssistant.executeRequestAndGetJsonBody(request);
         String exchangeOrderId = orderResult.get("orderId").asString();
         Instant transactTime = Instant.ofEpochMilli(orderResult.get("transactTime").asLong());
-        return new OrderPlacedDto(exchangeOrderId, transactTime);
+        return new OrderPlaceResult(exchangeOrderId, transactTime);
         } catch (ExchangeApiException e) {
             if(e.httpStatusCode == HttpStatusCode.valueOf(503) && e.getMessage().contains("Unknown error, please check your request or try again later.")) {
-                return new OrderPlacedDto("UNKNOWN", Instant.ofEpochMilli(timeSynchronizer.serverTime()));
+                return new OrderPlaceResult("UNKNOWN", Instant.ofEpochMilli(timeSynchronizer.serverTime()));
             }
             throw e;
         }

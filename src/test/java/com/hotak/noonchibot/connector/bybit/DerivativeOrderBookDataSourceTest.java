@@ -2,8 +2,8 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
+import com.hotak.noonchibot.connector.web.WsAssistantImpl;
 import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.core.IoExecutor;
@@ -33,7 +33,7 @@ class DerivativeOrderBookDataSourceTest extends DiffSupportingOrderBookDataSourc
             Map.of("BTC-USDT", "BTCUSDT", "ETH-USDT", "ETHUSDT")
     );
 
-    private RestAssistant restAssistant;
+    private RestAssistantImpl restAssistant;
 
     public DerivativeOrderBookDataSourceTest() {
         super("USDT");
@@ -41,11 +41,11 @@ class DerivativeOrderBookDataSourceTest extends DiffSupportingOrderBookDataSourc
 
     @Override
     protected AbstractOrderBookDataSource createDataSource(
-            WsAssistant wsAssistant,
+            WsAssistantImpl wsAssistant,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler
     ) {
-        restAssistant = Mockito.mock(RestAssistant.class);
+        restAssistant = Mockito.mock(RestAssistantImpl.class);
         return new DerivativeOrderBookDataSource(
                 wsAssistant,
                 DerivativeApiSpec.WSS_LINEAR_URL,

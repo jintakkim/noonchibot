@@ -1,17 +1,14 @@
 package com.hotak.noonchibot.core.order;
 
-import com.hotak.noonchibot.core.datatype.*;
-import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import com.hotak.noonchibot.core.exception.InFlightUpdateFailedException;
-import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import com.hotak.noonchibot.core.trade.TokenAmount;
+import com.hotak.noonchibot.core.trade.TradeType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -91,19 +88,19 @@ class InFlightOrderTest {
             assertThat(inFlightOrder.isOrderFilled()).isTrue();
         }
 
-        private OrderUpdateEvent orderUpdate(OrderState state, String exchangeOrderId) {
-            return new OrderUpdateEvent("BTC-USDT", Instant.now(), state, "OID-123", exchangeOrderId, null);
+        private OrderUpdateDto orderUpdate(OrderState state, String exchangeOrderId) {
+            return new OrderUpdateDto("BTC-USDT", Instant.now(), state, "OID-123", exchangeOrderId, null);
         }
     }
 
     @Nested
-    @DisplayName("OrderUpdateEvent 적용")
+    @DisplayName("OrderUpdateDto 적용")
     class InFlightOrderUpdateEventTest {
 
         @Test
         @DisplayName("clientOrderId가 일치하면 exchangeOrderId와 상태가 갱신된다")
         void validUpdate() {
-            OrderUpdateEvent update = new OrderUpdateEvent(
+            OrderUpdateDto update = new OrderUpdateDto(
                     "BTC-USDT", Instant.now(), OrderState.PARTIALLY_FILLED,
                     "OID-123", "EX-1", null
             );
@@ -117,7 +114,7 @@ class InFlightOrderTest {
         @Test
         @DisplayName("clientOrderId가 불일치하면 예외가 발생한다")
         void rejectsClientOrderIdMismatch() {
-            OrderUpdateEvent mismatch = new OrderUpdateEvent(
+            OrderUpdateDto mismatch = new OrderUpdateDto(
                     "BTC-USDT", Instant.now(), OrderState.FILLED,
                     "WRONG-ID", "WRONG-EX", null
             );

@@ -9,4 +9,4 @@ public record OrderBookTradeEvent(
         BigDecimal amount,
         long tradeId,
         Instant timestamp
-) implements ExchangeEvent {}
+) implements Event {}

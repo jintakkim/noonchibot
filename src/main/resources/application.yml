@@ -30,5 +30,13 @@ binance:
             "ETH-USDT": "ETHUSDT"
             "SOL-USDT": "SOLUSDT"
 
+hyperliquid:
+    address: 0x
+    secret: 0x
+    derivative:
+        trading-pair-symbol-map:
+          "BTC-USDC": "BTC"
+          "ETH-USDC": "ETH"
+          "SOL-USDC": "SOL"
 
 

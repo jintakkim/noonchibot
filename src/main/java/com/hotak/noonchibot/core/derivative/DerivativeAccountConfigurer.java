@@ -1,22 +1,72 @@
 package com.hotak.noonchibot.core.derivative;
 
-import java.util.concurrent.CompletableFuture;
+import com.hotak.noonchibot.core.event.*;
+import com.hotak.noonchibot.core.event.internal.derivative.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
-public interface DerivativeAccountConfigurer {
+import java.util.Optional;
+
+/**
+ * 래버리지 설정, 포지션 모드 설정(HEDGE, ONE-WAY), 마진 모드 설정(CROSS, ISOLATED)
+ */
+@Slf4j
+@RequiredArgsConstructor
+public class DerivativeAccountConfigurer {
+    private final DerivativeInfoTracker tracker;
+    private final EventPublisher eventPublisher;
+    
+    public final EventHandler<PositionModeChangeEvent.EnsureCommand> ensurePositionModeHandler = this::ensurePositionMode;
+    public final EventHandler<LeverageChangeEvent.EnsureCommand> ensureLeverageHandler = this::ensureLeverage;
+    public final EventHandler<MarginModeChangeEvent.EnsureCommand> ensureMarginModeHandler = this::ensureMarginMode;
+
     /**
      * 포지션 모드를 원하는 값으로 맞춘다. 이미 같으면 skip.
      */
-    CompletableFuture<Void> ensurePositionMode(PositionMode desired);
+    void ensurePositionMode(PositionModeChangeEvent.EnsureCommand command, EventMetadata metadata) {
+        Optional<PositionMode> current = tracker.findPositionMode();
+        if(command.wantTo() == null) {
+            eventPublisher.publish(new PositionModeChangeEvent.Failed(new IllegalArgumentException("Desired position mode cannot be null")));
+            return;
+        }
+        if(current.isPresent() && current.get() == command.wantTo()) {
+            log.debug("position mode already set to {}, skipping", command.wantTo());
+            eventPublisher.publish(new PositionModeChangeEvent.Applied(current.get()));
+            return;
+        }
+        log.debug("changing position mode: {} -> {}", current, command.wantTo());
+        // 실제 거래소 요청
+        eventPublisher.publish(new PositionModeChangeEvent.IORequested(command.wantTo()));
+    }
 
-    /**
-     * 특정 페어의 레버리지를 원하는 값으로 맞춘다. 이미 같으면 skip.
-     * 담보가 부족하거나 허용하지 않는 레버리지라면 failed 될 수 있다.
-     */
-    CompletableFuture<Void> ensureLeverage(String tradingPair, int desired);
+    void ensureLeverage(LeverageChangeEvent.EnsureCommand command, EventMetadata metadata) {
+        if (command.wantTo() <= 0) {
+            eventPublisher.publish(new LeverageChangeEvent.Failed(new IllegalArgumentException("leverage must be positive, got: " + command.wantTo())));
+            return;
+        }
+        Optional<Integer> current = tracker.findLeverage(command.tradingPair());
+        if(current.isPresent() && current.get() == command.wantTo()) {
+            log.debug("leverage for {} already {}, skipping", command.tradingPair(), command.wantTo());
+            eventPublisher.publish(new LeverageChangeEvent.Applied(command.tradingPair(), command.wantTo()));
+            return;
+        }
+        log.debug("changing leverage for {}: {}x -> {}x", command.tradingPair(), current, command.wantTo());
+        eventPublisher.publish(new LeverageChangeEvent.IORequested(command.tradingPair(), command.wantTo()));
+    }
 
-    /**
-     * 특정 페어의 마진 모드를 원하는 값으로 맞춘다. 이미 같으면 skip.
-     * 주의: 해당 페어에 open position이나 order가 있으면 거래소가 변경을 거부할 수 있다.
-     */
-    CompletableFuture<Void> ensureMarginMode(String tradingPair, MarginMode desired);
+    void ensureMarginMode(MarginModeChangeEvent.EnsureCommand command, EventMetadata metadata) {
+        if(command.wantTo() == null) {
+            eventPublisher.publish(new MarginModeChangeEvent.Failed(new IllegalArgumentException("Desired position mode cannot be null")));
+            return;
+        }
+        Optional<MarginMode> current = tracker.findMarginMode(command.tradingPair());
+        if(current.isPresent() && current.get() == command.wantTo()) {
+            log.debug("margin mode already set to {}, skipping", command.wantTo());
+            eventPublisher.publish(new MarginModeChangeEvent.Applied(command.tradingPair(), command.wantTo()));
+            return;
+        }
+        log.debug("changing margin mode: {} -> {}", current, command.wantTo());
+        // 실제 거래소 요청
+        eventPublisher.publish(new MarginModeChangeEvent.IORequested(command.tradingPair(), command.wantTo()));
+    }
 }

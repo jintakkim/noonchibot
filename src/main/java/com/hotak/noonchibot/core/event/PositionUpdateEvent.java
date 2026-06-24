@@ -12,5 +12,5 @@ public record PositionUpdateEvent(
         BigDecimal entryPrice,
         BigDecimal unrealizedPnl,
         Instant timestamp
-) implements ExchangeEvent {
+) implements Event {
 }

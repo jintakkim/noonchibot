@@ -3,12 +3,11 @@ package com.hotak.noonchibot.core.order;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.hotak.noonchibot.core.TestMainExecutor;
-import com.hotak.noonchibot.core.datatype.*;
 import com.hotak.noonchibot.core.event.*;
-import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import com.hotak.noonchibot.core.trade.TokenAmount;
+import com.hotak.noonchibot.core.trade.TradeType;
 import org.junit.jupiter.api.*;
 import org.mockito.Mockito;
-import org.springframework.core.task.VirtualThreadTaskExecutor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -28,20 +27,20 @@ class OrderTrackerTest {
     private OrderTracker tracker;
     private InFlightOrder testInFlightOrder;
     private TradeRepository tradeRepository;
-    private OrderHistoryRepository orderHistoryRepository;
+    private OrderSnapshotRepository orderHistoryRepository;
     private TestMainExecutor testMainExecutor;
 
     @BeforeEach
     void setUp() {
         capturedEvents = new ArrayList<>();
         testMainExecutor = new TestMainExecutor();
-        ExchangeEventBus exchangeEventBus = Mockito.spy(new ExchangeEventBus(new TestMainExecutor()));
+        EventBus exchangeEventBus = Mockito.spy(new EventBus(new TestMainExecutor()));
         doAnswer(invocation -> {
             capturedEvents.add(invocation.getArgument(0));
             return null;
         }).when(exchangeEventBus).publish(any());
         tradeRepository = Mockito.mock(TradeRepository.class);
-        orderHistoryRepository = Mockito.mock(OrderHistoryRepository.class);
+        orderHistoryRepository = Mockito.mock(OrderSnapshotRepository.class);
         tracker = new OrderTracker(
                 exchangeEventBus,
                 "test-platform",
@@ -65,16 +64,16 @@ class OrderTrackerTest {
 
     // === 헬퍼 ===
 
-    private OrderUpdateEvent orderUpdate(OrderState state, String clientOrderId, String exchangeOrderId) {
-        return new OrderUpdateEvent("BTC-USDT", Instant.now(), state, clientOrderId, exchangeOrderId, null);
+    private OrderUpdateDto orderUpdate(OrderState state, String clientOrderId, String exchangeOrderId) {
+        return new OrderUpdateDto("BTC-USDT", Instant.now(), state, clientOrderId, exchangeOrderId, null);
     }
 
-    private OrderUpdateEvent orderUpdate(OrderState state) {
+    private OrderUpdateDto orderUpdate(OrderState state) {
         return orderUpdate(state, "OID-123", "EX-1");
     }
 
-    private OrderUpdateEvent failedOrderUpdate(String clientOrderId, OrderUpdateEvent.OrderFailure failure) {
-        return new OrderUpdateEvent("BTC-USDT", Instant.now(), OrderState.FAILED, clientOrderId, null, failure);
+    private OrderUpdateDto failedOrderUpdate(String clientOrderId, OrderUpdateDto.OrderFailure failure) {
+        return new OrderUpdateDto("BTC-USDT", Instant.now(), OrderState.FAILED, clientOrderId, null, failure);
     }
 
     private TradeUpdateEvent createFill(String tradeId, String price, String baseAmount, String quoteAmount) {
@@ -159,7 +158,7 @@ class OrderTrackerTest {
     }
 
     @Nested
-    @DisplayName("OrderUpdateEvent 처리 - 주문 생성")
+    @DisplayName("OrderUpdateDto 처리 - 주문 생성")
     class InFlightOrderCreationTest {
 
         @Test
@@ -233,7 +232,7 @@ class OrderTrackerTest {
     }
 
     @Nested
-    @DisplayName("OrderUpdateEvent 처리 - 주문 종료")
+    @DisplayName("OrderUpdateDto 처리 - 주문 종료")
     class InFlightOrderTerminationTest {
 
         @Test
@@ -255,7 +254,7 @@ class OrderTrackerTest {
         @DisplayName("FAILED 업데이트 시 OrderFailureEvent가 발생하고 트래킹에서 제거된다")
         void failedOrder() {
             tracker.startTrackingOrder(testInFlightOrder);
-            OrderUpdateEvent.OrderFailure failure = new OrderUpdateEvent.OrderFailure("ExchangeRejected", "Insufficient balance");
+            OrderUpdateDto.OrderFailure failure = new OrderUpdateDto.OrderFailure("ExchangeRejected", "Insufficient balance");
 
             tracker.processOrderUpdate(failedOrderUpdate("OID-123", failure));
 
@@ -287,7 +286,7 @@ class OrderTrackerTest {
         @DisplayName("done 상태의 주문은 history로 저장된다")
         void doneOrderIsSavedToHistory() {
             tracker.startTrackingOrder(testInFlightOrder);
-            tracker.processOrderUpdate(new OrderUpdateEvent(
+            tracker.processOrderUpdate(new OrderUpdateDto(
                     "BTC-USDT",
                     Instant.now(),
                     OrderState.FILLED,
@@ -303,14 +302,14 @@ class OrderTrackerTest {
     }
 
     @Nested
-    @DisplayName("OrderUpdateEvent 처리 - 예외 케이스")
+    @DisplayName("OrderUpdateDto 처리 - 예외 케이스")
     class InFlightOrderUpdateEventEdgeCaseTest {
 
         @Test
         @DisplayName("clientOrderId와 exchangeOrderId 모두 null이면 예외가 발생한다")
         void rejectsBothNull() {
             tracker.startTrackingOrder(testInFlightOrder);
-            OrderUpdateEvent invalid = orderUpdate(OrderState.FILLED, null, null);
+            OrderUpdateDto invalid = orderUpdate(OrderState.FILLED, null, null);
             assertThatThrownBy(() -> tracker.processOrderUpdate(invalid))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -439,7 +438,7 @@ class OrderTrackerTest {
         }
 
         @Test
-        @DisplayName("TradeUpdate로 수량이 채워져도 OrderUpdateEvent(FILLED)가 와야 CompletedEvent가 발생한다")
+        @DisplayName("TradeUpdate로 수량이 채워져도 OrderUpdateDto(FILLED)가 와야 CompletedEvent가 발생한다")
         void completedRequiresBothFillAndStateUpdate() {
             tracker.startTrackingOrder(testInFlightOrder);
             tracker.processOrderUpdate(orderUpdate(OrderState.OPEN));

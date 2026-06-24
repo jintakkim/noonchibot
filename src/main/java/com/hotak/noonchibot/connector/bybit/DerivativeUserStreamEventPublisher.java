@@ -4,14 +4,13 @@ import com.hotak.noonchibot.connector.LifecycleComponent;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
+import com.hotak.noonchibot.core.order.OrderUpdateDto;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.event.BalanceUpdateEvent;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
-import com.hotak.noonchibot.core.event.OrderUpdateEvent;
 import com.hotak.noonchibot.core.event.PositionUpdateEvent;
-import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
@@ -28,14 +27,14 @@ import static java.lang.Thread.sleep;
 @Slf4j
 @RequiredArgsConstructor
 class DerivativeUserStreamEventPublisher implements LifecycleComponent, WebsocketStatus {
-    private final WsAssistant wsAssistant;
+    private final WsAssistantImpl wsAssistant;
     private final ObjectMapper objectMapper;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final ExchangeEventPublisher exchangeEventPublisher;
     private final IoExecutor ioExecutor;
 
     private volatile ScheduledFuture<?> scheduledFuture;
-    private volatile WsConnection wsConnection;
+    private volatile WsConnectionImpl wsConnection;
     private volatile Future<?> connectionFuture;
     private volatile Instant lastRecvTime;
 
@@ -135,7 +134,7 @@ class DerivativeUserStreamEventPublisher implements LifecycleComponent, Websocke
                     String clientOrderId = order.path("orderLinkId").asString();
                     String exchangeOrderId = order.get("orderId").asString();
 
-                    OrderUpdateEvent orderUpdate = new OrderUpdateEvent(
+                    OrderUpdateDto orderUpdate = new OrderUpdateDto(
                             tradingPair,
                             Instant.ofEpochMilli(order.get("updatedTime").asLong()),
                             DerivativeApiSpec.ORDER_STATE.get(order.get("orderStatus").asString()),

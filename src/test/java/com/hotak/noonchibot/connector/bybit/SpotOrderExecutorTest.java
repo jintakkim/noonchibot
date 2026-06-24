@@ -1,14 +1,14 @@
 package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.*;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.core.TestMainExecutor;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderTracker;
-import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutorTest;
-import com.hotak.noonchibot.core.order.execute.AbstractExchangeOrderExecutor;
+import com.hotak.noonchibot.core.order.ExchangeOrderExecutorTest;
+import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
@@ -21,7 +21,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-public class SpotOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
+public class SpotOrderExecutorTest extends ExchangeOrderExecutorTest {
     public SpotOrderExecutorTest() {
         super(SpotApiSpec.ORDER_REALTIME_PATH_URL, SpotApiSpec.ACCOUNTS_PATH_URL, SpotApiSpec.MY_TRADES_PATH_URL);
     }
@@ -33,11 +33,11 @@ public class SpotOrderExecutorTest extends AbstractExchangeOrderExecutorTest {
     }
 
     @Override
-    protected AbstractExchangeOrderExecutor createExchangeOrderExecutor(
+    protected ExchangeOrderExecutor createExchangeOrderExecutor(
             OrderIdGenerator orderIdGenerator,
             OrderTracker orderTracker,
             TradingRuleRegistry tradingRuleRegistry,
-            RestAssistant restAssistant,
+            RestAssistantImpl restAssistant,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             OrderBookTracker orderBookTracker,
             ExchangeEventPublisher exchangeEventPublisher,

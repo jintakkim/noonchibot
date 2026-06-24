@@ -1,7 +1,8 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -64,6 +65,7 @@ public class OrderBook {
         }
         refreshBestPrices();
         this.snapshotUid = updateId;
+        this.lastDiffUid = null;
     }
 
     public void applyDiffs(List<OrderBookEntry> bids, List<OrderBookEntry> asks, long updateId) {
@@ -77,9 +79,9 @@ public class OrderBook {
         refreshBestPrices();
     }
 
-    public void applyTrade(OrderBookMessage.TradeMessage message) {
-        lastTradeTime = message.getTimestamp();
-        this.lastTradePrice = message.getPrice();
+    public void applyTrade(BigDecimal lastTradePrice, Instant timestamp) {
+        lastTradeTime = timestamp;
+        this.lastTradePrice = lastTradePrice;
     }
 
     private void updateBook(Map<BigDecimal, OrderBookEntry> book, OrderBookEntry entry) {
@@ -150,12 +152,12 @@ public class OrderBook {
         }
     }
 
-    public void restoreFromSnapshotAndDiffs(OrderBookMessage.SnapshotMessage snapshot, List<OrderBookMessage.DiffMessage> diffs) {
-        this.applySnapshot(snapshot.getBids(), snapshot.getAsks(), snapshot.getUpdateId());
+    public void restoreFromSnapshotAndDiffs(OrderBookEvent.SnapshotReceived snapshot, List<OrderBookEvent.DiffReceived> diffs) {
+        this.applySnapshot(snapshot.bids(), snapshot.asks(), snapshot.updateId());
         // (스냅샷 시점 이후의 데이터만 재적용)
         diffs.stream()
-                .filter(diff -> diff.getUpdateId() > snapshot.getUpdateId())
-                .forEach(diff -> this.applyDiffs(diff.getBids(), diff.getAsks(), diff.getUpdateId()));
+                .filter(diff -> diff.updateId() > snapshot.updateId())
+                .forEach(diff -> this.applyDiffs(diff.bids(), diff.asks(), diff.updateId()));
     }
 
     public BigDecimal getBestPrice(boolean isBuy) {

@@ -2,13 +2,12 @@ package com.hotak.noonchibot.connector.bybit;
 
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.TestMainExecutor;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
-import com.hotak.noonchibot.core.datatype.TradeType;
-import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
-import com.hotak.noonchibot.core.event.TestExchangeEventPublisher;
+import com.hotak.noonchibot.core.trade.TradeType;
+import com.hotak.noonchibot.core.event.MockEventPublisher;
 import com.hotak.noonchibot.core.order.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,16 +30,16 @@ import static org.mockito.Mockito.*;
 
 class SpotTradePollerTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    private RestAssistant restAssistant;
+    private RestAssistantImpl restAssistant;
     private OrderTracker orderTracker;
     private TradingPairSymbolRegistry symbolRegistry;
     private SpotTradePoller poller;
-    private TestExchangeEventPublisher testExchangeEventPublisher;
+    private MockEventPublisher testExchangeEventPublisher;
 
     @BeforeEach
     void setUp() {
-        restAssistant = Mockito.mock(RestAssistant.class);
-        testExchangeEventPublisher = new TestExchangeEventPublisher();
+        restAssistant = Mockito.mock(RestAssistantImpl.class);
+        testExchangeEventPublisher = new MockEventPublisher();
         orderTracker = Mockito.mock(OrderTracker.class);
         symbolRegistry = new SimpleTradingPairSymbolRegistry(Map.of("BTC-USDT", "BTCUSDT"));
         poller = new SpotTradePoller(

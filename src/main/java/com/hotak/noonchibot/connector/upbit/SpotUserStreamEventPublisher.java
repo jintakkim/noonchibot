@@ -8,7 +8,6 @@ import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.event.ExchangeEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -24,7 +23,7 @@ import static java.lang.Thread.sleep;
 @Slf4j
 @RequiredArgsConstructor
 public class SpotUserStreamEventPublisher implements WebsocketStatus, LifecycleComponent {
-    private final WsAssistant wsAssistant;
+    private final WsAssistantImpl wsAssistant;
     private final ObjectMapper objectMapper;
     private final UpbitAuthenticator upbitAuthenticator;
     private final List<UserStreamEventParser> userStreamEventParsers;
@@ -32,7 +31,7 @@ public class SpotUserStreamEventPublisher implements WebsocketStatus, LifecycleC
     private final IoExecutor ioExecutor;
 
     private volatile Instant lastRecvTime;
-    private volatile WsConnection wsConnection;
+    private volatile WsConnectionImpl wsConnection;
     private volatile Future<?> connection;
 
     private void connectionLoop() {

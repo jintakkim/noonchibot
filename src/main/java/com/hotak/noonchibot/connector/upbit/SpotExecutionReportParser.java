@@ -1,11 +1,10 @@
 package com.hotak.noonchibot.connector.upbit;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.core.datatype.TradeUpdateEvent;
 import com.hotak.noonchibot.core.datatype.UserStreamEventParser;
-import com.hotak.noonchibot.core.event.ExchangeEvent;
-import com.hotak.noonchibot.core.event.OrderUpdateEvent;
-import com.hotak.noonchibot.core.trade.fee.TokenAmount;
+import com.hotak.noonchibot.core.event.Event;
+import com.hotak.noonchibot.core.order.OrderUpdateDto;
+import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 
@@ -24,8 +23,8 @@ public class SpotExecutionReportParser implements UserStreamEventParser {
     }
 
     @Override
-    public List<ExchangeEvent> parse(JsonNode event) {
-        List<ExchangeEvent> events = new ArrayList<>();
+    public List<Event> parse(JsonNode event) {
+        List<Event> events = new ArrayList<>();
 
         String state = event.path("state").asString();
         String exchangeOrderId = event.path("uuid").asString();
@@ -57,7 +56,7 @@ public class SpotExecutionReportParser implements UserStreamEventParser {
             ));
         }
 
-        events.add(new OrderUpdateEvent(
+        events.add(new OrderUpdateDto(
                 tradingPair,
                 Instant.ofEpochMilli(event.path("timestamp").asLong()),
                 SpotApiSpec.parseOrderState(event),

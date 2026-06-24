@@ -14,6 +14,10 @@ public class TestClock extends Clock {
         this.instant = this.instant.plus(duration);
     }
 
+    public void setInstant(Instant instant) {
+        this.instant = instant;
+    }
+
     @Override public Instant instant() { return instant; }
     @Override public ZoneId getZone() { return zone; }
     @Override public Clock withZone(ZoneId zone) { return this; }

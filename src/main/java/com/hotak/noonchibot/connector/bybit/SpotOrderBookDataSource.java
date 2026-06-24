@@ -3,10 +3,10 @@ package com.hotak.noonchibot.connector.bybit;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.datatype.TradeType;
+import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
+import com.hotak.noonchibot.core.trade.TradeType;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
-import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
@@ -24,17 +24,17 @@ import java.util.Set;
 @Slf4j
 class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
 
-    private final RestAssistant restAssistant;
+    private final RestAssistantImpl restAssistant;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
 
     public SpotOrderBookDataSource(
-            WsAssistant wsAssistant,
+            WsAssistantImpl wsAssistant,
             String publicWsUrl,
             ObjectMapper objectMapper,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant
+            RestAssistantImpl restAssistant
     ) {
         super(wsAssistant, publicWsUrl, objectMapper, ioExecutor, taskScheduler, false);
         this.restAssistant = restAssistant;
@@ -42,7 +42,7 @@ class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
     }
 
     @Override
-    protected OrderBookMessage.SnapshotMessage getOrderBookSnapshot(String tradingPair) {
+    protected OrderBookEvent.SnapshotReceived fetchOrderBookSnapshot(String tradingPair) {
         String exchangeSymbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
@@ -54,7 +54,7 @@ class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
         Instant ts = Instant.ofEpochMilli(result.get("ts").asLong());
         List<OrderBookEntry> bids = parseEntries(result.get("b"));
         List<OrderBookEntry> asks = parseEntries(result.get("a"));
-        return new OrderBookMessage.SnapshotMessage(ts, tradingPair, updateId, bids, asks);
+        return new OrderBookEvent.SnapshotReceived(tradingPair, updateId, bids, asks, ts);
     }
 
     @Override
@@ -83,15 +83,15 @@ class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
     }
 
     @Override
-    protected OrderBookMessage.Type parseMessageType(JsonNode msg) {
+    protected MessageType parseMessageType(JsonNode msg) {
         String topic = msg.path("topic").asString();
-        if (topic.startsWith("orderbook.")) return OrderBookMessage.Type.DIFF;
-        if (topic.startsWith("publicTrade.")) return OrderBookMessage.Type.TRADE;
+        if (topic.startsWith("orderbook.")) return MessageType.DIFF;
+        if (topic.startsWith("publicTrade.")) return MessageType.TRADE;
         return null;
     }
 
     @Override
-    protected List<OrderBookMessage.TradeMessage> parseTradeMessage(JsonNode msg) {
+    protected List<OrderBookEvent.TradeReceived> parseWsTradeEvents(JsonNode msg) {
         String topic = msg.get("topic").asString();
         String exchangeSymbol = topic.substring(topic.lastIndexOf('.') + 1);
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
@@ -103,16 +103,16 @@ class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
         BigDecimal amount = trade.get("v").asDecimal();
         long tradeId = trade.get("T").asLong();
 
-        return List.of(new OrderBookMessage.TradeMessage(eventTime, tradingPair, tradeId, price, amount, tradeType));
+        return List.of(new OrderBookEvent.TradeReceived(tradingPair, tradeId, price, amount, tradeType, eventTime));
     }
 
     @Override
-    protected OrderBookMessage.SnapshotMessage parseSnapshotMessage(JsonNode msg) {
+    protected OrderBookEvent.SnapshotReceived parseWsSnapshotEvent(JsonNode msg) {
         throw new UnsupportedOperationException("Bybit WebSocket streams only support diff and trade messages");
     }
 
     @Override
-    protected OrderBookMessage.DiffMessage parseDiffMessage(JsonNode msg) {
+    protected OrderBookEvent.DiffReceived parseWsDiffEvent(JsonNode msg) {
         String topic = msg.get("topic").asString();
         String exchangeSymbol = topic.substring(topic.lastIndexOf('.') + 1);
         String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(exchangeSymbol);
@@ -123,7 +123,7 @@ class SpotOrderBookDataSource extends AbstractOrderBookDataSource {
         List<OrderBookEntry> bids = parseEntries(data.get("b"));
         List<OrderBookEntry> asks = parseEntries(data.get("a"));
 
-        return new OrderBookMessage.DiffMessage(eventTime, tradingPair, updateId, bids, asks);
+        return new OrderBookEvent.DiffReceived(tradingPair, updateId, bids, asks, eventTime);
     }
 
     private void sendRequest(String op, Collection<String> tradingPairs, String... prefixes) {
