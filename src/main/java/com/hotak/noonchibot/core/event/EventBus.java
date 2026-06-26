@@ -67,7 +67,7 @@ public class EventBus implements EventPublisher, EventSubscriber {
     private void dispatch(HandlerEntry<Event> entry, Event event, EventMetadata metadata) {
         Runnable task = () -> EventContext.runWith(metadata, () -> {
             try {
-                entry.handler().onEvent(event, metadata);
+                entry.handler().onEvent(event);
             } catch (Exception e) {
                 if(entry.handler instanceof FailureAwareEventHandler<?> failureAwareHandler) {
                     @SuppressWarnings("unchecked")

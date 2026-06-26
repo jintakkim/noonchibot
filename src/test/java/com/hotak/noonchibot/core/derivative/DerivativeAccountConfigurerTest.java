@@ -34,7 +34,7 @@ public class DerivativeAccountConfigurerTest {
         @DisplayName("Tracker에 캐시 값이 있고 목표로 하는 값과 같으면 거래소 요청을 하지 않고 이벤트를 발행한다.")
         void ensurePositionMode_whenCacheMatchesDesired_skipsRequest() {
             when(tracker.findPositionMode()).thenReturn(Optional.of(PositionMode.HEDGE));
-            configurer.ensurePositionMode(new PositionModeChangeEvent.EnsureCommand(PositionMode.HEDGE), null);
+            configurer.ensurePositionMode(new PositionModeChangeEvent.EnsureCommand(PositionMode.HEDGE));
             var occurred = eventPublisher.getFirstEventOfType(PositionModeChangeEvent.Applied.class);
             assertThat(occurred)
                     .isPresent()
@@ -46,7 +46,7 @@ public class DerivativeAccountConfigurerTest {
         @DisplayName("Tracker에 캐시 값이 있고 목표로 하는 값과 다르면 거래소 요청을 한다.")
         void ensurePositionMode_whenCacheDiffers_publishesIORequest() {
             when(tracker.findPositionMode()).thenReturn(Optional.of(PositionMode.ONEWAY));
-            configurer.ensurePositionMode(new PositionModeChangeEvent.EnsureCommand(PositionMode.HEDGE), null);
+            configurer.ensurePositionMode(new PositionModeChangeEvent.EnsureCommand(PositionMode.HEDGE));
             var occurred = eventPublisher.getFirstEventOfType(PositionModeChangeEvent.IORequested.class);
             assertThat(occurred)
                     .isPresent()
@@ -57,7 +57,7 @@ public class DerivativeAccountConfigurerTest {
         @DisplayName("Tracker에 캐시 값이 없으면 거래소 요청을 한다.")
         void ensurePositionMode_whenCacheEmpty_publishesIORequest() {
             when(tracker.findPositionMode()).thenReturn(Optional.empty());
-            configurer.ensurePositionMode(new PositionModeChangeEvent.EnsureCommand(PositionMode.HEDGE), null);
+            configurer.ensurePositionMode(new PositionModeChangeEvent.EnsureCommand(PositionMode.HEDGE));
             var occurred = eventPublisher.getFirstEventOfType(PositionModeChangeEvent.IORequested.class);
             assertThat(occurred)
                     .isPresent()
@@ -69,7 +69,7 @@ public class DerivativeAccountConfigurerTest {
         @DisplayName("wantTo가 null이면 실패 이벤트가 발생된다.")
         void ensurePositionMode_whenDesiredIsNull_publishesFailed() {
             when(tracker.findPositionMode()).thenReturn(Optional.empty());
-            configurer.ensurePositionMode(new PositionModeChangeEvent.EnsureCommand(null), null);
+            configurer.ensurePositionMode(new PositionModeChangeEvent.EnsureCommand(null));
             var occurred = eventPublisher.getFirstEventOfType(PositionModeChangeEvent.Failed.class);
             assertThat(occurred).isPresent();
         }
@@ -83,7 +83,7 @@ public class DerivativeAccountConfigurerTest {
         void ensureLeverage_whenCacheMatchesDesired_skipsRequestAndPublishesApplied() {
             when(tracker.findLeverage("BTC-USDT")).thenReturn(Optional.of(4));
 
-            configurer.ensureLeverage(new LeverageChangeEvent.EnsureCommand("BTC-USDT", 4), null);
+            configurer.ensureLeverage(new LeverageChangeEvent.EnsureCommand("BTC-USDT", 4));
 
             var occurred = eventPublisher.getFirstEventOfType(LeverageChangeEvent.Applied.class);
             assertThat(occurred)
@@ -100,7 +100,7 @@ public class DerivativeAccountConfigurerTest {
         void ensureLeverage_whenCacheDiffersFromDesired_publishesIORequest() {
             when(tracker.findLeverage("BTC-USDT")).thenReturn(Optional.of(10));
 
-            configurer.ensureLeverage(new LeverageChangeEvent.EnsureCommand("BTC-USDT", 4), null);
+            configurer.ensureLeverage(new LeverageChangeEvent.EnsureCommand("BTC-USDT", 4));
 
             var occurred = eventPublisher.getFirstEventOfType(LeverageChangeEvent.IORequested.class);
             assertThat(occurred)
@@ -118,7 +118,7 @@ public class DerivativeAccountConfigurerTest {
             when(tracker.findLeverage("BTC-USDT")).thenReturn(Optional.empty());
 
             configurer.ensureLeverage(
-                    new LeverageChangeEvent.EnsureCommand("BTC-USDT", 4), null);
+                    new LeverageChangeEvent.EnsureCommand("BTC-USDT", 4));
 
             var occurred = eventPublisher.getFirstEventOfType(LeverageChangeEvent.IORequested.class);
             assertThat(occurred)
@@ -134,7 +134,7 @@ public class DerivativeAccountConfigurerTest {
         void ensureLeverage_whenWantToIsNegative_publishesFailed() {
             when(tracker.findLeverage("BTC-USDT")).thenReturn(Optional.empty());
 
-            configurer.ensureLeverage(new LeverageChangeEvent.EnsureCommand("BTC-USDT", -1), null);
+            configurer.ensureLeverage(new LeverageChangeEvent.EnsureCommand("BTC-USDT", -1));
 
             var occurred = eventPublisher.getFirstEventOfType(LeverageChangeEvent.Failed.class);
             assertThat(occurred).isPresent();
@@ -152,7 +152,7 @@ public class DerivativeAccountConfigurerTest {
         void ensureMarginMode_whenCacheMatchesDesired_skipsRequest() {
             when(tracker.findMarginMode("BTC-USDT")).thenReturn(Optional.of(MarginMode.ISOLATED));
 
-            configurer.ensureMarginMode(new MarginModeChangeEvent.EnsureCommand("BTC-USDT", MarginMode.ISOLATED), null);
+            configurer.ensureMarginMode(new MarginModeChangeEvent.EnsureCommand("BTC-USDT", MarginMode.ISOLATED));
 
             var occurred = eventPublisher.getFirstEventOfType(MarginModeChangeEvent.Applied.class);
             assertThat(occurred)
@@ -169,7 +169,7 @@ public class DerivativeAccountConfigurerTest {
         void ensureMarginMode_whenCacheDiffers_publishesIORequest() {
             when(tracker.findMarginMode("BTC-USDT")).thenReturn(Optional.of(MarginMode.CROSS));
 
-            configurer.ensureMarginMode(new MarginModeChangeEvent.EnsureCommand("BTC-USDT", MarginMode.ISOLATED), null);
+            configurer.ensureMarginMode(new MarginModeChangeEvent.EnsureCommand("BTC-USDT", MarginMode.ISOLATED));
 
             var occurred = eventPublisher.getFirstEventOfType(MarginModeChangeEvent.IORequested.class);
             assertThat(occurred)
@@ -186,7 +186,7 @@ public class DerivativeAccountConfigurerTest {
         void ensureMarginMode_whenCacheEmpty_publishesIORequest() {
             when(tracker.findMarginMode("BTC-USDT")).thenReturn(Optional.empty());
 
-            configurer.ensureMarginMode(new MarginModeChangeEvent.EnsureCommand("BTC-USDT", MarginMode.ISOLATED), null);
+            configurer.ensureMarginMode(new MarginModeChangeEvent.EnsureCommand("BTC-USDT", MarginMode.ISOLATED));
 
             var occurred = eventPublisher.getFirstEventOfType(MarginModeChangeEvent.IORequested.class);
             assertThat(occurred)
@@ -202,7 +202,7 @@ public class DerivativeAccountConfigurerTest {
         void ensureMarginMode_whenDesiredIsNull_publishesFailed() {
             when(tracker.findMarginMode("BTC-USDT")).thenReturn(Optional.empty());
 
-            configurer.ensureMarginMode(new MarginModeChangeEvent.EnsureCommand("BTC-USDT", null), null);
+            configurer.ensureMarginMode(new MarginModeChangeEvent.EnsureCommand("BTC-USDT", null));
 
             var occurred = eventPublisher.getFirstEventOfType(MarginModeChangeEvent.Failed.class);
             assertThat(occurred).isPresent();

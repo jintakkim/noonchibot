@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.orderbook;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
@@ -11,7 +12,7 @@ import java.util.*;
 
 @Slf4j
 @RequiredArgsConstructor
-public class OrderBookTracker implements OrderedLifecycleAware {
+public class OrderBookTracker implements LifecycleAware {
     private static final int MAX_PAST_DIFFS = 50;
     /// diff 메시지 버퍼
     private final Map<String, Deque<OrderBookEvent.DiffReceived>> pastDiffsWindows = new HashMap<>();
@@ -23,7 +24,7 @@ public class OrderBookTracker implements OrderedLifecycleAware {
     private final Set<String> pairsToSubscribe;
 
     @VisibleForTesting
-    void processDiff(OrderBookEvent.DiffReceived event, EventMetadata eventMetadata) {
+    void processDiff(OrderBookEvent.DiffReceived event) {
         String tradingPair = event.tradingPair();
         if (!orderBooks.containsKey(tradingPair)) return; // 현재 트래킹 중이 아닌 페어를 받을 시 ignore
         OrderBook book = orderBooks.get(tradingPair);
@@ -44,7 +45,7 @@ public class OrderBookTracker implements OrderedLifecycleAware {
     }
 
     @VisibleForTesting
-    void processSnapshot(OrderBookEvent.SnapshotReceived event, EventMetadata eventMetadata) {
+    void processSnapshot(OrderBookEvent.SnapshotReceived event) {
         String tradingPair = event.tradingPair();
         if (!orderBooks.containsKey(tradingPair)) return; // 현재 트래킹 중이 아닌 페어를 받을 시 ignore
         OrderBook book = orderBooks.get(tradingPair);
@@ -53,7 +54,7 @@ public class OrderBookTracker implements OrderedLifecycleAware {
     }
 
     @VisibleForTesting
-    void processTrade(OrderBookEvent.TradeReceived event, EventMetadata eventMetadata) {
+    void processTrade(OrderBookEvent.TradeReceived event) {
         String tradingPair = event.tradingPair();
         if (!orderBooks.containsKey(tradingPair)) return; // 현재 트래킹 중이 아닌 페어를 받을 시 ignore
         OrderBook book = orderBooks.get(tradingPair);

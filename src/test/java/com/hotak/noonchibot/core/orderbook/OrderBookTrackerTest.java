@@ -1,190 +1,258 @@
 package com.hotak.noonchibot.core.orderbook;
 
-import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.TestMainExecutor;
-import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
+import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.event.TestEventPublisher;
+import com.hotak.noonchibot.core.event.TestEventSubscriber;
+import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import com.hotak.noonchibot.core.trade.TradeType;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.*;
+import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
 
-import java.util.List;
+class OrderBookTrackerTest {
+    private static final String BTC_PAIR = "BTC-USDT";
+    private static final String ETH_PAIR = "ETH-USDT";
+    private static final Instant EVENT_TIME = Instant.parse("2026-01-01T00:00:00Z");
 
-public class OrderBookTrackerTest {
-
-    private OrderBookDataSource dataSource;
-    private TestMainExecutor mainExecutor;
-    private IoExecutor ioExecutor;
-    private OrderBook orderBook;
-
+    private TestEventPublisher eventPublisher;
+    private TestEventSubscriber eventSubscriber;
     private OrderBookTracker tracker;
 
     @BeforeEach
     void setUp() {
-        dataSource = mock(OrderBookDataSource.class);
-        mainExecutor = new TestMainExecutor();
-        ioExecutor = new VirtualThreadIoExecutor();
-        orderBook = spy(new OrderBook(false));
-        tracker = new OrderBookTracker(dataSource, mainExecutor, ioExecutor);
-        when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);
-    }
-
-    @Test
-    @DisplayName("페어 추가 시 오더북이 생성되고 스트림이 구독된다")
-    void addTradingPairCreatesOrderBookAndSubscribesStream() {
-        String pair = "BTC-USDT";
-        OrderBookMessageStream stream = new OrderBookMessageStream(pair);
-        when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
-        when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);
-        tracker.addTradingPair(pair);
-
-        verify(dataSource).getNewOrderBook(pair);
-        verify(dataSource).subscribeOrderBookStream(pair);
-        assertThat(tracker.findOrderBook(pair)).isPresent();
-    }
-
-    @Test
-    @DisplayName("이미 존재하는 페어를 추가하면 무시된다")
-    void addTradingPairIgnoresDuplicate() {
-        String pair = "BTC-USDT";
-        OrderBookMessageStream stream = new OrderBookMessageStream(pair);
-        when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
-        when(dataSource.getNewOrderBook(anyString())).thenReturn(orderBook);
-
-        tracker.addTradingPair(pair);
-        tracker.addTradingPair(pair);
-        verify(dataSource, times(1)).getNewOrderBook(pair);
-    }
-
-    @Test
-    @DisplayName("페어 제거 시 오더북이 삭제되고 스트림이 구독 해제된다")
-    void removeTradingPairRemovesOrderBookAndUnsubscribes() {
-        String pair = "BTC-USDT";
-        OrderBookMessageStream stream = new OrderBookMessageStream(pair);
-        when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
-
-        tracker.addTradingPair(pair);
-        tracker.removeTradingPair(pair);
-
-        assertThat(tracker.findOrderBook(pair)).isEmpty();
-        verify(dataSource).unsubscribe(stream);
-    }
-
-
-    @Test
-    @DisplayName("트래킹 중이 아닌 페어를 제거하면 무시된다")
-    void removeTradingPairIgnoresUnknownPair() {
-        tracker.removeTradingPair("ETH-USDT");
-        verify(dataSource, never()).unsubscribe(any());
+        eventPublisher = new TestEventPublisher();
+        eventSubscriber = new TestEventSubscriber();
+        tracker = new OrderBookTracker(
+                eventSubscriber,
+                eventPublisher,
+                false,
+                Set.of(BTC_PAIR)
+        );
     }
 
     @Nested
-    @DisplayName("오더북 메시지 처리")
-    class MessageProcessing {
+    @DisplayName("라이프사이클")
+    class LifecycleTest {
+        @Test
+        @DisplayName("onStart 시 이벤트를 구독하고 configured pair 트래킹을 요청한다")
+        void onStartSubscribesAndRequestsTracking() {
+            tracker.onStart();
 
-        private OrderBookMessageStream stream;
-
-        @BeforeEach
-        void setUp() {
-            String pair = "BTC-USDT";
-            stream = new OrderBookMessageStream(pair);
-            when(dataSource.subscribeOrderBookStream(pair)).thenReturn(stream);
-            tracker.addTradingPair(pair);
-            when(orderBook.getSnapshotId()).thenReturn(1L);
+            assertThat(eventSubscriber.isSubscribed(OrderBookEvent.DiffReceived.class)).isTrue();
+            assertThat(eventSubscriber.isSubscribed(OrderBookEvent.TradeReceived.class)).isTrue();
+            assertThat(eventSubscriber.isSubscribed(OrderBookEvent.SnapshotReceived.class)).isTrue();
+            assertThat(tracker.phase()).isEqualTo(Phases.ORDER_BOOK_TRACKER_SETUP);
+            assertThat(tracker.findOrderBook(BTC_PAIR)).isPresent();
+            assertThat(eventPublisher.only(OrderBookEvent.TrackingRequested.class).tradingPair()).isEqualTo(BTC_PAIR);
         }
 
         @Test
-        @DisplayName("diff 메시지가 오더북에 반영된다")
-        void diffMessageAppliedToOrderBook() {
-            OrderBookMessage.DiffMessage diff = createDiffMessage(2L);
-            tracker.processMessage(diff);
-            verify(orderBook).applyDiffs(diff.getBids(), diff.getAsks(), diff.getUpdateId());
-        }
+        @DisplayName("onShutdown 시 구독을 해제한다")
+        void onShutdownClosesSubscriptions() {
+            tracker.onStart();
 
-        @Test
-        @DisplayName("스냅샷보다 오래된 diff는 무시된다")
-        void staleDiffIgnored() {
-            OrderBookMessage.DiffMessage staleDiff = createDiffMessage(0L);
-            tracker.processMessage(staleDiff);
-            verify(orderBook, never()).applyDiffs(any(), any(), anyLong());
-        }
+            tracker.onShutdown();
 
-        @Test
-        @DisplayName("trade 메시지가 오더북에 반영된다")
-        void tradeMessageAppliedToOrderBook() {
-            OrderBookMessage.TradeMessage trade = createTradeMessage(0L);
-            tracker.processMessage(trade);
-            verify(orderBook).applyTrade(trade);
-        }
-
-        @Test
-        @DisplayName("스냅샷 메시지가 최근 diff 윈도우와 함께 복구된다")
-        void snapshotMessageRestoresWithPastDiffs() {
-            OrderBookMessage.DiffMessage diff1 = createDiffMessage(2L);
-            OrderBookMessage.DiffMessage diff2 = createDiffMessage(3L);
-            tracker.processMessage(diff1);
-            tracker.processMessage(diff2);
-            OrderBookMessage.SnapshotMessage snapshot = createSnapshotMessage(1L);
-            tracker.processMessage(snapshot);
-            verify(orderBook).restoreFromSnapshotAndDiffs(eq(snapshot), argThat(diffs ->
-                    diffs.size() == 2 && diffs.contains(diff1) && diffs.contains(diff2)
-            ));
-        }
-
-        @Test
-        @DisplayName("diff 윈도우가 최대 크기를 초과하면 오래된 것부터 제거된다")
-        void pastDiffsWindow_evictsOldEntries() {
-            for (int i = 0; i < 35; i++) {
-                tracker.processMessage(createDiffMessage(i + 2L));
-            }
-            Deque<OrderBookMessage.DiffMessage> window = tracker.getPastDiffsWindow("BTC-USDT");
-            assertThat(window).hasSize(30);
-            assertThat(window.getFirst().getUpdateId()).isEqualTo(7L);  // 2+5, 앞의 5개 제거됨
-            assertThat(window.getLast().getUpdateId()).isEqualTo(36L);
+            assertThat(eventSubscriber.count()).isZero();
         }
     }
 
-    private OrderBookMessage.SnapshotMessage createSnapshotMessage(Long updateId) {
-        return new OrderBookMessage.SnapshotMessage(
-                Instant.now(),
-                "BTC-USDT",
+    @Nested
+    @DisplayName("트래킹 관리")
+    class TrackingTest {
+        @Test
+        @DisplayName("새 tradingPair를 추가하면 OrderBook을 만들고 TrackingRequested를 발행한다")
+        void addTradingPairCreatesOrderBookAndPublishesEvent() {
+            tracker.addTradingPair(ETH_PAIR);
+
+            assertThat(tracker.findOrderBook(ETH_PAIR)).isPresent();
+            assertThat(eventPublisher.only(OrderBookEvent.TrackingRequested.class).tradingPair()).isEqualTo(ETH_PAIR);
+        }
+
+        @Test
+        @DisplayName("이미 트래킹 중인 tradingPair를 추가하면 무시한다")
+        void addTradingPairIgnoresDuplicate() {
+            tracker.addTradingPair(BTC_PAIR);
+            eventPublisher.clear();
+
+            tracker.addTradingPair(BTC_PAIR);
+
+            assertThat(tracker.getOrderBooks()).hasSize(1);
+            assertThat(eventPublisher.totalCount()).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("스냅샷과 diff 처리")
+    class SnapshotAndDiffTest {
+        @BeforeEach
+        void trackPair() {
+            tracker.addTradingPair(BTC_PAIR);
+            eventPublisher.clear();
+        }
+
+        @Test
+        @DisplayName("스냅샷 적용 전 diff는 버퍼링되고 스냅샷 수신 시 재적용된다")
+        void buffersDiffBeforeSnapshotAndRestoresWithSnapshot() {
+            tracker.processDiff(diff(101, bid(101, "50010", "2.0"), ask(101, "50100", "0")));
+
+            OrderBook beforeSnapshot = tracker.findOrderBook(BTC_PAIR).orElseThrow();
+            assertThat(beforeSnapshot.getSnapshotId()).isNull();
+            assertThat(beforeSnapshot.getBestBid()).isNull();
+
+            tracker.processSnapshot(snapshot(100));
+
+            OrderBook book = tracker.findOrderBook(BTC_PAIR).orElseThrow();
+            assertThat(book.getSnapshotId()).isEqualTo(100);
+            assertThat(book.getLastDiffId()).isEqualTo(101);
+            assertThat(book.getBestBid()).isEqualByComparingTo("50010");
+            assertThat(book.getBestAsk()).isEqualByComparingTo("50200");
+        }
+
+        @Test
+        @DisplayName("스냅샷 이후 최신 diff만 적용하고 오래된 diff는 무시한다")
+        void appliesOnlyNewerDiffAfterSnapshot() {
+            tracker.processSnapshot(snapshot(100));
+            tracker.processDiff(diff(100, bid(100, "60000", "1.0"), ask(100, "60001", "1.0")));
+
+            OrderBook book = tracker.findOrderBook(BTC_PAIR).orElseThrow();
+            assertThat(book.getLastDiffId()).isNull();
+            assertThat(book.getBestBid()).isEqualByComparingTo("50000");
+            assertThat(book.getBestAsk()).isEqualByComparingTo("50100");
+
+            tracker.processDiff(diff(101, bid(101, "50020", "1.0"), ask(101, "50100", "0")));
+            assertThat(book.getLastDiffId()).isEqualTo(101);
+            assertThat(book.getBestBid()).isEqualByComparingTo("50020");
+            assertThat(book.getBestAsk()).isEqualByComparingTo("50200");
+
+            tracker.processDiff(diff(101, bid(101, "70000", "1.0"), ask(101, "70001", "1.0")));
+            assertThat(book.getBestBid()).isEqualByComparingTo("50020");
+        }
+
+        @Test
+        @DisplayName("diff window는 최대 50개만 보관해 스냅샷 복구에 사용한다")
+        void evictsOldDiffsFromPastWindow() {
+            tracker.processDiff(diff(1, bid(1, "99999", "1.0"), ask(1, "100000", "1.0")));
+            for (int updateId = 2; updateId <= 60; updateId++) {
+                tracker.processDiff(diff(
+                        updateId,
+                        bid(updateId, String.valueOf(50000 + updateId), "1.0"),
+                        ask(updateId, String.valueOf(60000 + updateId), "1.0")
+                ));
+            }
+
+            tracker.processSnapshot(snapshot(0));
+
+            OrderBook book = tracker.findOrderBook(BTC_PAIR).orElseThrow();
+            assertThat(book.getLastDiffId()).isEqualTo(60);
+            assertThat(book.getBestBid()).isEqualByComparingTo("50060");
+        }
+
+        @Test
+        @DisplayName("트래킹 중이 아닌 pair의 snapshot/diff는 무시한다")
+        void ignoresUnknownPairEvents() {
+            tracker.processDiff(new OrderBookEvent.DiffReceived(
+                    ETH_PAIR,
+                    1,
+                    List.of(bid(1, "1", "1")),
+                    List.of(ask(1, "2", "1")),
+                    EVENT_TIME
+            ));
+            tracker.processSnapshot(new OrderBookEvent.SnapshotReceived(
+                    ETH_PAIR,
+                    1,
+                    List.of(bid(1, "1", "1")),
+                    List.of(ask(1, "2", "1")),
+                    EVENT_TIME
+            ));
+
+            assertThat(tracker.findOrderBook(ETH_PAIR)).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("trade 처리")
+    class TradeTest {
+        @BeforeEach
+        void trackPair() {
+            tracker.addTradingPair(BTC_PAIR);
+        }
+
+        @Test
+        @DisplayName("trade 이벤트는 last trade price/time을 갱신한다")
+        void appliesTrade() {
+            tracker.processTrade(new OrderBookEvent.TradeReceived(
+                    BTC_PAIR,
+                    1,
+                    new BigDecimal("50050"),
+                    new BigDecimal("0.5"),
+                    TradeType.BUY,
+                    EVENT_TIME
+            ));
+
+            OrderBook book = tracker.findOrderBook(BTC_PAIR).orElseThrow();
+            assertThat(book.getLastTradePrice()).isEqualByComparingTo("50050");
+        }
+
+        @Test
+        @DisplayName("트래킹 중이 아닌 pair의 trade는 무시한다")
+        void ignoresUnknownPairTrade() {
+            tracker.processTrade(new OrderBookEvent.TradeReceived(
+                    ETH_PAIR,
+                    1,
+                    new BigDecimal("3000"),
+                    new BigDecimal("1.0"),
+                    TradeType.BUY,
+                    EVENT_TIME
+            ));
+
+            assertThat(tracker.findOrderBook(ETH_PAIR)).isEmpty();
+        }
+    }
+
+    private OrderBookEvent.SnapshotReceived snapshot(long updateId) {
+        return new OrderBookEvent.SnapshotReceived(
+                BTC_PAIR,
                 updateId,
                 List.of(
-                        new OrderBookEntry(updateId, new BigDecimal("50000"), new BigDecimal("1.0")),
-                        new OrderBookEntry(updateId, new BigDecimal("49999"), new BigDecimal("0.5"))
+                        bid(updateId, "50000", "1.0"),
+                        bid(updateId, "49900", "0.5")
                 ),
                 List.of(
-                        new OrderBookEntry(updateId, new BigDecimal("50001"), new BigDecimal("2.0")),
-                        new OrderBookEntry(updateId, new BigDecimal("50002"), new BigDecimal("1.5"))
-                )
+                        ask(updateId, "50100", "1.5"),
+                        ask(updateId, "50200", "2.0")
+                ),
+                EVENT_TIME
         );
     }
 
-    private OrderBookMessage.DiffMessage createDiffMessage(Long updateId) {
-        return new OrderBookMessage.DiffMessage(
-                Instant.now(),
-                "BTC-USDT",
+    private OrderBookEvent.DiffReceived diff(long updateId, OrderBookEntry bid, OrderBookEntry ask) {
+        return new OrderBookEvent.DiffReceived(
+                BTC_PAIR,
                 updateId,
-                List.of(new OrderBookEntry(updateId, new BigDecimal("50000"), new BigDecimal("1.0"))),
-                List.of(new OrderBookEntry(updateId, new BigDecimal("50001"), new BigDecimal("0.5")))
+                List.of(bid),
+                List.of(ask),
+                EVENT_TIME
         );
     }
 
-    private OrderBookMessage.TradeMessage createTradeMessage(Long tradeId) {
-        return new OrderBookMessage.TradeMessage(
-                Instant.now(),
-                "BTC-USDT",
-                tradeId,
-                new BigDecimal("50000"),
-                new BigDecimal("0.5"),
-                TradeType.BUY
-        );
+    private OrderBookEntry bid(long updateId, String price, String amount) {
+        return entry(updateId, price, amount);
     }
 
+    private OrderBookEntry ask(long updateId, String price, String amount) {
+        return entry(updateId, price, amount);
+    }
+
+    private OrderBookEntry entry(long updateId, String price, String amount) {
+        return new OrderBookEntry(updateId, new BigDecimal(price), new BigDecimal(amount));
+    }
 }

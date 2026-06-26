@@ -1,10 +1,11 @@
 package com.hotak.noonchibot.core.balance;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.connector.LifecycleComponent;
-import com.hotak.noonchibot.core.event.BalanceUpdateEvent;
-import com.hotak.noonchibot.core.event.EventListener;
+import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.event.EventSubscriber;
+import com.hotak.noonchibot.core.event.ExecutionPolicy;
+import com.hotak.noonchibot.core.event.Subscription;
+import com.hotak.noonchibot.core.event.internal.balance.BalanceEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -25,16 +26,15 @@ import java.util.Set;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class AccountBalanceTracker implements LifecycleComponent {
+public class AccountBalanceTracker implements LifecycleAware {
     private final Map<String, BigDecimal> accountBalances = new HashMap<>();
     private final Map<String, BigDecimal> accountAvailableBalances = new HashMap<>();
 
-    private final EventListener<BalanceSnapshotEvent> snapshotEventListener = this::processSnapshot;
-    private final EventListener<BalanceUpdateEvent> updateEventListener = this::processUpdate;
-
     private Instant lastSnapshotTimestamp;
     private Instant lastUpdateTimestamp;
+
     private final EventSubscriber eventSubscriber;
+    private final Set<Subscription> subscriptions = new HashSet<>();
 
     public BigDecimal getAvailableBalance(String currency) {
         return accountAvailableBalances.get(currency);
@@ -45,18 +45,20 @@ public class AccountBalanceTracker implements LifecycleComponent {
     }
 
     @VisibleForTesting
-    void processSnapshot(BalanceSnapshotEvent event) {
-        if (lastUpdateTimestamp != null && event.timestamp() != null
+    void processSnapshot(BalanceEvent.SnapshotReceived event) {
+        if (lastUpdateTimestamp != null
+                && event.timestamp() != null
                 && event.timestamp().isBefore(lastUpdateTimestamp)) {
-            log.warn("마지막 업데이트({})보다 오래된 스냅샷({})을 무시합니다", lastUpdateTimestamp, event.timestamp());
+            log.warn("마지막 업데이트({})보다 오래된 스냅샷({})을 무시합니다",
+                    lastUpdateTimestamp, event.timestamp());
             return;
         }
+
         Set<String> localAssets = new HashSet<>(accountBalances.keySet());
 
-        event.totalBalances().forEach((asset, total) -> {
-            accountBalances.put(asset, total);
-            accountAvailableBalances.put(asset,
-                    event.availableBalances().getOrDefault(asset, BigDecimal.ZERO));
+        event.assets().forEach((asset, assetState) -> {
+            accountBalances.put(asset, assetState.totalBalance());
+            accountAvailableBalances.put(asset, assetState.availableBalance());
             localAssets.remove(asset);
         });
 
@@ -64,22 +66,33 @@ public class AccountBalanceTracker implements LifecycleComponent {
             accountBalances.remove(asset);
             accountAvailableBalances.remove(asset);
         }
+
         lastSnapshotTimestamp = event.timestamp();
     }
 
     @VisibleForTesting
-    void processUpdate(BalanceUpdateEvent event) {
+    void processUpdate(BalanceEvent.UpdateReceived event) {
         if (!isInitialized()) {
-            log.warn("초기 스냅샷 적용 이전 상태입니다, 발생된 BalanceUpdateEvent를 무시합니다");
+            log.warn("초기 스냅샷 적용 이전 상태입니다, BalanceEvent.UpdateReceived를 무시합니다");
             return;
         }
-        if (lastSnapshotTimestamp != null && event.timestamp() != null && event.timestamp().isBefore(lastSnapshotTimestamp)) {
-            log.warn("마지막 스냅샷({})보다 오래된 업데이트({})를 무시합니다", lastSnapshotTimestamp, event.timestamp());
+
+        if (lastSnapshotTimestamp != null
+                && event.timestamp() != null
+                && event.timestamp().isBefore(lastSnapshotTimestamp)) {
+            log.warn("마지막 스냅샷({})보다 오래된 업데이트({})를 무시합니다",
+                    lastSnapshotTimestamp, event.timestamp());
             return;
         }
-        accountAvailableBalances.put(event.asset(), event.availableBalance());
-        accountBalances.put(event.asset(), event.totalBalance());
-        lastUpdateTimestamp = Instant.now();
+
+        event.assets().forEach((asset, assetState) -> {
+            accountBalances.put(asset, assetState.totalBalance());
+            accountAvailableBalances.put(asset, assetState.availableBalance());
+        });
+
+        lastUpdateTimestamp = event.timestamp() != null
+                ? event.timestamp()
+                : Instant.now();
     }
 
     public boolean isInitialized() {
@@ -87,14 +100,23 @@ public class AccountBalanceTracker implements LifecycleComponent {
     }
 
     @Override
-    public void start() {
-        eventSubscriber.subscribe(BalanceSnapshotEvent.class, snapshotEventListener);
-        eventSubscriber.subscribe(BalanceUpdateEvent.class, updateEventListener);
+    public void onStart() {
+        subscriptions.add(eventSubscriber.subscribe(
+                BalanceEvent.SnapshotReceived.class,
+                this::processSnapshot,
+                ExecutionPolicy.sequential()
+        ));
+
+        subscriptions.add(eventSubscriber.subscribe(
+                BalanceEvent.UpdateReceived.class,
+                this::processUpdate,
+                ExecutionPolicy.sequential()
+        ));
     }
 
     @Override
-    public void shutdown() {
-        eventSubscriber.unsubscribe(BalanceSnapshotEvent.class, snapshotEventListener);
-        eventSubscriber.unsubscribe(BalanceUpdateEvent.class, updateEventListener);
+    public void onShutdown() {
+        subscriptions.forEach(Subscription::close);
+        subscriptions.clear();
     }
 }

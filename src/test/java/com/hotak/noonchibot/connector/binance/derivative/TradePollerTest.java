@@ -45,10 +45,10 @@ class TradePollerTest {
 
         poller.poll();
 
-        assertThat(eventPublisher.getEventsOfType(TradeEvent.UpdateRequest.class))
+        assertThat(eventPublisher.getEventsOfType(TradeEvent.UpdateRequested.class))
                 .containsExactly(
-                        new TradeEvent.UpdateRequest("cid-1", "eid-1", "BTC-USDT"),
-                        new TradeEvent.UpdateRequest("cid-2", "eid-2", "ETH-USDT")
+                        new TradeEvent.UpdateRequested("cid-1", "eid-1", "BTC-USDT"),
+                        new TradeEvent.UpdateRequested("cid-2", "eid-2", "ETH-USDT")
                 );
     }
 

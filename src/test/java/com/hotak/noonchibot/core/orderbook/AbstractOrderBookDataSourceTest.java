@@ -128,10 +128,7 @@ public abstract class AbstractOrderBookDataSourceTest<T extends AbstractOrderBoo
     void trackingRequestSubscribesWsAndPublishesRestSnapshot() {
         String tradingPair = testTradingPair();
         runWith(snapshotRestFixture(tradingPair), () -> {
-            dataSource.trackingOrderBook(
-                    new OrderBookEvent.TrackingRequested(tradingPair),
-                    null
-            );
+            dataSource.trackingOrderBook(new OrderBookEvent.TrackingRequested(tradingPair));
             assertTrackingSubscribeRequests(wsConnection.sentRequests);
             assertThat(eventPublisher.only(OrderBookEvent.SnapshotReceived.class))
                     .isEqualTo(expectedRestSnapshot(tradingPair));
@@ -143,14 +140,8 @@ public abstract class AbstractOrderBookDataSourceTest<T extends AbstractOrderBoo
     void duplicateTrackingRequestIsIgnored() {
         String tradingPair = testTradingPair();
         runWith(snapshotRestFixture(tradingPair), () -> {
-            dataSource.trackingOrderBook(
-                    new OrderBookEvent.TrackingRequested(tradingPair),
-                    null
-            );
-            dataSource.trackingOrderBook(
-                    new OrderBookEvent.TrackingRequested(tradingPair),
-                    null
-            );
+            dataSource.trackingOrderBook(new OrderBookEvent.TrackingRequested(tradingPair));
+            dataSource.trackingOrderBook(new OrderBookEvent.TrackingRequested(tradingPair));
 
             assertTrackingSubscribeRequests(wsConnection.sentRequests);
             assertThat(eventPublisher.countEventsOfType(OrderBookEvent.SnapshotReceived.class)).isEqualTo(1);

@@ -2,7 +2,6 @@ package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.binance.BinanceResponseCodeParser;
-import com.hotak.noonchibot.connector.binance.DerivativeApiSpec;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.LifecycleAware;
@@ -81,7 +80,7 @@ class DerivativeInfoDataSource implements LifecycleAware {
             JsonNode res = restAssistant.executeRequestAndGetJsonBody(
                     RestRequest.builder()
                             .method(HttpMethod.POST)
-                            .pathUrl(DerivativeApiSpec.POSITION_MODE_PATH_URL)
+                            .pathUrl(ApiSpec.POSITION_MODE_PATH_URL)
                             .params(Map.of(
                                     "dualSidePosition", req.wantTo() == PositionMode.HEDGE
                             ))
@@ -90,7 +89,7 @@ class DerivativeInfoDataSource implements LifecycleAware {
                             .build()
             );
             int code = BinanceResponseCodeParser.parseCode(res);
-            if (code != DerivativeApiSpec.Code.SUCCESS && code != DerivativeApiSpec.Code.NO_NEED_TO_CHANGE_POSITION_SIDE) {
+            if (code != ApiSpec.Code.SUCCESS && code != ApiSpec.Code.NO_NEED_TO_CHANGE_POSITION_SIDE) {
                 throw new IllegalStateException("Position mode change failed: " + res);
             }
             log.debug("Position mode applied: {}", req.wantTo());
@@ -114,7 +113,7 @@ class DerivativeInfoDataSource implements LifecycleAware {
             restAssistant.executeRequestAndGetResponse(
                     RestRequest.builder()
                             .method(HttpMethod.POST)
-                            .pathUrl(DerivativeApiSpec.LEVERAGE_PATH_URL)
+                            .pathUrl(ApiSpec.LEVERAGE_PATH_URL)
                             .params(Map.of(
                                     "symbol", exchangeSymbol,
                                     "leverage", req.wantTo()
@@ -147,7 +146,7 @@ class DerivativeInfoDataSource implements LifecycleAware {
             JsonNode res = restAssistant.executeRequestAndGetJsonBody(
                     RestRequest.builder()
                             .method(HttpMethod.POST)
-                            .pathUrl(DerivativeApiSpec.MARGIN_TYPE_PATH_URL)
+                            .pathUrl(ApiSpec.MARGIN_TYPE_PATH_URL)
                             .params(Map.of(
                                     "symbol", exchangeSymbol,
                                     "marginType", marginType
@@ -157,7 +156,7 @@ class DerivativeInfoDataSource implements LifecycleAware {
                             .build()
             );
             int code = BinanceResponseCodeParser.parseCode(res);
-            if (code != DerivativeApiSpec.Code.SUCCESS && code != DerivativeApiSpec.Code.NO_NEED_TO_CHANGE_MARGIN_TYPE) {
+            if (code != ApiSpec.Code.SUCCESS && code != ApiSpec.Code.NO_NEED_TO_CHANGE_MARGIN_TYPE) {
                 throw new IllegalStateException("Margin mode change failed: " + res);
             }
             log.debug("Margin mode applied: {} -> {}", req.tradingPair(), req.wantTo());

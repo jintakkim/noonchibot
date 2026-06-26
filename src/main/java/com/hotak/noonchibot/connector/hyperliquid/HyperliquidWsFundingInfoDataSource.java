@@ -1,12 +1,13 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistantImpl;
+import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.connector.web.WsAssistantImpl;
+import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSource;
+import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
@@ -14,9 +15,11 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -30,19 +33,25 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
     private static final Duration FUNDING_INTERVAL = Duration.ofHours(1);
 
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
-    private final RestAssistantImpl restAssistant;
+    private final RestAssistant restAssistant;
 
     public HyperliquidWsFundingInfoDataSource(
-            WsAssistantImpl wsAssistant,
-            String publicWsUrl,
+            WsAssistant wsAssistant,
             ObjectMapper objectMapper,
             IoExecutor ioExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistantImpl restAssistant
+            RestAssistant restAssistant,
+            EventPublisher eventPublisher,
+            List<String> pairsToSubscribe
             ) {
-        super(wsAssistant, publicWsUrl, objectMapper, ioExecutor);
+        super(wsAssistant, objectMapper, ioExecutor, eventPublisher, pairsToSubscribe);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
+    }
+
+    @Override
+    protected URI connectionUri() {
+        return URI.create(DerivativeApiSpec.WS_URL);
     }
 
     @Override
@@ -79,7 +88,9 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
 
         BigDecimal markPrice = ctx.get("markPx").asDecimal();
         BigDecimal hourlyFundingRate = ctx.get("funding").asDecimal();
-        Instant eventTime = Instant.now();  // ctx에 timestamp 없음
+        Instant eventTime = data.has("time")
+                ? Instant.ofEpochMilli(data.get("time").asLong())
+                : Instant.now();  // ctx에 timestamp 없음
         Instant nextFundingTime = computeNextFundingTime(eventTime);
 
         return new FundingInfoMessage(
@@ -92,10 +103,8 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
         );
     }
 
-    @Override
     public FundingInfoMessage getFundingInfo(String tradingPair) {
-        String symbol = tradingPairSymbolRegistry
-                .convertTradingPairToExchangeSymbol(tradingPair);
+        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         JsonNode response = restAssistant.executeRequestAndGetJsonBody(
                 RestRequest.builder()
                         .method(HttpMethod.POST)

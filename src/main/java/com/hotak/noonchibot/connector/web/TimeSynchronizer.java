@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.connector.web;
 
+import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +18,7 @@ import java.util.concurrent.ScheduledFuture;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class TimeSynchronizer implements OrderedLifecycleAware {
+public class TimeSynchronizer implements LifecycleAware {
     private static final int MAX_SAMPLES = 5;
     private static final Duration UPDATE_INTERVAL = Duration.ofMinutes(30);
 

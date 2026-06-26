@@ -23,7 +23,7 @@ public class DerivativeAccountConfigurer {
     /**
      * 포지션 모드를 원하는 값으로 맞춘다. 이미 같으면 skip.
      */
-    void ensurePositionMode(PositionModeChangeEvent.EnsureCommand command, EventMetadata metadata) {
+    void ensurePositionMode(PositionModeChangeEvent.EnsureCommand command) {
         Optional<PositionMode> current = tracker.findPositionMode();
         if(command.wantTo() == null) {
             eventPublisher.publish(new PositionModeChangeEvent.Failed(new IllegalArgumentException("Desired position mode cannot be null")));
@@ -39,7 +39,7 @@ public class DerivativeAccountConfigurer {
         eventPublisher.publish(new PositionModeChangeEvent.IORequested(command.wantTo()));
     }
 
-    void ensureLeverage(LeverageChangeEvent.EnsureCommand command, EventMetadata metadata) {
+    void ensureLeverage(LeverageChangeEvent.EnsureCommand command) {
         if (command.wantTo() <= 0) {
             eventPublisher.publish(new LeverageChangeEvent.Failed(new IllegalArgumentException("leverage must be positive, got: " + command.wantTo())));
             return;
@@ -54,7 +54,7 @@ public class DerivativeAccountConfigurer {
         eventPublisher.publish(new LeverageChangeEvent.IORequested(command.tradingPair(), command.wantTo()));
     }
 
-    void ensureMarginMode(MarginModeChangeEvent.EnsureCommand command, EventMetadata metadata) {
+    void ensureMarginMode(MarginModeChangeEvent.EnsureCommand command) {
         if(command.wantTo() == null) {
             eventPublisher.publish(new MarginModeChangeEvent.Failed(new IllegalArgumentException("Desired position mode cannot be null")));
             return;

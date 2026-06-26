@@ -45,7 +45,7 @@ public final class BinanceDerivativeFixture {
         return new RestFixture(
                 RestRequest.builder()
                         .method(HttpMethod.POST)
-                        .pathUrl(ApiSpec.MARGIN_TYPE_PATH_URL)
+                        .pathUrl(ApiSpec.POSITION_MODE_PATH_URL)
                         .params(Map.of(
                                 "dualSidePosition", positionMode
                         ))
@@ -92,7 +92,7 @@ public final class BinanceDerivativeFixture {
                         ))
                         .authRequired(true)
                         .build(),
-                ok("""
+                badRequest("""
                 {
                     "code": -4028,
                     "msg": "Leverage %d is not valid"

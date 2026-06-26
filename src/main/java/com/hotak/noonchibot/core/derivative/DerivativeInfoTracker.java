@@ -31,17 +31,17 @@ public class DerivativeInfoTracker implements LifecycleAware {
     }
 
     @VisibleForTesting
-    void onMarginModeChanged(MarginModeChangeEvent.Applied event, EventMetadata metadata) {
+    void onMarginModeChanged(MarginModeChangeEvent.Applied event) {
         marginModes.put(event.tradingPair(), event.changedTo());
     }
 
     @VisibleForTesting
-    void onPositionModeChanged(PositionModeChangeEvent.Applied event, EventMetadata metadata) {
+    void onPositionModeChanged(PositionModeChangeEvent.Applied event) {
         positionMode = event.changedTo();
     }
 
     @VisibleForTesting
-    void onLeverageChanged(LeverageChangeEvent.Applied event, EventMetadata metadata) {
+    void onLeverageChanged(LeverageChangeEvent.Applied event) {
         leverages.put(event.tradingPair(), event.changedTo());
     }
 

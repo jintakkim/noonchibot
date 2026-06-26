@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
+import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.derivative.*;
@@ -40,8 +41,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
         @DisplayName("포지션 모드 변경 성공시 Applied 이벤트 발행")
         void positionModeChangeSuccessPublishesEvent() {
             runWith(
-                    // false means hedge mode
-                    BinanceDerivativeFixture.positionModeChangeSuccess(false),
+                    BinanceDerivativeFixture.positionModeChangeSuccess(true),
                     () -> {
                         client.positionModeChangeHandler.onEvent(new PositionModeChangeEvent.IORequested(PositionMode.HEDGE));
 
@@ -57,7 +57,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
         @DisplayName("이미 같은 포지션 모드라도 정상 처리되어 Applied 이벤트 발행")
         void positionModeNoNeedToChangeIsTreatedAsSuccess() {
             runWith(
-                    BinanceDerivativeFixture.positionModeNoNeedToChange(false),
+                    BinanceDerivativeFixture.positionModeNoNeedToChange(true),
                     () -> {
                         client.positionModeChangeHandler.onEvent(new PositionModeChangeEvent.IORequested(PositionMode.HEDGE));
                         assertThat(eventPublisher.hasEventOfType(PositionModeChangeEvent.Applied.class)).isTrue();
@@ -105,7 +105,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
                     () -> {
                         assertThatThrownBy(() ->
                         client.leverageChangeHandler.onEvent(new LeverageChangeEvent.IORequested("BTC-USDT", 500)))
-                                .isInstanceOf(IllegalStateException.class);
+                                .isInstanceOf(ExchangeApiException.class);
                         assertThat(eventPublisher.hasEventOfType(LeverageChangeEvent.Applied.class)).isFalse();
                     }
             );
@@ -166,7 +166,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
                     () -> {
                         assertThatThrownBy(() ->
                                 client.marginModeChangeHandler.onEvent(new MarginModeChangeEvent.IORequested("INVALID", MarginMode.ISOLATED)))
-                                .isInstanceOf(IllegalStateException.class);
+                                .isInstanceOf(IllegalArgumentException.class);
                         assertThat(eventPublisher.hasEventOfType(MarginModeChangeEvent.Applied.class)).isFalse();
                     }
             );

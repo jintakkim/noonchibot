@@ -3,11 +3,14 @@ package com.hotak.noonchibot.connector.binance.derivative;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.derivative.FundingPayment;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.event.EventPublisher;
+import com.hotak.noonchibot.core.event.internal.derivative.FundingPaymentEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.PositionEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
@@ -22,6 +25,7 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 
@@ -136,6 +140,9 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
     private void processAccountUpdate(JsonNode eventMessage) {
         Instant timestamp = Instant.ofEpochMilli(eventMessage.get("T").asLong());
         JsonNode updateData = eventMessage.get("a");
+        if ("FUNDING_FEE".equals(updateData.path("m").asString())) {
+            publishFundingPayments(updateData, timestamp);
+        }
 
         for (JsonNode position : updateData.path("P")) {
             String tradingPair = tradingPairSymbolRegistry
@@ -150,6 +157,68 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
                     timestamp
             ));
         }
+    }
+
+    private void publishFundingPayments(JsonNode updateData, Instant timestamp) {
+        List<FundingPayment> payments = new ArrayList<>();
+        BigDecimal amount = findFundingAmount(updateData);
+        if (amount.compareTo(BigDecimal.ZERO) == 0) return;
+        String asset = findFundingAsset(updateData);
+
+        for (JsonNode position : updateData.path("P")) {
+            String tradingPair = tradingPairSymbolRegistry
+                    .convertExchangeSymbolToTradingPair(position.get("s").asString());
+            PositionSide positionSide = PositionSide.valueOf(position.get("ps").asString());
+            payments.add(new FundingPayment(
+                    createFundingPaymentId(tradingPair, positionSide, asset, amount, timestamp),
+                    Exchange.BINANCE_DERIVATIVE,
+                    tradingPair,
+                    positionSide,
+                    amount,
+                    asset,
+                    timestamp
+            ));
+        }
+        payments.forEach(payment ->
+                eventPublisher.publish(new FundingPaymentEvent.Received(payment))
+        );
+    }
+
+    private BigDecimal findFundingAmount(JsonNode updateData) {
+        for (JsonNode balance : updateData.path("B")) {
+            BigDecimal balanceChange = balance.path("bc").asDecimal();
+            if (balanceChange.compareTo(BigDecimal.ZERO) != 0) {
+                return balanceChange;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private String findFundingAsset(JsonNode updateData) {
+        for (JsonNode balance : updateData.path("B")) {
+            if (balance.path("bc").asDecimal().compareTo(BigDecimal.ZERO) != 0) {
+                return balance.get("a").asString();
+            }
+        }
+        return "USDT";
+    }
+
+    private String createFundingPaymentId(
+            String tradingPair,
+            PositionSide positionSide,
+            String asset,
+            BigDecimal amount,
+            Instant timestamp
+    ) {
+        return String.join(
+                ":",
+                Exchange.BINANCE_DERIVATIVE.name(),
+                tradingPair,
+                positionSide.name(),
+                asset,
+                timestamp.toString(),
+                amount.toPlainString()
+        );
     }
 
     @Override

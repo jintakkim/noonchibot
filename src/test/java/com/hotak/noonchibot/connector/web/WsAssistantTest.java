@@ -66,12 +66,12 @@ class WsAssistantTest {
     }
 
     @Test
-    @DisplayName("의도적인 연결 해제 시 take에서 null이 반환된다")
-    void returnsNullOnIntentionalDisconnect() throws InterruptedException {
+    @DisplayName("의도적인 연결 해제 시 take에서 예외가 발생한다")
+    void throwsOnIntentionalDisconnect() {
         WsConnectionImpl conn = connectWithMockSession();
         conn.disconnect();
         conn.afterConnectionClosed(null, CloseStatus.NORMAL);
-        assertThat(conn.take()).isNull();
+        assertThatThrownBy(conn::take).isInstanceOf(WebsocketDisconnectedException.class);
     }
 
     @Test
@@ -166,6 +166,6 @@ class WsAssistantTest {
                     conn.afterConnectionEstablished(session);
                     return CompletableFuture.completedFuture(null);
                 });
-        return wsAssistant.connect(URI.create("wss://test.com"));
+        return (WsConnectionImpl) wsAssistant.connect(URI.create("wss://test.com"));
     }
 }

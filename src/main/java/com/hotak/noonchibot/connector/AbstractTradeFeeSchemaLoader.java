@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector;
 
 import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.trade.TradeFeeSchema;
 import com.hotak.noonchibot.core.trade.TradeFeeSchemaLoader;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
-public abstract class AbstractTradeFeeSchemaLoader implements TradeFeeSchemaLoader, LifecycleComponent {
+public abstract class AbstractTradeFeeSchemaLoader implements TradeFeeSchemaLoader, LifecycleAware {
     private final IoExecutor ioExecutor;
     protected final TradingPairSymbolRegistry tradingPairSymbolRegistry;
 
@@ -58,11 +59,19 @@ public abstract class AbstractTradeFeeSchemaLoader implements TradeFeeSchemaLoad
     protected abstract TradeFeeSchema parseSchema(JsonNode schema);
 
     @Override
-    public void start() {
+    public void onStart() {
         prepare();
     }
 
+    public void start() {
+        onStart();
+    }
+
     @Override
+    public void onShutdown() {
+    }
+
     public void shutdown() {
+        onShutdown();
     }
 }

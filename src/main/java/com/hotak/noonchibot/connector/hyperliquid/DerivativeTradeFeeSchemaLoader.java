@@ -2,7 +2,7 @@ package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.hotak.noonchibot.connector.AbstractTradeFeeSchemaLoader;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistantImpl;
+import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.trade.TradeFeeSchema;
@@ -15,13 +15,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 class DerivativeTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
-    private final RestAssistantImpl restAssistant;
+    private final RestAssistant restAssistant;
     private final String userAddress;
 
     public DerivativeTradeFeeSchemaLoader(
             IoExecutor ioExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistantImpl restAssistant,
+            RestAssistant restAssistant,
             String userAddress
     ) {
         super(ioExecutor, tradingPairSymbolRegistry);

@@ -1,7 +1,9 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
+import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
+import com.hotak.noonchibot.core.event.TestEventSubscriber;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.trade.TokenAmount;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,22 +17,34 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TradeDataSourceTest extends RestClientTest {
     private TestEventPublisher eventPublisher;
+    private TestEventSubscriber eventSubscriber;
     private TradeDataSource dataSource;
 
     @BeforeEach
     void setUp() {
         eventPublisher = new TestEventPublisher();
+        eventSubscriber = new TestEventSubscriber();
         dataSource = new TradeDataSource(
                 BinanceDerivativeFixture.BTC_ETH_SOL_REGISTRY,
                 restAssistant,
-                eventPublisher
+                eventPublisher,
+                eventSubscriber
         );
+    }
+
+    @Test
+    @DisplayName("onStart 시 TradeEvent.UpdateRequested를 구독한다")
+    void onStart_subscribesUpdateRequested() {
+        dataSource.onStart();
+
+        assertThat(eventSubscriber.isSubscribed(TradeEvent.UpdateRequested.class)).isTrue();
+        assertThat(dataSource.phase()).isEqualTo(Phases.TRADE_DATASOURCE_SETUP);
     }
 
     @Test
     @DisplayName("주문 체결 내역 조회 성공 시 Received 이벤트에 모든 fill을 담아 발행한다")
     void updateRequest_publishesReceivedEventWithAllFills() {
-        TradeEvent.UpdateRequest request = new TradeEvent.UpdateRequest(
+        TradeEvent.UpdateRequested request = new TradeEvent.UpdateRequested(
                 BinanceDerivativeFixture.TRADE_CLIENT_ORDER_ID,
                 BinanceDerivativeFixture.TRADE_EXCHANGE_ORDER_ID,
                 BinanceDerivativeFixture.TRADE_TRADING_PAIR
@@ -54,7 +68,7 @@ class TradeDataSourceTest extends RestClientTest {
     @Test
     @DisplayName("exchangeOrderId가 없으면 trade 조회 요청 없이 예외를 던진다")
     void updateRequest_withoutExchangeOrderId_throws() {
-        TradeEvent.UpdateRequest request = new TradeEvent.UpdateRequest(
+        TradeEvent.UpdateRequested request = new TradeEvent.UpdateRequested(
                 BinanceDerivativeFixture.TRADE_CLIENT_ORDER_ID,
                 null,
                 BinanceDerivativeFixture.TRADE_TRADING_PAIR
@@ -70,7 +84,7 @@ class TradeDataSourceTest extends RestClientTest {
     @Test
     @DisplayName("exchangeOrderId가 UNKNOWN이면 trade 조회 요청 없이 예외를 던진다")
     void updateRequest_withUnknownExchangeOrderId_throws() {
-        TradeEvent.UpdateRequest request = new TradeEvent.UpdateRequest(
+        TradeEvent.UpdateRequested request = new TradeEvent.UpdateRequested(
                 BinanceDerivativeFixture.TRADE_CLIENT_ORDER_ID,
                 "UNKNOWN",
                 BinanceDerivativeFixture.TRADE_TRADING_PAIR

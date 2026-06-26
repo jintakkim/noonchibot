@@ -9,9 +9,10 @@ import lombok.NoArgsConstructor;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
-final class ApiSpec {
+public final class ApiSpec {
     public static final String ORDER_ID_PREFIX = "";
     public static final int MAX_ORDER_ID_LENGTH = 32;
 
@@ -42,6 +43,10 @@ final class ApiSpec {
 
     public static final int MAX_REQUEST = 2400;
     public static final int NOT_USED = 1;
+
+    public static final Duration DEFAULT_FUNDING_INTERVAL = Duration.ofHours(8);
+
+    public static final Set<TimeInForce> SUPPORTED_TIME_IN_FORCE = Set.of(TimeInForce.FOK, TimeInForce.IOC, TimeInForce.GTC);
 
     public static final Map<TimeInForce, String> TIME_IN_FORCE_API_VALUE = Map.of(
             TimeInForce.FOK, "FOK",
@@ -128,7 +133,7 @@ final class ApiSpec {
     public static final Duration TRADING_RULE_UPDATE_INTERVAL = Duration.ofHours(1);
 
     public static class Code {
-        public static final int SUCCESS = 0;
+        public static final int SUCCESS = 200;
         public static final int UNKNOWN_ORDER_DURING_CANCELLATION_ERROR = -2011;
         public static final int TIMESTAMP_ERROR = -1021;
 

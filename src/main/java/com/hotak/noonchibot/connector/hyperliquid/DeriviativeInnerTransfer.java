@@ -1,13 +1,12 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.hotak.noonchibot.connector.transfer.FundTransferException;
+import com.hotak.noonchibot.connector.transfer.TransferHandler;
 import com.hotak.noonchibot.connector.transfer.TransferResult;
 import com.hotak.noonchibot.connector.transfer.TransferRoute;
-import com.hotak.noonchibot.connector.transfer.TransferRouter;
-import com.hotak.noonchibot.connector.web.RestAssistantImpl;
+import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.Exchange;
-import com.hotak.noonchibot.core.IoExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -17,7 +16,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Hyperliquid master ↔ sub-account 간 USDC 이체.
@@ -29,72 +27,33 @@ import java.util.concurrent.CompletableFuture;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class DeriviativeInnerTransfer implements TransferRouter {
+public class DeriviativeInnerTransfer implements TransferHandler {
 
     private static final BigDecimal USDC_DECIMAL_FACTOR = new BigDecimal("1000000");
-    private final RestAssistantImpl restAssistant;
-    private final IoExecutor ioExecutor;
-
-    @Override
-    public CompletableFuture<TransferResult> handle(TransferRoute route) {
-        if(!canHandle(route)) throw new FundTransferException("지원하지 않는 route 입니다." + route);
-        boolean masterToSub = isMasterToSub(route);
-        String subAddress = masterToSub ? route.to().identifier() : route.from().identifier();
-        return ioExecutor.submitCompletable(() -> execute(subAddress, route.amount(), masterToSub));
-    }
+    private final RestAssistant restAssistant;
 
     @Override
     public boolean canHandle(TransferRoute route) {
         return route.from().exchange() == Exchange.HYPERLIQUID_DERIVATIVE &&
                 route.to().exchange() == Exchange.HYPERLIQUID_DERIVATIVE &&
-                route.asset().equals("USDC") &&
+                "USDC".equals(route.asset()) &&
                 // Only support master to sub or sub to master
                 (isMasterToSub(route) || isSubToMaster(route));
     }
 
     private boolean isMasterToSub(TransferRoute route) {
-        return route.from().role().equals("MASTER") && route.to().role().equals("SUB");
+        return "MASTER".equals(route.from().role()) && "SUB".equals(route.to().role());
     }
 
     private boolean isSubToMaster(TransferRoute route) {
-        return route.from().role().equals("SUB") && route.to().role().equals("MASTER");
+        return "SUB".equals(route.from().role()) && "MASTER".equals(route.to().role());
     }
 
-    /**
-     * Master → Sub-account로 USDC 이체.
-     *
-     * @param subAccountAddress 받을 sub-account의 0x 주소
-     * @param amount 이체할 USDC 양 (예: 1.5 = $1.5)
-     * @return 이체 결과
-     * @throws FundTransferException 이체 실패
-     */
-    public TransferResult transferMasterToSub(
-            String subAccountAddress,
-            BigDecimal amount
-    ) {
-        return execute(subAccountAddress, amount, true);
-    }
-
-    /**
-     * Sub-account → Master로 USDC 이체.
-     *
-     * @param subAccountAddress 보낼 sub-account의 0x 주소
-     * @param amount 이체할 USDC 양
-     * @return 이체 결과
-     * @throws FundTransferException 이체 실패
-     */
-    public TransferResult transferSubToMaster(
-            String subAccountAddress,
-            BigDecimal amount
-    ) {
-        return execute(subAccountAddress, amount, false);
-    }
-
-    private TransferResult execute(
-            String subAccountAddress,
-            BigDecimal amount,
-            boolean masterToSub
-    ) {
+    @Override
+    public TransferResult execute(TransferRoute route) {
+        boolean masterToSub = isMasterToSub(route);
+        String subAccountAddress = masterToSub ? route.to().identifier() : route.from().identifier();
+        BigDecimal amount = route.amount();
         validateInput(subAccountAddress, amount);
         long usdMicros = toMicroUsdc(amount);
 
@@ -116,7 +75,7 @@ public class DeriviativeInnerTransfer implements TransferRouter {
 
         try {
             JsonNode response = restAssistant.executeRequestAndGetJsonBody(request);
-            return parseResponse(response, subAccountAddress, amount, masterToSub);
+            return parseResponse(response, route, subAccountAddress, masterToSub);
         } catch (FundTransferException e) {
             throw e;
         } catch (Exception e) {
@@ -126,18 +85,27 @@ public class DeriviativeInnerTransfer implements TransferRouter {
 
     private TransferResult parseResponse(
             JsonNode response,
+            TransferRoute route,
             String subAccountAddress,
-            BigDecimal amount,
             boolean masterToSub
     ) {
         String status = response.path("status").asString();
         if (!"ok".equals(status)) {
-            String errorMessage = response.path("response").asString("Unknown error");
+            String errorMessage = response.has("response")
+                    ? response.path("response").asString()
+                    : "Unknown error";
             log.error("Transfer failed: {}", errorMessage);
             throw new FundTransferException("Transfer failed: " + errorMessage);
         }
-        log.info("Transfer succeeded: address={} amount={} masterToSub={}", subAccountAddress, amount, masterToSub);
-        return new TransferResult(true, subAccountAddress, amount, masterToSub, response.toString());
+        log.info("Transfer succeeded: address={} amount={} masterToSub={}", subAccountAddress, route.amount(), masterToSub);
+        return new TransferResult(
+                true,
+                route.from(),
+                route.to(),
+                route.asset(),
+                route.amount(),
+                BigDecimal.ZERO
+        );
     }
 
     private void validateInput(String subAccountAddress, BigDecimal amount) {

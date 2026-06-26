@@ -2,15 +2,25 @@ package com.hotak.noonchibot.core.derivative;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.core.LifecycleAware;
-import com.hotak.noonchibot.core.event.PositionUpdateEvent;
+import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.event.EventSubscriber;
+import com.hotak.noonchibot.core.event.ExecutionPolicy;
+import com.hotak.noonchibot.core.event.Subscription;
+import com.hotak.noonchibot.core.event.internal.derivative.PositionEvent;
+import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
+@RequiredArgsConstructor
 public class PositionTracker implements LifecycleAware {
     private final Map<String, Position> positions = new HashMap<>();
+    private final EventSubscriber eventSubscriber;
+    private final Set<Subscription> subscriptions = new HashSet<>();
 
 
     public Optional<Position> findPosition(String tradingPair, PositionSide positionSide) {
@@ -23,7 +33,7 @@ public class PositionTracker implements LifecycleAware {
     }
 
     @VisibleForTesting
-    void onPositionUpdated(PositionUpdateEvent event) {
+    void onPositionUpdated(PositionEvent.UpdateReceived event) {
         String key = createPositionKey(event.tradingPair(), event.positionSide());
         if (event.amount().compareTo(BigDecimal.ZERO) == 0) {
             // 포지션 종료
@@ -31,26 +41,44 @@ public class PositionTracker implements LifecycleAware {
             return;
         }
         Position position = positions.get(key);
-        if(position == null) {
-            positions.put(key, Position.builder()
-                    .tradingPair(event.tradingPair())
-                    .positionSide(event.positionSide())
-                    .amount(event.amount())
-                    .unrealizedPnl(event.unrealizedPnl())
-                    .entryPrice(event.entryPrice())
-                    .build());
+        if (position == null) {
+            positions.put(key, new Position(
+                    event.tradingPair(),
+                    event.positionSide(),
+                    event.timestamp(),
+                    event.unrealizedPnl(),
+                    event.entryPrice(),
+                    event.amount()
+            ));
             return;
         }
         position.update(event.unrealizedPnl(), event.entryPrice(), event.amount());
     }
 
+    public void applyFundingPayment(FundingPayment payment) {
+        String key = createPositionKey(payment.tradingPair(), payment.positionSide());
+        Position position = positions.get(key);
+        if (position == null) return;
+        position.applyFundingPayment(payment.amount());
+    }
+
     @Override
     public void onStart() {
-
+        subscriptions.add(eventSubscriber.subscribe(
+                PositionEvent.UpdateReceived.class,
+                this::onPositionUpdated,
+                ExecutionPolicy.sequential()
+        ));
     }
 
     @Override
     public void onShutdown() {
+        subscriptions.forEach(Subscription::close);
+        subscriptions.clear();
+    }
 
+    @Override
+    public int phase() {
+        return Phases.DERIVATIVE_INFO_SETUP;
     }
 }

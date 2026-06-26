@@ -53,7 +53,7 @@ class TradePoller implements LifecycleAware {
     @VisibleForTesting
     void poll() {
         for (InFlightOrder inFlightOrder : orderTracker.getAllInFlightOrders()) {
-            eventPublisher.publish(new TradeEvent.UpdateRequest(
+            eventPublisher.publish(new TradeEvent.UpdateRequested(
                     inFlightOrder.getClientOrderId(),
                     inFlightOrder.getExchangeOrderId(),
                     inFlightOrder.getTradingPair()

@@ -3,7 +3,6 @@ package com.hotak.noonchibot.core.derivative;
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.core.LifecycleAware;
-import com.hotak.noonchibot.core.event.EventMetadata;
 import com.hotak.noonchibot.core.event.EventSubscriber;
 import com.hotak.noonchibot.core.event.ExecutionPolicy;
 import com.hotak.noonchibot.core.event.Subscription;
@@ -34,7 +33,7 @@ public class FundingInfoTracker implements LifecycleAware {
     }
 
     @VisibleForTesting
-    void processMessage(FundingInfoEvent.Received event, EventMetadata metadata) {
+    void processMessage(FundingInfoEvent.Received event) {
         String tradingPair = event.tradingPair();
         FundingInfo fundingInfo = fundingInfos.get(tradingPair);
 
@@ -51,7 +50,7 @@ public class FundingInfoTracker implements LifecycleAware {
     }
 
     @VisibleForTesting
-    void processIntervalMessage(FundingInfoEvent.IntervalReceived event, EventMetadata metadata) {
+    void processIntervalMessage(FundingInfoEvent.IntervalReceived event) {
         event.snapshot().forEach((tradingPair, interval) -> {
             FundingInfo fundingInfo = fundingInfos.get(tradingPair);
             if (fundingInfo == null) {

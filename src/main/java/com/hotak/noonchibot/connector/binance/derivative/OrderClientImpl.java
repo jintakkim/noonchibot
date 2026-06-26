@@ -71,11 +71,11 @@ class OrderClientImpl implements OrderClient {
         try {
             JsonNode orderResult = restAssistant.executeRequestAndGetJsonBody(request);
             String exchangeOrderId = orderResult.get("orderId").asString();
-            Instant transactTime = Instant.ofEpochMilli(orderResult.get("transactTime").asLong());
+            Instant timestamp = parseOrderTimestamp(orderResult);
             String orderStatus = orderResult.path("status").asString();
             OrderState orderState = ApiSpec.ORDER_STATE.getOrDefault(orderStatus, OrderState.OPEN);
 
-            return new OrderPlaceResult(exchangeOrderId, orderState, transactTime);
+            return new OrderPlaceResult(exchangeOrderId, orderState, timestamp);
         } catch (ExchangeApiException e) {
             if(e.httpStatusCode == HttpStatusCode.valueOf(503) && e.getMessage().contains("Unknown error, please check your request or try again later.")) {
                 return new OrderPlaceResult(null, OrderState.PENDING_CREATE ,Instant.ofEpochMilli(timeSynchronizer.serverTime()));
@@ -105,5 +105,16 @@ class OrderClientImpl implements OrderClient {
 
     private static String orderTypeToApiValue(OrderType orderType) {
         return orderType.name().toUpperCase();
+    }
+
+    private static Instant parseOrderTimestamp(JsonNode orderResult) {
+        JsonNode timestamp = orderResult.get("updateTime");
+        if (timestamp == null) {
+            timestamp = orderResult.get("transactTime");
+        }
+        if (timestamp == null) {
+            throw new IllegalArgumentException("Order response does not contain updateTime or transactTime: " + orderResult);
+        }
+        return Instant.ofEpochMilli(timestamp.asLong());
     }
 }

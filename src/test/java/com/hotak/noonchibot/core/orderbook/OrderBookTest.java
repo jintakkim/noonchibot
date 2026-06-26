@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.core.orderbook;
 
+import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import com.hotak.noonchibot.core.trade.TradeType;
 import org.junit.jupiter.api.*;
 
@@ -9,7 +10,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public abstract class OrderBookTest {
+public class OrderBookTest {
     @Test
     @DisplayName("빈 오더북에 스냅샷 적용")
     void applySnapshotToEmptyBook() {
@@ -425,7 +426,7 @@ public abstract class OrderBookTest {
         private OrderBook orderBook;
         @BeforeEach
         void setUp() {
-            OrderBook orderBook = new OrderBook(false);
+            orderBook = new OrderBook(false);
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -493,7 +494,7 @@ public abstract class OrderBookTest {
         private OrderBook orderBook;
         @BeforeEach
         void setUp() {
-            OrderBook orderBook = new OrderBook(false);
+            orderBook = new OrderBook(false);
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -559,7 +560,7 @@ public abstract class OrderBookTest {
         private OrderBook orderBook;
         @BeforeEach
         void setUp() {
-            OrderBook orderBook = new OrderBook(false);
+            orderBook = new OrderBook(false);
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -615,7 +616,7 @@ public abstract class OrderBookTest {
 
         @BeforeEach
         void setUp() {
-            OrderBook orderBook = new OrderBook(false);
+            orderBook = new OrderBook(false);
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -676,7 +677,7 @@ public abstract class OrderBookTest {
 
         @BeforeEach
         void setUp() {
-            OrderBook orderBook = new OrderBook(false);
+            orderBook = new OrderBook(false);
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -750,7 +751,7 @@ public abstract class OrderBookTest {
 
         @BeforeEach
         void setUp() {
-            OrderBook orderBook = new OrderBook(false);
+            orderBook = new OrderBook(false);
             // Ask Book: 101 -> 10, 102 -> 20, 103 -> 30
             // Bid Book: 100 -> 15, 99 -> 25, 98 -> 35
             List<OrderBookEntry> asks = List.of(
@@ -812,37 +813,37 @@ public abstract class OrderBookTest {
     void appliesOnlyDiffsAfterSnapshot() {
         OrderBook orderBook = new OrderBook(false);
 
-        OrderBookMessage.SnapshotMessage snapshot = new OrderBookMessage.SnapshotMessage(
-                Instant.parse("2024-01-01T00:01:00Z"),
+        OrderBookEvent.SnapshotReceived snapshot = new OrderBookEvent.SnapshotReceived(
                 "BTC-USDT",
                 5L,
                 List.of(new OrderBookEntry(5L, new BigDecimal("100"), new BigDecimal("10"))),
-                List.of(new OrderBookEntry(5L, new BigDecimal("101"), new BigDecimal("10")))
+                List.of(new OrderBookEntry(5L, new BigDecimal("101"), new BigDecimal("10"))),
+                Instant.parse("2024-01-01T00:01:00Z")
         );
 
-        List<OrderBookMessage.DiffMessage> diffs = List.of(
+        List<OrderBookEvent.DiffReceived> diffs = List.of(
                 // 스냅샷 이전 - 무시됨
-                new OrderBookMessage.DiffMessage(
-                        Instant.parse("2024-01-01T00:00:00Z"),
+                new OrderBookEvent.DiffReceived(
                         "BTC-USDT",
                         3L,
                         List.of(new OrderBookEntry(3L, new BigDecimal("99"), new BigDecimal("5"))),
-                        List.of()
+                        List.of(),
+                        Instant.parse("2024-01-01T00:00:00Z")
                 ),
                 // 스냅샷 이후 - 적용됨
-                new OrderBookMessage.DiffMessage(
-                        Instant.parse("2024-01-01T00:02:00Z"),
+                new OrderBookEvent.DiffReceived(
                         "BTC-USDT",
                         6L,
                         List.of(new OrderBookEntry(6L, new BigDecimal("100"), new BigDecimal("20"))),
-                        List.of()
+                        List.of(),
+                        Instant.parse("2024-01-01T00:02:00Z")
                 ),
-                new OrderBookMessage.DiffMessage(
-                        Instant.parse("2024-01-01T00:03:00Z"),
+                new OrderBookEvent.DiffReceived(
                         "BTC-USDT",
                         7L,
                         List.of(),
-                        List.of(new OrderBookEntry(7L, new BigDecimal("102"), new BigDecimal("15")))
+                        List.of(new OrderBookEntry(7L, new BigDecimal("102"), new BigDecimal("15"))),
+                        Instant.parse("2024-01-01T00:03:00Z")
                 )
         );
 
@@ -868,15 +869,17 @@ public abstract class OrderBookTest {
     void applyTradeUpdatesTimeAndPrice() {
         OrderBook orderBook = new OrderBook(false);
 
-        OrderBookMessage.TradeMessage trade = new OrderBookMessage.TradeMessage(
-                Instant.parse("2024-01-01T00:05:00Z"),
+        OrderBookEvent.TradeReceived trade = new OrderBookEvent.TradeReceived(
                 "BTC-USDT",
                 1L,
                 new BigDecimal("50000.5"),
                 new BigDecimal("0.1"),
-                TradeType.BUY
+                TradeType.BUY,
+                Instant.parse("2024-01-01T00:05:00Z")
         );
-        orderBook.applyTrade(trade);
+
+        orderBook.applyTrade(trade.price(), trade.timestamp());
+
         assertThat(orderBook.getLastAppliedTradeTime()).isEqualTo(Instant.parse("2024-01-01T00:05:00Z"));
         assertThat(orderBook.getLastTradePrice()).isEqualByComparingTo("50000.5");
     }

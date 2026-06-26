@@ -3,6 +3,7 @@ package com.hotak.noonchibot.core.orderbook;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
 import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
@@ -19,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
-public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataSource implements OrderedLifecycleAware {
+public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataSource implements LifecycleAware {
     protected final TaskScheduler taskScheduler;
     private final EventPublisher eventPublisher;
     private final EventSubscriber eventSubscriber;

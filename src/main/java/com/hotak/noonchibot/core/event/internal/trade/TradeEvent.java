@@ -8,7 +8,7 @@ import java.time.Instant;
 import java.util.List;
 
 public sealed interface TradeEvent extends CoreEvent {
-    record UpdateRequest(
+    record UpdateRequested(
             String clientOrderId,
             String exchangeOrderId,
             String tradingPair

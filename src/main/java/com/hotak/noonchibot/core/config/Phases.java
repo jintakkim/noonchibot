@@ -21,15 +21,18 @@ public final class Phases {
 
     public static int TRADING_RULE_SETUP = 200;
 
+    public static int TRADE_DATASOURCE_SETUP = 150;
     public static int TRADE_POLLING = 200;
 
     public static int BALANCE_SETUP = 200;
+    public static int TRANSFER_SETUP = 200;
 
     public static int ORDER_BOOK_TRACKER_SETUP = 190;
     public static int ORDER_BOOK_DATASOURCE_SETUP = 200;
 
     public static int ORDER_EXECUTOR_SETUP = 300;
     public static int ORDER_TRACKER_SETUP = 100;
+    public static int ORDER_STATUS_DATASOURCE_SETUP = 150;
     public static int ORDER_STATUS_POLLING = 200;
 
     /**

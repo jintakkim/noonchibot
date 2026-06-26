@@ -3,7 +3,7 @@ package com.hotak.noonchibot.connector.binance;
 import com.hotak.noonchibot.connector.AbstractPollingTradingRuleRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingRuleParser;
-import com.hotak.noonchibot.connector.web.RestAssistantImpl;
+import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
@@ -12,13 +12,13 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.Map;
 
-class BinanceTradingRuleRegistry extends AbstractPollingTradingRuleRegistry {
+public class BinanceTradingRuleRegistry extends AbstractPollingTradingRuleRegistry {
     private final TradingPairSymbolRegistry symbolRegistry;
     private final String requestPath;
     private final ObjectMapper objectMapper;
 
     public BinanceTradingRuleRegistry(
-            RestAssistantImpl restAssistant,
+            RestAssistant restAssistant,
             TradingRuleParser parser,
             TaskScheduler scheduler,
             Duration pollingInterval,

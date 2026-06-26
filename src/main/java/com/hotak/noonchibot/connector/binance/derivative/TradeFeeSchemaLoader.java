@@ -2,7 +2,7 @@ package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.AbstractTradeFeeSchemaLoader;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.web.RestAssistantImpl;
+import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.trade.TradeFeeSchema;
@@ -13,12 +13,12 @@ import java.util.List;
 import java.util.Map;
 
 class TradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
-    private final RestAssistantImpl restAssistant;
+    private final RestAssistant restAssistant;
 
     public TradeFeeSchemaLoader(
             IoExecutor ioExecutor,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistantImpl restAssistant
+            RestAssistant restAssistant
     ) {
         super(ioExecutor, tradingPairSymbolRegistry);
         this.restAssistant = restAssistant;

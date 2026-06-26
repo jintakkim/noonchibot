@@ -4,14 +4,17 @@ import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.connector.web.WsAssistantImpl;
 import com.hotak.noonchibot.connector.web.WsResponse;
-import com.hotak.noonchibot.core.IoExecutor;
+import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
+import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSourceTest;
+import com.hotak.noonchibot.core.event.TestEventPublisher;
+import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -19,24 +22,30 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<HyperliquidWsFundingInfoDataSource> {
+    private static final ObjectMapper OM = new ObjectMapper();
 
     private TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private RestAssistantImpl restAssistant;
 
-
-    protected FundingInfoDataSourceTest() {
-        super("USDC");
+    @Override
+    protected String markPriceStreamUri() {
+        return DerivativeApiSpec.WS_URL;
     }
 
     @Override
-    protected HyperliquidWsFundingInfoDataSource createDataSource(WsAssistantImpl wsAssistant, IoExecutor ioExecutor) {
+    protected HyperliquidWsFundingInfoDataSource createWsFundingInfoDataSource(
+            MockWsAssistant wsAssistant,
+            TestEventPublisher eventPublisher
+    ) {
         tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(
                 Map.of("BTC-USDC", "BTC", "ETH-USDC", "ETH")
         );
@@ -44,25 +53,70 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
 
         return new HyperliquidWsFundingInfoDataSource(
                 wsAssistant,
-                DerivativeApiSpec.WS_URL,
-                objectMapper,
-                ioExecutor,
+                OM,
+                new com.hotak.noonchibot.core.VirtualThreadIoExecutor(),
                 tradingPairSymbolRegistry,
-                restAssistant
+                restAssistant,
+                eventPublisher,
+                tradingPairSymbolRegistry.getAllTradingPairs()
         );
     }
 
+    @Override
+    protected WsResponse fundingInfoMessage() {
+        return new WsResponse(
+                createFundingInfoMessage("BTC-USDC", "50000", "0.0001", 0L).toString(),
+                WsResponse.MessageType.TEXT
+        );
+    }
 
     @Override
+    protected FundingInfoEvent.Received expectedReceivedEvent() {
+        FundingInfoMessage message = dataSource.parseFundingInfoMessage(
+                createFundingInfoMessage("BTC-USDC", "50000", "0.0001", 0L)
+        );
+        return new FundingInfoEvent.Received(
+                "BTC-USDC",
+                message.eventTime(),
+                new BigDecimal("50000"),
+                new BigDecimal("0.0001"),
+                message.nextFundingTime(),
+                Duration.ofHours(1)
+        );
+    }
+
+    @Override
+    protected Optional<WsResponse> ackMessage() {
+        return Optional.of(createAckResponse());
+    }
+
+    @Override
+    protected WsResponse errorMessage() {
+        return createErrorResponse("bad subscription");
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    protected void assertAllPairsSubscribed(List<com.hotak.noonchibot.connector.web.WsRequest> requests) {
+        assertThat(requests).hasSize(2);
+        assertThat(requests.stream()
+                .map(request -> (Map<String, Object>) request.payload())
+                .map(payload -> (Map<String, Object>) payload.get("subscription"))
+                .map(subscription -> (String) subscription.get("type")))
+                .containsOnly("activeAssetCtx");
+    }
+
+
     protected JsonNode createFundingInfoMessage(
             String tradingPair, String markPrice, String fundingRate, long nextFundingTime) {
         String coin = tradingPair.split("-")[0];
 
-        ObjectNode root = objectMapper.createObjectNode();
+        ObjectNode root = OM.createObjectNode();
         root.put("channel", "activeAssetCtx");
 
         ObjectNode data = root.putObject("data");
         data.put("coin", coin);
+        data.put("time", 1780000000000L);
 
         ObjectNode ctx = data.putObject("ctx");
         ctx.put("funding", fundingRate);
@@ -80,9 +134,8 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
         return root;
     }
 
-    @Override
     protected WsResponse createAckResponse() {
-        ObjectNode root = objectMapper.createObjectNode();
+        ObjectNode root = OM.createObjectNode();
         root.put("channel", "subscriptionResponse");
         ObjectNode data = root.putObject("data");
         data.put("method", "subscribe");
@@ -93,9 +146,8 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
         return new WsResponse(root.toString(), WsResponse.MessageType.TEXT);
     }
 
-    @Override
     protected WsResponse createErrorResponse(String errorMsg) {
-        ObjectNode root = objectMapper.createObjectNode();
+        ObjectNode root = OM.createObjectNode();
         root.put("channel", "error");
         root.put("data", errorMsg);
         return new WsResponse(root.toString(), WsResponse.MessageType.TEXT);
@@ -107,7 +159,7 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
     void fundingIntervalIsFixedToOneHour() {
         JsonNode msg = createFundingInfoMessage("BTC-USDT", "50000", "0.0001", 0L);
 
-        FundingInfoMessage result = fundingInfoDataSource.parseFundingInfoMessage(msg);
+        FundingInfoMessage result = dataSource.parseFundingInfoMessage(msg);
 
         assertThat(result.fundingInterval()).isEqualTo(Duration.ofHours(1));
     }
@@ -117,22 +169,19 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
     void nextFundingTimeIsNextHourUtc() {
         JsonNode msg = createFundingInfoMessage("BTC-USDT", "50000", "0.0001", 0L);
 
-        Instant before = Instant.now().truncatedTo(ChronoUnit.HOURS);
-        FundingInfoMessage result = fundingInfoDataSource.parseFundingInfoMessage(msg);
-        Instant after = Instant.now().truncatedTo(ChronoUnit.HOURS);
-
-        // before+1h 또는 after+1h 이어야 한다 (밀리초 단위 호출 시간 차이 허용)
-        Instant expectedFromBefore = before.plus(Duration.ofHours(1));
-        Instant expectedFromAfter = after.plus(Duration.ofHours(1));
+        FundingInfoMessage result = dataSource.parseFundingInfoMessage(msg);
+        Instant expected = result.eventTime()
+                .truncatedTo(ChronoUnit.HOURS)
+                .plus(Duration.ofHours(1));
 
         assertThat(result.nextFundingTime())
-                .isIn(expectedFromBefore, expectedFromAfter);
+                .isEqualTo(expected);
     }
 
     @Test
     @DisplayName("REST getFundingInfo 호출 시 activeAssetCtx endpoint를 호출한다")
     void getFundingInfoCallsActiveAssetCtxEndpoint() {
-        ObjectNode response = objectMapper.createObjectNode();
+        ObjectNode response = OM.createObjectNode();
         response.put("coin", "BTC");
         ObjectNode ctx = response.putObject("ctx");
         ctx.put("funding", "0.0000125");
@@ -143,7 +192,7 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
         when(restAssistant.executeRequestAndGetJsonBody(any(RestRequest.class)))
                 .thenReturn(response);
 
-        FundingInfoMessage result = fundingInfoDataSource.getFundingInfo("BTC-USDC");
+        FundingInfoMessage result = dataSource.getFundingInfo("BTC-USDC");
 
         assertThat(result.tradingPair()).isEqualTo("BTC-USDC");
         assertThat(result.markPrice()).isEqualByComparingTo(new BigDecimal("67234.0"));
@@ -154,7 +203,7 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
     @Test
     @DisplayName("WS push 메시지의 ctx에 funding/markPx만 있어도 정상 파싱된다")
     void parsesMinimalCtxFields() {
-        ObjectNode root = objectMapper.createObjectNode();
+        ObjectNode root = OM.createObjectNode();
         root.put("channel", "activeAssetCtx");
         ObjectNode data = root.putObject("data");
         data.put("coin", "BTC");
@@ -162,7 +211,7 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
         ctx.put("funding", "0.00005");
         ctx.put("markPx", "67000.0");
 
-        FundingInfoMessage result = fundingInfoDataSource.parseFundingInfoMessage(root);
+        FundingInfoMessage result = dataSource.parseFundingInfoMessage(root);
 
         assertThat(result.tradingPair()).isEqualTo("BTC-USDC");
         assertThat(result.markPrice()).isEqualByComparingTo(new BigDecimal("67000.0"));
@@ -170,7 +219,6 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
     }
 
 
-    @Override
     protected void verifyNextFundingTime(FundingInfoMessage result, long expectedNextFundingTime) {
         Instant expected = Instant.now().truncatedTo(ChronoUnit.HOURS).plus(Duration.ofHours(1));
         assertThat(result.nextFundingTime())

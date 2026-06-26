@@ -3,10 +3,12 @@ package com.hotak.noonchibot.connector.binance.derivative;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.event.EventHandler;
-import com.hotak.noonchibot.core.event.EventPublisher;
+import com.hotak.noonchibot.core.LifecycleAware;
+import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.OrderState;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
@@ -15,11 +17,13 @@ import java.time.Instant;
 import java.util.Map;
 
 @Slf4j
-record OrderStatusDataSource(
-        TradingPairSymbolRegistry tradingPairSymbolRegistry,
-        RestAssistant restAssistant,
-        EventPublisher eventPublisher
-) implements EventHandler<OrderEvent.StatusUpdateRequested> {
+@RequiredArgsConstructor
+class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateRequested>, LifecycleAware {
+    private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
+    private final RestAssistant restAssistant;
+    private final EventPublisher eventPublisher;
+    private final EventSubscriber eventSubscriber;
+    private Subscription subscription;
 
     @Override
     public void onEvent(OrderEvent.StatusUpdateRequested event) {
@@ -40,5 +44,28 @@ record OrderStatusDataSource(
                 newState,
                 Instant.ofEpochMilli(updatedOrder.get("updateTime").asLong())
         ));
+    }
+
+    @Override
+    public void onStart() {
+        subscription = eventSubscriber.subscribe(
+                OrderEvent.StatusUpdateRequested.class,
+                this,
+                ExecutionPolicy.concurrent()
+        );
+
+    }
+
+    @Override
+    public void onShutdown() {
+        if (subscription != null) {
+            subscription.close();
+            subscription = null;
+        }
+    }
+
+    @Override
+    public int phase() {
+        return Phases.ORDER_STATUS_DATASOURCE_SETUP;
     }
 }

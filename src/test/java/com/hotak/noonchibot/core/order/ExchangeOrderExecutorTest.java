@@ -1,44 +1,51 @@
 package com.hotak.noonchibot.core.order;
 
-import com.hotak.noonchibot.connector.*;
+import com.hotak.noonchibot.connector.OrderIdGenerator;
+import com.hotak.noonchibot.connector.TradingRuleRegistry;
 import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.event.TestEventPublisher;
+import com.hotak.noonchibot.core.event.TestEventSubscriber;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.trade.TradeType;
 import com.hotak.noonchibot.core.trade.TradingRule;
-import com.hotak.noonchibot.core.event.*;
-import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.*;
+import java.util.Set;
 
-import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-public class ExchangeOrderExecutorTest {
-    private static final EventMetadata METADATA = EventMetadata.newRoot();
+class ExchangeOrderExecutorTest {
     private static final Exchange EXCHANGE = Exchange.BINANCE_DERIVATIVE;
 
     private TestEventPublisher eventPublisher;
+    private TestEventSubscriber eventSubscriber;
+    private OrderIdGenerator orderIdGenerator;
     private OrderTracker orderTracker;
     private OrderClient orderClient;
     private OrderBookTracker orderBookTracker;
     private TradingRuleRegistry tradingRuleRegistry;
     private OrderSnapshotRepository orderSnapshotRepository;
+    private ExchangeOrderExecutor executor;
 
     @BeforeEach
     void setUp() {
         eventPublisher = new TestEventPublisher();
+        eventSubscriber = new TestEventSubscriber();
+        orderIdGenerator = mock(OrderIdGenerator.class);
         orderTracker = mock(OrderTracker.class);
         orderClient = mock(OrderClient.class);
         orderBookTracker = mock(OrderBookTracker.class);
         orderSnapshotRepository = mock(OrderSnapshotRepository.class);
         tradingRuleRegistry = tradingPair -> new TradingRule(
                 tradingPair,
-                new BigDecimal("0.00001"),
+                new BigDecimal("0.01"),
                 null,
                 new BigDecimal("0.01"),
                 new BigDecimal("0.00001"),
@@ -48,14 +55,58 @@ public class ExchangeOrderExecutorTest {
                 "USDT",
                 "BTC"
         );
+        executor = new ExchangeOrderExecutor(
+                orderIdGenerator,
+                orderTracker,
+                tradingRuleRegistry,
+                "NB",
+                36,
+                Set.of(TimeInForce.GTC, TimeInForce.IOC, TimeInForce.FOK),
+                orderBookTracker,
+                eventPublisher,
+                orderClient,
+                eventSubscriber,
+                EXCHANGE,
+                orderSnapshotRepository
+        );
+    }
+
+    @Test
+    @DisplayName("onStart 시 주문 생성/취소 이벤트를 구독한다")
+    void onStartSubscribesOrderEvents() {
+        executor.onStart();
+
+        assertThat(eventSubscriber.isSubscribed(OrderEvent.CreateRequested.class)).isTrue();
+        assertThat(eventSubscriber.isSubscribed(OrderEvent.ExchangeCreateRequested.class)).isTrue();
+        assertThat(eventSubscriber.isSubscribed(OrderEvent.CancelRequested.class)).isTrue();
+        assertThat(eventSubscriber.isSubscribed(OrderEvent.ExchangeCancelRequested.class)).isTrue();
+        assertThat(executor.phase()).isEqualTo(Phases.ORDER_EXECUTOR_SETUP);
+    }
+
+    @Test
+    @DisplayName("onShutdown 시 구독을 해제한다")
+    void onShutdownClosesSubscriptions() {
+        executor.onStart();
+
+        executor.onShutdown();
+
+        assertThat(eventSubscriber.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("clientOrderId를 생성할 때 prefix와 길이 제한을 위임한다")
+    void createClientOrderIdDelegatesToGenerator() {
+        when(orderIdGenerator.createClientOrderId(true, "BTC-USDT", "NB", 36)).thenReturn("generated-id");
+
+        String clientOrderId = executor.createClientOrderId(true, "BTC-USDT");
+
+        assertThat(clientOrderId).isEqualTo("generated-id");
     }
 
     @Test
     @DisplayName("주문 생성 요청을 검증하고 수량/가격을 보정한 뒤 거래소 주문 생성 요청 이벤트를 발행한다")
     void createRequested_publishesExchangeCreateRequestedWithQuantizedOrder() {
-        var handler = createRequestHandler();
-
-        handle(handler, new OrderEvent.CreateRequested(
+        executor.processCreateRequest(new OrderEvent.CreateRequested(
                 limitBuy("0.019999", "50000.123"),
                 "cid-1"
         ));
@@ -73,9 +124,7 @@ public class ExchangeOrderExecutorTest {
     @Test
     @DisplayName("주문 생성 검증에 실패하면 실패 이벤트를 발행한다")
     void createRequested_whenValidationFails_publishesFailedEvent() {
-        var handler = createRequestHandler();
-
-        handle(handler, new OrderEvent.CreateRequested(
+        executor.processCreateRequest(new OrderEvent.CreateRequested(
                 limitBuy("0.000001", "50000"),
                 "cid-1"
         ));
@@ -90,24 +139,16 @@ public class ExchangeOrderExecutorTest {
     }
 
     @Test
-    @DisplayName("거래소 주문 생성 요청 전에 주문 스냅샷을 저장하고, 성공하면 주문 상태 수신 이벤트를 발행한다")
+    @DisplayName("거래소 주문 생성 전 snapshot을 저장하고 성공하면 status received를 발행한다")
     void exchangeCreateRequested_whenOrderClientSucceeds_savesSnapshotAndPublishesStatusReceived() {
-        var handler = new ExchangeOrderExecutor.ExchangeCreateRequestHandler(
-                eventPublisher,
-                orderClient,
-                orderSnapshotRepository,
-                EXCHANGE
-        );
         InFlightOrder order = inFlightOrder("cid-1", null);
         Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
-
         when(orderClient.placeOrder(order))
                 .thenReturn(new OrderPlaceResult("ex-1", OrderState.OPEN, timestamp));
 
-        handle(handler, new OrderEvent.ExchangeCreateRequested(order));
+        executor.processExchangeCreateRequest(new OrderEvent.ExchangeCreateRequested(order));
 
         verify(orderSnapshotRepository).save(any(OrderSnapshot.class));
-
         OrderEvent.StatusReceived status = eventPublisher.only(OrderEvent.StatusReceived.class);
         assertThat(status.tradingPair()).isEqualTo("BTC-USDT");
         assertThat(status.clientOrderId()).isEqualTo("cid-1");
@@ -117,35 +158,55 @@ public class ExchangeOrderExecutorTest {
     }
 
     @Test
+    @DisplayName("거래소 주문 생성 실패 시 failed 이벤트를 발행한다")
+    void exchangeCreateRequested_whenOrderClientFails_publishesFailed() {
+        InFlightOrder order = inFlightOrder("cid-1", null);
+        when(orderClient.placeOrder(order)).thenThrow(new IllegalStateException("boom"));
+
+        executor.processExchangeCreateRequest(new OrderEvent.ExchangeCreateRequested(order));
+
+        OrderEvent.Failed failed = eventPublisher.only(OrderEvent.Failed.class);
+        assertThat(failed.tradingPair()).isEqualTo("BTC-USDT");
+        assertThat(failed.clientOrderId()).isEqualTo("cid-1");
+        assertThat(failed.throwable()).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     @DisplayName("취소 요청을 받으면 추적 중인 주문을 찾아 거래소 취소 요청 이벤트를 발행한다")
     void cancelRequested_whenOrderIsTracked_publishesExchangeCancelRequested() {
-        var handler = new ExchangeOrderExecutor.CancelRequestHandler(eventPublisher, orderTracker);
         InFlightOrder order = inFlightOrder("cid-1", "ex-1");
-
         when(orderTracker.getInFlightOrderByClientId("cid-1")).thenReturn(order);
 
-        handle(handler, new OrderEvent.CancelRequested("cid-1"));
+        executor.processCancelRequest(new OrderEvent.CancelRequested("cid-1"));
 
         OrderEvent.ExchangeCancelRequested request = eventPublisher.only(OrderEvent.ExchangeCancelRequested.class);
-
         assertThat(request.tradingPair()).isEqualTo("BTC-USDT");
         assertThat(request.clientOrderId()).isEqualTo("cid-1");
         assertThat(request.exchangeOrderId()).isEqualTo("ex-1");
     }
 
     @Test
+    @DisplayName("취소할 주문을 찾지 못하면 failed 이벤트를 발행한다")
+    void cancelRequested_whenOrderIsMissing_publishesFailed() {
+        when(orderTracker.getInFlightOrderByClientId("cid-1")).thenReturn(null);
+
+        executor.processCancelRequest(new OrderEvent.CancelRequested("cid-1"));
+
+        OrderEvent.Failed failed = eventPublisher.only(OrderEvent.Failed.class);
+        assertThat(failed.clientOrderId()).isEqualTo("cid-1");
+        assertThat(failed.throwable()).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("거래소 취소가 확정되면 CANCELED 상태 수신 이벤트를 발행한다")
     void exchangeCancelRequested_whenCancelIsFinalized_publishesCanceledStatus() {
-        var handler = new ExchangeOrderExecutor.ExchangeCancelRequestHandler(eventPublisher, orderClient);
         Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
-
         when(orderClient.cancelOrder("BTC-USDT", "cid-1"))
                 .thenReturn(new OrderCancelResult(true, timestamp));
 
-        handle(handler, new OrderEvent.ExchangeCancelRequested("BTC-USDT", "cid-1", "ex-1"));
+        executor.processExchangeCancelRequest(new OrderEvent.ExchangeCancelRequested("BTC-USDT", "cid-1", "ex-1"));
 
         OrderEvent.StatusReceived status = eventPublisher.only(OrderEvent.StatusReceived.class);
-
         assertThat(status.orderState()).isEqualTo(OrderState.CANCELED);
         assertThat(status.timestamp()).isEqualTo(timestamp);
     }
@@ -153,67 +214,12 @@ public class ExchangeOrderExecutorTest {
     @Test
     @DisplayName("거래소 취소가 아직 확정되지 않았으면 PENDING_CANCEL 상태 수신 이벤트를 발행한다")
     void exchangeCancelRequested_whenCancelIsNotFinalized_publishesPendingCancelStatus() {
-        var handler = new ExchangeOrderExecutor.ExchangeCancelRequestHandler(eventPublisher, orderClient);
-        Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
-
         when(orderClient.cancelOrder("BTC-USDT", "cid-1"))
-                .thenReturn(new OrderCancelResult(false, timestamp));
+                .thenReturn(new OrderCancelResult(false, Instant.parse("2026-06-01T00:00:00Z")));
 
-        handle(handler, new OrderEvent.ExchangeCancelRequested("BTC-USDT", "cid-1", "ex-1"));
+        executor.processExchangeCancelRequest(new OrderEvent.ExchangeCancelRequested("BTC-USDT", "cid-1", "ex-1"));
 
-        OrderEvent.StatusReceived status = eventPublisher.only(OrderEvent.StatusReceived.class);
-
-        assertThat(status.orderState()).isEqualTo(OrderState.PENDING_CANCEL);
-    }
-
-    @Test
-    @DisplayName("스냅샷 업데이트 요청을 받으면 기존 주문 스냅샷에 거래소 상태를 반영한다")
-    void snapshotUpdateRequested_updatesOrderSnapshot() {
-        var handler = new ExchangeOrderExecutor.SnapshotUpdateHandler(orderSnapshotRepository);
-        OrderSnapshot snapshot = new OrderSnapshot(
-                "cid-1",
-                EXCHANGE,
-                "BTC-USDT",
-                OrderState.PENDING_CREATE,
-                null,
-                Instant.parse("2026-06-01T00:00:00Z"),
-                null
-        );
-        Instant timestamp = Instant.parse("2026-06-01T00:01:00Z");
-
-        when(orderSnapshotRepository.findById("cid-1"))
-                .thenReturn(Optional.of(snapshot));
-
-        handle(handler, new OrderEvent.SnapshotUpdateRequested(
-                "cid-1",
-                "ex-1",
-                OrderState.OPEN,
-                timestamp
-        ));
-
-        verify(orderSnapshotRepository).save(snapshot);
-
-        assertThat(snapshot)
-                .extracting("exchangeOrderId", "state", "updatedAt")
-                .containsExactly("ex-1", OrderState.OPEN, timestamp);
-    }
-
-    private ExchangeOrderExecutor.CreateRequestHandler createRequestHandler() {
-        return new ExchangeOrderExecutor.CreateRequestHandler(
-                eventPublisher,
-                Set.of(TimeInForce.GTC, TimeInForce.IOC, TimeInForce.FOK),
-                orderBookTracker,
-                tradingRuleRegistry,
-                orderTracker
-        );
-    }
-
-    private <E extends Event> void handle(FailureAwareEventHandler<E> handler, E event) {
-        try {
-            handler.onEvent(event, METADATA);
-        } catch (Throwable cause) {
-            handler.onFailure(event, cause);
-        }
+        assertThat(eventPublisher.only(OrderEvent.StatusReceived.class).orderState()).isEqualTo(OrderState.PENDING_CANCEL);
     }
 
     private OrderCandidate limitBuy(String amount, String price) {

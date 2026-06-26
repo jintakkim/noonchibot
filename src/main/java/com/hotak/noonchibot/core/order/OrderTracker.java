@@ -2,6 +2,7 @@ package com.hotak.noonchibot.core.order;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
@@ -12,7 +13,7 @@ import java.time.Duration;
 import java.util.*;
 
 @Slf4j
-public class OrderTracker implements OrderedLifecycleAware {
+public class OrderTracker implements LifecycleAware {
     private final EventPublisher eventPublisher;
     private final TradeRepository tradeRepository;
     private final OrderSnapshotRepository orderSnapshotRepository;
@@ -92,7 +93,7 @@ public class OrderTracker implements OrderedLifecycleAware {
      * liquidation, adl, settlement 같은 거래소 시스템에서 발생 시킨 이벤트 처리.
      */
     void processSystemOrderOccur() {
-        set
+
     }
 
     private boolean isOrderStateNotChanged(OrderState prevState, OrderState currentState) {

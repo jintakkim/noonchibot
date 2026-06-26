@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.connector.binance;
 
-import com.hotak.noonchibot.connector.binance.derivative.DerivativeApiSpec;
+import com.hotak.noonchibot.connector.binance.derivative.ApiSpec;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.RestResponse;
 import com.hotak.noonchibot.connector.web.testutils.RestFixture;
@@ -42,7 +42,7 @@ public class OrderFixture {
         return new RestFixture(
                 RestRequest.builder()
                         .method(HttpMethod.POST)
-                        .pathUrl(DerivativeApiSpec.ORDER_PATH_URL)
+                        .pathUrl(ApiSpec.ORDER_PATH_URL)
                         .params(Map.of(
                                 "symbol", EXCHANGE_SYMBOL,
                                 "side", "BUY",
@@ -89,7 +89,7 @@ public class OrderFixture {
         return new RestFixture(
                 RestRequest.builder()
                         .method(HttpMethod.POST)
-                        .pathUrl(DerivativeApiSpec.ORDER_PATH_URL)
+                        .pathUrl(ApiSpec.ORDER_PATH_URL)
                         .params(Map.of(
                                 "symbol", "BTCUSDT",
                                 "side", "BUY",
@@ -113,7 +113,7 @@ public class OrderFixture {
         return new RestFixture(
                 RestRequest.builder()
                         .method(HttpMethod.POST)
-                        .pathUrl(DerivativeApiSpec.ORDER_PATH_URL)
+                        .pathUrl(ApiSpec.ORDER_PATH_URL)
                         .params(Map.of(
                                 "symbol", EXCHANGE_SYMBOL,
                                 "side", "BUY",
@@ -142,7 +142,7 @@ public class OrderFixture {
         return new RestFixture(
                 RestRequest.builder()
                         .method(HttpMethod.DELETE)
-                        .pathUrl(DerivativeApiSpec.ORDER_PATH_URL)
+                        .pathUrl(ApiSpec.ORDER_PATH_URL)
                         .params(Map.of(
                                 "symbol", EXCHANGE_SYMBOL,
                                 "origClientOrderId", CLIENT_ORDER_ID

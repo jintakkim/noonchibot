@@ -1,7 +1,10 @@
 package com.hotak.noonchibot.core.order;
 
-import com.hotak.noonchibot.connector.*;
+import com.google.common.annotations.VisibleForTesting;
+import com.hotak.noonchibot.connector.OrderIdGenerator;
+import com.hotak.noonchibot.connector.TradingRuleRegistry;
 import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
@@ -9,33 +12,28 @@ import com.hotak.noonchibot.core.orderbook.OrderBook;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.trade.TradeType;
 import com.hotak.noonchibot.core.trade.TradingRule;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.*;
+import java.util.HashSet;
+import java.util.Set;
 
 @Slf4j
-public class ExchangeOrderExecutor implements OrderedLifecycleAware {
+public class ExchangeOrderExecutor implements LifecycleAware {
     private final OrderIdGenerator orderIdGenerator;
-    /**
-     * 해당 봇에서 넣은 주문이라는 구분을 하기 위한 prefix
-     */
+    private final OrderTracker orderTracker;
+    private final TradingRuleRegistry tradingRuleRegistry;
     private final String clientOrderIdPrefix;
-    /**
-     * 거래소에서 설정한 id 최대 길이
-     */
     private final int clientOrderIdMaxLength;
+    private final Set<TimeInForce> supportedTimeInForce;
+    private final OrderBookTracker orderBookTracker;
+    private final EventPublisher eventPublisher;
+    private final OrderClient orderClient;
     private final EventSubscriber eventSubscriber;
-
-    private final CreateRequestHandler createRequestHandler;
-    private final ExchangeCreateRequestHandler exchangeCreateRequestHandler;
-    private final CancelRequestHandler cancelRequestHandler;
-    private final ExchangeCancelRequestHandler exchangeCancelRequestHandler;
-
+    private final Exchange exchange;
+    private final OrderSnapshotRepository orderSnapshotRepository;
     private final Set<Subscription> subscriptions = new HashSet<>();
-
 
     public ExchangeOrderExecutor(
             OrderIdGenerator orderIdGenerator,
@@ -52,24 +50,17 @@ public class ExchangeOrderExecutor implements OrderedLifecycleAware {
             OrderSnapshotRepository orderSnapshotRepository
     ) {
         this.orderIdGenerator = orderIdGenerator;
+        this.orderTracker = orderTracker;
+        this.tradingRuleRegistry = tradingRuleRegistry;
         this.clientOrderIdPrefix = clientOrderIdPrefix;
         this.clientOrderIdMaxLength = clientOrderIdMaxLength;
+        this.supportedTimeInForce = supportedTimeInForce;
+        this.orderBookTracker = orderBookTracker;
+        this.eventPublisher = eventPublisher;
+        this.orderClient = orderClient;
         this.eventSubscriber = eventSubscriber;
-        this.createRequestHandler = new CreateRequestHandler(
-                eventPublisher,
-                supportedTimeInForce,
-                orderBookTracker,
-                tradingRuleRegistry,
-                orderTracker
-        );
-        this.exchangeCreateRequestHandler = new ExchangeCreateRequestHandler(
-                eventPublisher,
-                orderClient,
-                orderSnapshotRepository,
-                exchange
-        );
-        this.cancelRequestHandler = new CancelRequestHandler(eventPublisher, orderTracker);
-        this.exchangeCancelRequestHandler = new ExchangeCancelRequestHandler(eventPublisher, orderClient);
+        this.exchange = exchange;
+        this.orderSnapshotRepository = orderSnapshotRepository;
     }
 
     public String createClientOrderId(boolean isBuy, String tradingPair) {
@@ -82,16 +73,27 @@ public class ExchangeOrderExecutor implements OrderedLifecycleAware {
     }
 
     @Override
-    public int phase() {
-        return Phases.ORDER_EXECUTOR_SETUP;
-    }
-
-    @Override
     public void onStart() {
-        subscriptions.add(eventSubscriber.subscribe(OrderEvent.CreateRequested.class, createRequestHandler, ExecutionPolicy.sequential()));
-        subscriptions.add(eventSubscriber.subscribe(OrderEvent.ExchangeCreateRequested.class, exchangeCreateRequestHandler, ExecutionPolicy.concurrent()));
-        subscriptions.add(eventSubscriber.subscribe(OrderEvent.CancelRequested.class, cancelRequestHandler, ExecutionPolicy.sequential()));
-        subscriptions.add(eventSubscriber.subscribe(OrderEvent.ExchangeCancelRequested.class, exchangeCancelRequestHandler, ExecutionPolicy.concurrent()));
+        subscriptions.add(eventSubscriber.subscribe(
+                OrderEvent.CreateRequested.class,
+                this::processCreateRequest,
+                ExecutionPolicy.sequential()
+        ));
+        subscriptions.add(eventSubscriber.subscribe(
+                OrderEvent.ExchangeCreateRequested.class,
+                this::processExchangeCreateRequest,
+                ExecutionPolicy.concurrent()
+        ));
+        subscriptions.add(eventSubscriber.subscribe(
+                OrderEvent.CancelRequested.class,
+                this::processCancelRequest,
+                ExecutionPolicy.sequential()
+        ));
+        subscriptions.add(eventSubscriber.subscribe(
+                OrderEvent.ExchangeCancelRequested.class,
+                this::processExchangeCancelRequest,
+                ExecutionPolicy.concurrent()
+        ));
     }
 
     @Override
@@ -100,118 +102,18 @@ public class ExchangeOrderExecutor implements OrderedLifecycleAware {
         subscriptions.clear();
     }
 
-    /**
-     * 검증 단계
-     */
-    @RequiredArgsConstructor
-    static class CreateRequestHandler implements FailureAwareEventHandler<OrderEvent.CreateRequested> {
-        private final EventPublisher eventPublisher;
-        private final Set<TimeInForce> supportedTimeInForce;
-        private final OrderBookTracker orderBookTracker;
-        private final TradingRuleRegistry tradingRuleRegistry;
-        private final OrderTracker orderTracker;
+    @Override
+    public int phase() {
+        return Phases.ORDER_EXECUTOR_SETUP;
+    }
 
-        @Override
-        public void onEvent(OrderEvent.CreateRequested event) {
-            OrderCandidate candidate = event.candidate();
-            TradingRule tradingRule = findTradingRuleOrElseThrow(candidate.getTradingPair());
-            BigDecimal quantizedPrice = candidate.getPrice();
-            if (candidate.getOrderType().equals(OrderType.LIMIT)) {
-                quantizedPrice = quantizeOrderPrice(candidate.getTradingPair(), candidate.getPrice());
-            }
-            BigDecimal quantizedOrderAmount = quantizeOrderAmount(candidate.getTradingPair(), candidate.getAmount());
-
-            if (!tradingRule.supportedOrderTypes().contains(candidate.getOrderType())) {
-                throw new OrderValidationException.UnsupportedOrderTypeException(
-                        event.clientOrderId(),
-                        candidate.getTradingPair(),
-                        "해당 오더 타입은 지원하지 않습니다."
-                );
-            }
-            if(!supportedTimeInForce.contains(candidate.getTimeInForce())) {
-                throw new OrderValidationException.UnsupportedTimeInForceException(
-                        event.clientOrderId(),
-                        candidate.getTradingPair(),
-                        "해당 timeInForce는 지원하지 않습니다."
-                );
-            }
-            if (quantizedOrderAmount.compareTo(tradingRule.minOrderSize()) < 0) {
-                throw new OrderValidationException.BelowMinOrderSizeException(
-                        event.clientOrderId(),
-                        candidate.getTradingPair(),
-                        "주문 수량이 최소 주문 수량보다 커야합니다."
-                );
-            }
-
-            BigDecimal estimatedPrice;
-            if (candidate.getPrice() != null) {
-                estimatedPrice = quantizedPrice;
-            } else {
-                // 시장가 매수 → bestAsk, 시장가 매도 → bestBid
-                OrderBook book = orderBookTracker.findOrderBook(candidate.getTradingPair())
-                        .orElseThrow(() -> new IllegalArgumentException("order book not found" + candidate.getTradingPair()));
-                estimatedPrice = candidate.getTradeType() == TradeType.BUY ? book.getBestAsk() : book.getBestBid();
-            }
-            BigDecimal notionalSize = estimatedPrice.multiply(quantizedOrderAmount);
-            if (notionalSize.compareTo(tradingRule.minNotionalSize()) < 0) {
-                throw new OrderValidationException.BelowMinNotionalException(
-                        event.clientOrderId(),
-                        candidate.getTradingPair(),
-                        "주문 금액이 최소 주문 금액보다 커야합니다."
-                );
-            }
-            InFlightOrder inFlightOrder = new InFlightOrder(
-                    event.clientOrderId(),
-                    candidate.getTradingPair(),
-                    candidate.getOrderType(),
-                    candidate.getTradeType(),
-                    quantizedOrderAmount,
-                    quantizedPrice,
-                    Instant.now(),
-                    candidate.isPostOnly(),
-                    candidate.getTimeInForce()
-            );
-            orderTracker.startTrackingOrder(inFlightOrder);
-            eventPublisher.publish(new OrderEvent.ExchangeCreateRequested(inFlightOrder));
-        }
-
-        private BigDecimal quantizeOrderPrice(String tradingPair, BigDecimal price) {
-            if (price == null) {
-                return null;
-            }
-            BigDecimal priceQuantum = getOrderPriceQuantum(tradingPair, price);
-            // (price // quantum) * quantum
-            return price.divideToIntegralValue(priceQuantum).multiply(priceQuantum);
-        }
-
-        private BigDecimal quantizeOrderAmount(String tradingPair, BigDecimal amount) {
-            if (amount == null) {
-                return null;
-            }
-            BigDecimal sizeQuantum = getOrderSizeQuantum(tradingPair, amount);
-            return amount.divideToIntegralValue(sizeQuantum).multiply(sizeQuantum);
-        }
-
-        private BigDecimal getOrderPriceQuantum(String tradingPair, BigDecimal price) {
-            TradingRule tradingRule = tradingRuleRegistry.getTradingRule(tradingPair);
-            if (tradingRule == null) throw new IllegalArgumentException("trading rule not found");
-            return tradingRule.minPriceIncrement();
-        }
-
-        private BigDecimal getOrderSizeQuantum(String tradingPair, BigDecimal orderSize) {
-            TradingRule tradingRule = tradingRuleRegistry.getTradingRule(tradingPair);
-            if (tradingRule == null) throw new IllegalArgumentException("trading rule not found");
-            return tradingRule.minBaseAmountIncrement();
-        }
-
-        private TradingRule findTradingRuleOrElseThrow(String tradingPair) {
-            TradingRule rule = tradingRuleRegistry.getTradingRule(tradingPair);
-            if(rule == null) throw new IllegalArgumentException("Unknown trading pair: " + tradingPair);
-            return rule;
-        }
-
-        @Override
-        public void onFailure(OrderEvent.CreateRequested event, Throwable cause) {
+    @VisibleForTesting
+    void processCreateRequest(OrderEvent.CreateRequested event) {
+        try {
+            InFlightOrder order = createValidatedInFlightOrder(event);
+            orderTracker.startTrackingOrder(order);
+            eventPublisher.publish(new OrderEvent.ExchangeCreateRequested(order));
+        } catch (Exception cause) {
             eventPublisher.publish(new OrderEvent.Failed(
                     event.candidate().getTradingPair(),
                     event.clientOrderId(),
@@ -221,53 +123,126 @@ public class ExchangeOrderExecutor implements OrderedLifecycleAware {
         }
     }
 
-    @RequiredArgsConstructor
-    static class CancelRequestHandler implements FailureAwareEventHandler<OrderEvent.CancelRequested> {
-        private final EventPublisher eventPublisher;
-        private final OrderTracker orderTracker;
+    private InFlightOrder createValidatedInFlightOrder(OrderEvent.CreateRequested event) {
+        OrderCandidate candidate = event.candidate();
+        TradingRule tradingRule = findTradingRuleOrElseThrow(candidate.getTradingPair());
 
-        @Override
-        public void onEvent(OrderEvent.CancelRequested event) {
-            InFlightOrder order = orderTracker.getInFlightOrderByClientId(event.clientOrderId());
-            if (order == null) {
-                throw new IllegalArgumentException("주문을 찾을 수 없습니다. clientOrderId: "+ event.clientOrderId());
-            }
-            eventPublisher.publish(new OrderEvent.ExchangeCreateRequested(order));
+        BigDecimal quantizedPrice = quantizeOrderPrice(candidate);
+        BigDecimal quantizedAmount = quantizeOrderAmount(candidate.getTradingPair(), candidate.getAmount());
+        validateOrderType(event, tradingRule);
+        validateTimeInForce(event);
+        validateOrderSize(event, quantizedAmount, tradingRule);
+        validateNotionalSize(event, candidate, quantizedPrice, quantizedAmount, tradingRule);
+
+        return new InFlightOrder(
+                event.clientOrderId(),
+                candidate.getTradingPair(),
+                candidate.getOrderType(),
+                candidate.getTradeType(),
+                quantizedAmount,
+                quantizedPrice,
+                Instant.now(),
+                candidate.isPostOnly(),
+                candidate.getTimeInForce()
+        );
+    }
+
+    private BigDecimal quantizeOrderPrice(OrderCandidate candidate) {
+        if (candidate.getOrderType() != OrderType.LIMIT) {
+            return candidate.getPrice();
         }
+        return quantizePrice(candidate.getTradingPair(), candidate.getPrice());
+    }
 
-        @Override
-        public void onFailure(OrderEvent.CancelRequested event, Throwable cause) {
-            eventPublisher.publish(new OrderEvent.Failed(
-                    null,
+    private BigDecimal quantizePrice(String tradingPair, BigDecimal price) {
+        if (price == null) {
+            return null;
+        }
+        BigDecimal priceQuantum = findTradingRuleOrElseThrow(tradingPair).minPriceIncrement();
+        return price.divideToIntegralValue(priceQuantum).multiply(priceQuantum);
+    }
+
+    private BigDecimal quantizeOrderAmount(String tradingPair, BigDecimal amount) {
+        if (amount == null) {
+            return null;
+        }
+        BigDecimal sizeQuantum = findTradingRuleOrElseThrow(tradingPair).minBaseAmountIncrement();
+        return amount.divideToIntegralValue(sizeQuantum).multiply(sizeQuantum);
+    }
+
+    private void validateOrderType(OrderEvent.CreateRequested event, TradingRule tradingRule) {
+        if (!tradingRule.supportedOrderTypes().contains(event.candidate().getOrderType())) {
+            throw new OrderValidationException.UnsupportedOrderTypeException(
                     event.clientOrderId(),
-                    null,
-                    cause
-            ));
+                    event.candidate().getTradingPair(),
+                    "해당 오더 타입은 지원하지 않습니다."
+            );
         }
     }
 
-    /**
-     * 거래소 제출 단계
-     */
-    @RequiredArgsConstructor
-    static class ExchangeCreateRequestHandler implements FailureAwareEventHandler<OrderEvent.ExchangeCreateRequested> {
-        private final EventPublisher eventPublisher;
-        private final OrderClient orderClient;
-        private final OrderSnapshotRepository orderSnapshotRepository;
-        private final Exchange exchange;
-
-        @Override
-        public void onEvent(OrderEvent.ExchangeCreateRequested event) {
-            OrderSnapshot snapshot = new OrderSnapshot(
-                    event.inFlightOrder().getClientOrderId(),
-                    exchange,
-                    event.inFlightOrder().getTradingPair(),
-                    event.inFlightOrder().getCurrentState(),
-                    event.inFlightOrder().getExchangeOrderId(),
-                    event.inFlightOrder().getCreationTimestamp(),
-                    event.inFlightOrder().getLastUpdateTimestamp()
+    private void validateTimeInForce(OrderEvent.CreateRequested event) {
+        if (!supportedTimeInForce.contains(event.candidate().getTimeInForce())) {
+            throw new OrderValidationException.UnsupportedTimeInForceException(
+                    event.clientOrderId(),
+                    event.candidate().getTradingPair(),
+                    "해당 timeInForce는 지원하지 않습니다."
             );
-            orderSnapshotRepository.save(snapshot);
+        }
+    }
+
+    private void validateOrderSize(
+            OrderEvent.CreateRequested event,
+            BigDecimal quantizedAmount,
+            TradingRule tradingRule
+    ) {
+        if (quantizedAmount.compareTo(tradingRule.minOrderSize()) < 0) {
+            throw new OrderValidationException.BelowMinOrderSizeException(
+                    event.clientOrderId(),
+                    event.candidate().getTradingPair(),
+                    "주문 수량이 최소 주문 수량보다 커야합니다."
+            );
+        }
+    }
+
+    private void validateNotionalSize(
+            OrderEvent.CreateRequested event,
+            OrderCandidate candidate,
+            BigDecimal quantizedPrice,
+            BigDecimal quantizedAmount,
+            TradingRule tradingRule
+    ) {
+        BigDecimal estimatedPrice = estimatedPrice(candidate, quantizedPrice);
+        BigDecimal notionalSize = estimatedPrice.multiply(quantizedAmount);
+        if (notionalSize.compareTo(tradingRule.minNotionalSize()) < 0) {
+            throw new OrderValidationException.BelowMinNotionalException(
+                    event.clientOrderId(),
+                    candidate.getTradingPair(),
+                    "주문 금액이 최소 주문 금액보다 커야합니다."
+            );
+        }
+    }
+
+    private BigDecimal estimatedPrice(OrderCandidate candidate, BigDecimal quantizedPrice) {
+        if (candidate.getPrice() != null) {
+            return quantizedPrice;
+        }
+        OrderBook book = orderBookTracker.findOrderBook(candidate.getTradingPair())
+                .orElseThrow(() -> new IllegalArgumentException("order book not found" + candidate.getTradingPair()));
+        return candidate.getTradeType() == TradeType.BUY ? book.getBestAsk() : book.getBestBid();
+    }
+
+    private TradingRule findTradingRuleOrElseThrow(String tradingPair) {
+        TradingRule rule = tradingRuleRegistry.getTradingRule(tradingPair);
+        if (rule == null) {
+            throw new IllegalArgumentException("Unknown trading pair: " + tradingPair);
+        }
+        return rule;
+    }
+
+    @VisibleForTesting
+    void processExchangeCreateRequest(OrderEvent.ExchangeCreateRequested event) {
+        try {
+            saveInitialSnapshot(event.inFlightOrder());
             OrderPlaceResult result = orderClient.placeOrder(event.inFlightOrder());
             eventPublisher.publish(new OrderEvent.StatusReceived(
                     event.inFlightOrder().getTradingPair(),
@@ -276,10 +251,7 @@ public class ExchangeOrderExecutor implements OrderedLifecycleAware {
                     result.orderState(),
                     result.timestamp()
             ));
-        }
-
-        @Override
-        public void onFailure(OrderEvent.ExchangeCreateRequested event, Throwable cause) {
+        } catch (Exception cause) {
             eventPublisher.publish(new OrderEvent.Failed(
                     event.inFlightOrder().getTradingPair(),
                     event.inFlightOrder().getClientOrderId(),
@@ -289,16 +261,43 @@ public class ExchangeOrderExecutor implements OrderedLifecycleAware {
         }
     }
 
-    /**
-     * 거래소 제출 단계
-     */
-    @RequiredArgsConstructor
-    static class ExchangeCancelRequestHandler implements FailureAwareEventHandler<OrderEvent.ExchangeCancelRequested> {
-        private final EventPublisher eventPublisher;
-        private final OrderClient orderClient;
+    private void saveInitialSnapshot(InFlightOrder order) {
+        orderSnapshotRepository.save(new OrderSnapshot(
+                order.getClientOrderId(),
+                exchange,
+                order.getTradingPair(),
+                order.getCurrentState(),
+                order.getExchangeOrderId(),
+                order.getCreationTimestamp(),
+                order.getLastUpdateTimestamp()
+        ));
+    }
 
-        @Override
-        public void onEvent(OrderEvent.ExchangeCancelRequested event) {
+    @VisibleForTesting
+    void processCancelRequest(OrderEvent.CancelRequested event) {
+        try {
+            InFlightOrder order = orderTracker.getInFlightOrderByClientId(event.clientOrderId());
+            if (order == null) {
+                throw new IllegalArgumentException("주문을 찾을 수 없습니다. clientOrderId: " + event.clientOrderId());
+            }
+            eventPublisher.publish(new OrderEvent.ExchangeCancelRequested(
+                    order.getTradingPair(),
+                    order.getClientOrderId(),
+                    order.getExchangeOrderId()
+            ));
+        } catch (Exception cause) {
+            eventPublisher.publish(new OrderEvent.Failed(
+                    null,
+                    event.clientOrderId(),
+                    null,
+                    cause
+            ));
+        }
+    }
+
+    @VisibleForTesting
+    void processExchangeCancelRequest(OrderEvent.ExchangeCancelRequested event) {
+        try {
             OrderCancelResult result = orderClient.cancelOrder(event.tradingPair(), event.clientOrderId());
             eventPublisher.publish(new OrderEvent.StatusReceived(
                     event.tradingPair(),
@@ -307,10 +306,7 @@ public class ExchangeOrderExecutor implements OrderedLifecycleAware {
                     result.cancelFinalized() ? OrderState.CANCELED : OrderState.PENDING_CANCEL,
                     result.timestamp()
             ));
-        }
-
-        @Override
-        public void onFailure(OrderEvent.ExchangeCancelRequested event, Throwable cause) {
+        } catch (Exception cause) {
             eventPublisher.publish(new OrderEvent.Failed(
                     event.tradingPair(),
                     event.clientOrderId(),

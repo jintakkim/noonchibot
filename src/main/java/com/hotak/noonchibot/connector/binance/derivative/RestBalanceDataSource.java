@@ -54,7 +54,12 @@ class RestBalanceDataSource implements LifecycleAware {
             Instant timestamp = Instant.ofEpochMilli(asset.get("updateTime").asLong());
             assets.put(name, new AssetState(marginBalance, availableBalance, timestamp));
         }
-        return new BalanceEvent.SnapshotReceived(assets);
+        Instant timestamp = assets.values().stream()
+                .map(AssetState::timestamp)
+                .filter(java.util.Objects::nonNull)
+                .max(Instant::compareTo)
+                .orElse(Instant.now());
+        return new BalanceEvent.SnapshotReceived(assets, timestamp);
     }
 
 

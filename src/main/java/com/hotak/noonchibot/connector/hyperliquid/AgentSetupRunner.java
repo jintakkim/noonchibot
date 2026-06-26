@@ -3,7 +3,8 @@ package com.hotak.noonchibot.connector.hyperliquid;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
-public class AgentSetupRunner {
+public class
+AgentSetupRunner {
     private final HyperliquidAgentGenerator generator;
 
     public void run(String[] args) {

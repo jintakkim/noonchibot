@@ -1,8 +1,9 @@
 package com.hotak.noonchibot.connector;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.connector.web.RestAssistantImpl;
+import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.trade.TradingRule;
 import lombok.RequiredArgsConstructor;
@@ -18,8 +19,8 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
-public abstract class AbstractPollingTradingRuleRegistry implements TradingRuleRegistry, OrderedLifecycleAware {
-    private final RestAssistantImpl restAssistant;
+public abstract class AbstractPollingTradingRuleRegistry implements TradingRuleRegistry, LifecycleAware {
+    private final RestAssistant restAssistant;
     private final TradingRuleParser parser;
     private final TaskScheduler scheduler;
     private final Duration pollingInterval;

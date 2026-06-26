@@ -110,9 +110,13 @@ public class InFlightOrder {
             TokenAmount fee,
             Boolean isMaker
     ) {
-        boolean clientIdMatch = Objects.equals(clientOrderId, this.clientOrderId);
-        if (!clientIdMatch) {
+        boolean clientIdMatches = clientOrderId != null && Objects.equals(clientOrderId, this.clientOrderId);
+        boolean exchangeOrderIdMatches = exchangeOrderId != null && Objects.equals(exchangeOrderId, this.exchangeOrderId);
+        if (!clientIdMatches && !exchangeOrderIdMatches) {
             throw new InFlightUpdateFailedException("주문 ID가 일치하지 않습니다.");
+        }
+        if (this.exchangeOrderId == null && exchangeOrderId != null) {
+            this.exchangeOrderId = exchangeOrderId;
         }
         if(processedTradeIds.contains(tradeId)) {
             return;
@@ -136,9 +140,9 @@ public class InFlightOrder {
             OrderState newState,
             Instant updateTimestamp
     ) {
-        boolean clientOrderIdMatches = Objects.equals(clientOrderId, this.clientOrderId);
+        boolean clientOrderIdMatches = clientOrderId != null && Objects.equals(clientOrderId, this.clientOrderId);
         boolean exchangeOrderIdMatches = exchangeOrderId != null && Objects.equals(exchangeOrderId, this.exchangeOrderId);
-        if (clientOrderIdMatches || exchangeOrderIdMatches) {
+        if (!clientOrderIdMatches && !exchangeOrderIdMatches) {
             throw new InFlightUpdateFailedException("주문 ID 불일치: client=" + clientOrderId + ", exchange=" + exchangeOrderId);
         }
         boolean canChangeState = newState != null

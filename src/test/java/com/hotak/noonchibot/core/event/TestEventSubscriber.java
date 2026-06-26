@@ -50,6 +50,19 @@ public class TestEventSubscriber implements EventSubscriber {
                 .count();
     }
 
+    public Subscribed<?> exactlyOne(Class<? extends Event> eventType) {
+        List<Subscribed<?>> matches = subscriptions.stream()
+                .filter(s -> s.eventType().equals(eventType))
+                .toList();
+        if (matches.size() != 1) {
+            throw new AssertionError("Expected exactly one subscription for "
+                    + eventType.getSimpleName()
+                    + " but got "
+                    + matches.size());
+        }
+        return matches.getFirst();
+    }
+
     /** 초기화 (테스트 사이) */
     public void clear() {
         subscriptions.clear();

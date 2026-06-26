@@ -3,8 +3,9 @@ package com.hotak.noonchibot.connector.binance.derivative;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.event.EventHandler;
-import com.hotak.noonchibot.core.event.EventPublisher;
+import com.hotak.noonchibot.core.LifecycleAware;
+import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.RequiredArgsConstructor;
@@ -19,20 +20,22 @@ import java.util.Map;
 
 @Slf4j
 @RequiredArgsConstructor
-public class TradeDataSource implements EventHandler<TradeEvent.UpdateRequest> {
+public class TradeDataSource implements EventHandler<TradeEvent.UpdateRequested>, LifecycleAware {
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
     private final EventPublisher eventPublisher;
+    private final EventSubscriber eventSubscriber;
+    private Subscription subscription;
 
     @Override
-    public void onEvent(TradeEvent.UpdateRequest request) {
+    public void onEvent(TradeEvent.UpdateRequested request) {
         if (request.exchangeOrderId() == null || request.exchangeOrderId().equals("UNKNOWN")) {
             throw new IllegalArgumentException("exchangeOrderId가 없습니다, trade를 조회할 수 없습니다.");
         }
         eventPublisher.publish(fetchAllTradeUpdatesForOrder(request));
     }
 
-    private TradeEvent.Received fetchAllTradeUpdatesForOrder(TradeEvent.UpdateRequest request) {
+    private TradeEvent.Received fetchAllTradeUpdatesForOrder(TradeEvent.UpdateRequested request) {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(request.tradingPair());
         RestRequest restRequest = RestRequest.builder()
                 .method(HttpMethod.GET)
@@ -70,5 +73,27 @@ public class TradeDataSource implements EventHandler<TradeEvent.UpdateRequest> {
                 ),
                 fill.get("maker").asBoolean()
         );
+    }
+
+    @Override
+    public void onStart() {
+        subscription = eventSubscriber.subscribe(
+                TradeEvent.UpdateRequested.class,
+                this,
+                ExecutionPolicy.concurrent()
+        );
+    }
+
+    @Override
+    public void onShutdown() {
+        if (subscription != null) {
+            subscription.close();
+            subscription = null;
+        }
+    }
+
+    @Override
+    public int phase() {
+        return Phases.TRADE_DATASOURCE_SETUP;
     }
 }

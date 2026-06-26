@@ -1,10 +1,10 @@
 package com.hotak.noonchibot.connector;
 
 import com.hotak.noonchibot.core.balance.AccountBalanceTracker;
-import com.hotak.noonchibot.core.derivative.DerivativeAccountConfigurer;
 import com.hotak.noonchibot.core.derivative.FundingInfoTracker;
+import com.hotak.noonchibot.core.derivative.PositionTracker;
+import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
 import com.hotak.noonchibot.core.order.OrderTracker;
-import com.hotak.noonchibot.core.order.OrderExecutor;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.trade.TradeFeeSchemaLoader;
 import lombok.Getter;
@@ -12,7 +12,7 @@ import lombok.Getter;
 @Getter
 public class DerivativeExchangeConnector extends ExchangeConnector {
     private final FundingInfoTracker fundingInfoTracker;
-    private final DerivativeAccountConfigurer derivativeAccountConfigurer;
+    private final PositionTracker positionTracker;
 
     public DerivativeExchangeConnector(
             String platformName,
@@ -21,13 +21,19 @@ public class DerivativeExchangeConnector extends ExchangeConnector {
             AccountBalanceTracker accountBalanceTracker,
             TradeFeeSchemaLoader tradeFeeSchemaLoader,
             TradingRuleRegistry tradingRuleRegistry,
-            OrderExecutor orderExecutor,
-            ExchangeLifeCycleRegistry lifeCycleRegistry,
+            ExchangeOrderExecutor orderExecutor,
             FundingInfoTracker fundingInfoTracker,
-            DerivativeAccountConfigurer derivativeAccountConfigurer
+            PositionTracker positionTracker
     ) {
-        super(platformName, orderTracker, orderBookTracker, accountBalanceTracker, tradeFeeSchemaLoader, tradingRuleRegistry, orderExecutor, lifeCycleRegistry);
+        super(platformName,
+                orderTracker,
+                orderBookTracker,
+                accountBalanceTracker,
+                tradeFeeSchemaLoader,
+                tradingRuleRegistry,
+                orderExecutor
+        );
         this.fundingInfoTracker = fundingInfoTracker;
-        this.derivativeAccountConfigurer = derivativeAccountConfigurer;
+        this.positionTracker = positionTracker;
     }
 }

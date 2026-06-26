@@ -1,9 +1,9 @@
 package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.*;
-import com.hotak.noonchibot.connector.binance.derivative.DerivativeExchangeAdapterFactory;
+import com.hotak.noonchibot.core.BootStrap;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.MainExecutor;
+import com.hotak.noonchibot.core.derivative.FundingPaymentRepository;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -20,7 +20,7 @@ import java.util.Map;
 @Configuration
 @Profile("!test")
 @EnableConfigurationProperties(BinanceConfig.Properties.class)
-class BinanceConfig {
+public class BinanceConfig {
 
 
     @ConfigurationProperties(prefix = "binance")
@@ -41,7 +41,7 @@ class BinanceConfig {
     @Bean
     public ExchangeConnector binanceSpotExchangeConnector(
             Properties properties,
-            MainExecutor mainExecutor,
+            BootStrap bootStrap,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
             ObjectMapper objectMapper,
@@ -49,9 +49,10 @@ class BinanceConfig {
             TradeRepository tradeRepository,
             OrderSnapshotRepository orderHistoryRepository
     ) {
-        return SpotExchangeAdapterFactory.create(
+        return com.hotak.noonchibot.connector.binance.spot.ExchangeAdapterFactory.create(
+                bootStrap,
                 properties,
-                mainExecutor,
+                orderHistoryRepository,
                 ioExecutor,
                 taskScheduler,
                 objectMapper,
@@ -64,22 +65,25 @@ class BinanceConfig {
     @Bean
     public DerivativeExchangeConnector binanceDerivativeExchangeConnector(
             Properties properties,
-            MainExecutor mainExecutor,
+            BootStrap bootStrap,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
+            FundingPaymentRepository fundingPaymentRepository,
             OrderSnapshotRepository orderHistoryRepository
     ) {
-        return DerivativeExchangeAdapterFactory.create(
+        return com.hotak.noonchibot.connector.binance.derivative.ExchangeAdapterFactory.create(
+                bootStrap,
                 properties,
-                mainExecutor,
+                orderHistoryRepository,
                 ioExecutor,
                 taskScheduler,
                 objectMapper,
                 webSocketClient,
                 tradeRepository,
+                fundingPaymentRepository,
                 orderHistoryRepository
         );
 

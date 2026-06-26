@@ -1,232 +1,207 @@
 package com.hotak.noonchibot.core.derivative;
 
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
-import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.MainExecutor;
-import com.hotak.noonchibot.core.orderbook.FundingInfoDataSource;
-import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
-import com.hotak.noonchibot.core.orderbook.FundingInfoMessageStream;
+import com.hotak.noonchibot.core.event.TestEventSubscriber;
+import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalUnit;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anySet;
-import static org.mockito.Mockito.*;
 
-public class FundingInfoTrackerTest {
-    private static final Duration DEFAULT_INTERVAL = Duration.ofSeconds(8);
-    private static final String DEFAULT_FUNDING_COIN = "USDT";
-    private static final Map<String, String> DEFAULT_SUBLIST = Map.of("BTCUSDT", "BTC-USDT", "SOLUSDT", "SOL-USDT");
+class FundingInfoTrackerTest {
+    private static final Duration DEFAULT_INTERVAL = Duration.ofHours(8);
+    private static final String FUNDING_COIN = "USDT";
+    private static final String BTC_PAIR = "BTC-USDT";
+    private static final String ETH_PAIR = "ETH-USDT";
+    private static final Instant EVENT_TIME = Instant.parse("2026-01-01T00:00:00Z");
+    private static final Instant NEXT_FUNDING_TIME = Instant.parse("2026-01-01T08:00:00Z");
+
     private FundingInfoTracker tracker;
-    private FundingInfoDataSource dataSource;
-    private IoExecutor ioExecutor;
-    private MainExecutor mainExecutor;
+    private TestEventSubscriber eventSubscriber;
 
     @BeforeEach
     void setUp() {
-        dataSource = mock(FundingInfoDataSource.class);
-        ioExecutor = mock(IoExecutor.class);
-        mainExecutor = mock(MainExecutor.class);
+        eventSubscriber = new TestEventSubscriber();
         tracker = new FundingInfoTracker(
-                DEFAULT_FUNDING_COIN,
-                new SimpleTradingPairSymbolRegistry(DEFAULT_SUBLIST),
-                dataSource,
-                ioExecutor,
-                mainExecutor
+                DEFAULT_INTERVAL,
+                FUNDING_COIN,
+                new SimpleTradingPairSymbolRegistry(Map.of(
+                        BTC_PAIR, "BTCUSDT",
+                        ETH_PAIR, "ETHUSDT"
+                )),
+                eventSubscriber
         );
     }
 
     @Nested
-    @DisplayName("메시지 처리 테스트")
-    class ProcessMessageTest {
+    @DisplayName("라이프사이클")
+    class LifecycleTest {
         @Test
-        @DisplayName("등록된 tradingPair의 메시지를 받으면 FundingInfo를 업데이트한다")
-        void updateFundingInfoForRegisteredPair() {
-            String tradingPair = "BTCUSDT";
-            registerTradingPair(tradingPair);
+        @DisplayName("onStart 시 tradingPair를 등록하고 funding info 이벤트를 구독한다")
+        void onStartRegistersPairsAndSubscribesEvents() {
+            tracker.onStart();
 
-            Instant nextFundingTime = Instant.now().plus(Duration.ofHours(4));
-            FundingInfoMessage message = new FundingInfoMessage(
-                    tradingPair,
-                    Instant.now(),
-                    new BigDecimal("50000"),
-                    new BigDecimal("0.0001"),
-                    nextFundingTime,
-                    Duration.ofHours(8)
-            );
-            // when
-            tracker.processMessage(message);
+            assertThat(eventSubscriber.isSubscribed(FundingInfoEvent.Received.class)).isTrue();
+            assertThat(eventSubscriber.isSubscribed(FundingInfoEvent.IntervalReceived.class)).isTrue();
+            assertThat(tracker.getFundingInfo(BTC_PAIR)).isNull();
+            assertThat(tracker.getFundingInfo(ETH_PAIR)).isNull();
+        }
 
-            // then
-            FundingInfo info = tracker.getFundingInfo(tradingPair);
+        @Test
+        @DisplayName("onShutdown 시 구독을 해제한다")
+        void onShutdownClosesSubscriptions() {
+            tracker.onStart();
+
+            tracker.onShutdown();
+
+            assertThat(eventSubscriber.count()).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("FundingInfoEvent.Received 처리")
+    class ReceivedTest {
+        @Test
+        @DisplayName("등록된 tradingPair의 funding info를 업데이트한다")
+        void updatesRegisteredPair() {
+            register(BTC_PAIR);
+
+            tracker.processMessage(received(BTC_PAIR, "50000", "0.0001", NEXT_FUNDING_TIME, Duration.ofHours(8)));
+
+            FundingInfo info = tracker.getFundingInfo(BTC_PAIR);
             assertThat(info).isNotNull();
+            assertThat(info.getTradingPair()).isEqualTo(BTC_PAIR);
+            assertThat(info.getFundingCoin()).isEqualTo(FUNDING_COIN);
             assertThat(info.getMarkPrice()).isEqualByComparingTo("50000");
             assertThat(info.getFundingRate()).isEqualByComparingTo("0.0001");
-            assertThat(info.getNextFundingTime()).isEqualTo(nextFundingTime);
+            assertThat(info.getNextFundingTime()).isEqualTo(NEXT_FUNDING_TIME);
             assertThat(info.getFundingInterval()).isEqualTo(Duration.ofHours(8));
         }
 
         @Test
-        @DisplayName("등록되지 않은 tradingPair의 메시지는 무시한다")
-        void ignoreMessageForUnregisteredPair() {
-            // given
-            tracker.registerTradingPairs(Set.of("BTCUSDT"));
+        @DisplayName("fundingInterval이 null이면 기존 기본 interval을 유지한다")
+        void keepsDefaultIntervalWhenEventIntervalIsNull() {
+            register(BTC_PAIR);
 
-            FundingInfoMessage message = new FundingInfoMessage(
-                    "ETHUSDT",
-                    Instant.now(),
-                    new BigDecimal("3000"),
-                    new BigDecimal("0.0002"),
-                    Instant.now(),
-                    Duration.ofHours(8)
-            );
+            tracker.processMessage(received(BTC_PAIR, "50000", "0.0001", NEXT_FUNDING_TIME, null));
 
-            // when
-            tracker.processMessage(message);
-
-            // then
-            assertThat(tracker.getFundingInfo("ETHUSDT")).isNull();
-            assertThat(tracker.getFundingInfo("BTCUSDT")).isNull(); // 여전히 uninitialized
+            FundingInfo info = tracker.getFundingInfo(BTC_PAIR);
+            assertThat(info).isNotNull();
+            assertThat(info.getFundingInterval()).isEqualTo(DEFAULT_INTERVAL);
         }
 
         @Test
-        @DisplayName("동일 tradingPair에 여러 메시지를 받으면 최신 값으로 업데이트된다")
-        void updateToLatestValue() {
-            // given
-            String pair = "BTCUSDT";
-            registerTradingPair(pair);
+        @DisplayName("동일 tradingPair는 최신 값으로 덮어쓴다")
+        void overwritesWithLatestValue() {
+            register(BTC_PAIR);
 
-            FundingInfoMessage first = new FundingInfoMessage(
-                    pair, Instant.now(),
-                    new BigDecimal("50000"),
-                    new BigDecimal("0.0001"),
-                    Instant.now().plus(Duration.ofHours(4)),
-                    Duration.ofHours(8)
-            );
-            FundingInfoMessage second = new FundingInfoMessage(
-                    pair, Instant.now(),
-                    new BigDecimal("51000"),
-                    new BigDecimal("0.0002"),
-                    Instant.now().plus(Duration.ofHours(3)),
-                    Duration.ofHours(8)
-            );
+            tracker.processMessage(received(BTC_PAIR, "50000", "0.0001", NEXT_FUNDING_TIME, Duration.ofHours(8)));
+            tracker.processMessage(received(BTC_PAIR, "51000", "0.0002", NEXT_FUNDING_TIME.plus(8, ChronoUnit.HOURS), Duration.ofHours(4)));
 
-            // when
-            tracker.processMessage(first);
-            tracker.processMessage(second);
-
-            // then
-            FundingInfo info = tracker.getFundingInfo(pair);
+            FundingInfo info = tracker.getFundingInfo(BTC_PAIR);
             assertThat(info.getMarkPrice()).isEqualByComparingTo("51000");
             assertThat(info.getFundingRate()).isEqualByComparingTo("0.0002");
+            assertThat(info.getNextFundingTime()).isEqualTo(NEXT_FUNDING_TIME.plus(8, ChronoUnit.HOURS));
+            assertThat(info.getFundingInterval()).isEqualTo(Duration.ofHours(4));
+        }
+
+        @Test
+        @DisplayName("등록되지 않은 tradingPair의 메시지는 무시한다")
+        void ignoresUnregisteredPair() {
+            register(BTC_PAIR);
+
+            tracker.processMessage(received(ETH_PAIR, "3000", "0.0002", NEXT_FUNDING_TIME, Duration.ofHours(8)));
+
+            assertThat(tracker.getFundingInfo(ETH_PAIR)).isNull();
+            assertThat(tracker.getFundingInfo(BTC_PAIR)).isNull();
         }
     }
 
     @Nested
-    @DisplayName("fundingInfo 조회 테스트")
-    class GetFundingInfoTest {
+    @DisplayName("FundingInfoEvent.IntervalReceived 처리")
+    class IntervalReceivedTest {
+        @Test
+        @DisplayName("등록된 tradingPair의 interval을 업데이트한다")
+        void updatesRegisteredPairInterval() {
+            register(BTC_PAIR);
 
+            tracker.processMessage(received(BTC_PAIR, "50000", "0.0001", NEXT_FUNDING_TIME, null));
+            tracker.processIntervalMessage(new FundingInfoEvent.IntervalReceived(Map.of(BTC_PAIR, Duration.ofHours(4))));
+
+            FundingInfo info = tracker.getFundingInfo(BTC_PAIR);
+            assertThat(info.getFundingInterval()).isEqualTo(Duration.ofHours(4));
+        }
+
+        @Test
+        @DisplayName("등록되지 않은 tradingPair의 interval은 무시한다")
+        void ignoresUnregisteredPairInterval() {
+            register(BTC_PAIR);
+
+            tracker.processIntervalMessage(new FundingInfoEvent.IntervalReceived(Map.of(ETH_PAIR, Duration.ofHours(4))));
+
+            assertThat(tracker.getFundingInfo(ETH_PAIR)).isNull();
+            assertThat(tracker.getFundingInfo(BTC_PAIR)).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("조회")
+    class QueryTest {
         @Test
         @DisplayName("등록되지 않은 pair는 null을 반환한다")
-        void returnNullForUnregisteredPair() {
-            registerTradingPair("BTCUSDT");
-            assertThat(tracker.getFundingInfo("ETHUSDT")).isNull();
+        void returnsNullForUnregisteredPair() {
+            register(BTC_PAIR);
+
+            assertThat(tracker.getFundingInfo(ETH_PAIR)).isNull();
         }
 
         @Test
-        @DisplayName("메시지가 오기 전 초기화되지 않은 상태는 null을 반환한다")
-        void returnNullBeforeFirstMessage() {
-            registerTradingPair("BTCUSDT");
-            assertThat(tracker.getFundingInfo("BTCUSDT")).isNull();
+        @DisplayName("초기화 전 pair는 null을 반환한다")
+        void returnsNullBeforeInitialized() {
+            register(BTC_PAIR);
+
+            assertThat(tracker.getFundingInfo(BTC_PAIR)).isNull();
         }
 
         @Test
-        @DisplayName("메시지를 받아 초기화된 후에는 FundingInfo를 반환한다")
-        void returnFundingInfoAfterInitialized() {
-            String pair = "BTCUSDT";
-            registerTradingPair(pair);
-            tracker.processMessage(new FundingInfoMessage(
-                    pair, Instant.now(),
-                    new BigDecimal("50000"),
-                    new BigDecimal("0.0001"),
-                    Instant.now().plus(Duration.ofHours(4)),
-                    Duration.ofHours(8)
-            ));
+        @DisplayName("필수 값이 모두 들어오면 FundingInfo를 반환한다")
+        void returnsFundingInfoAfterInitialized() {
+            register(BTC_PAIR);
 
-            assertThat(tracker.getFundingInfo(pair)).isNotNull();
+            tracker.processMessage(received(BTC_PAIR, "50000", "0.0001", NEXT_FUNDING_TIME, null));
+
+            assertThat(tracker.getFundingInfo(BTC_PAIR)).isNotNull();
         }
     }
 
-
-
-    @Nested
-    @DisplayName("초기화 테스트")
-    class StartTest {
-
-        @Test
-        @DisplayName("등록된 모든 tradingPair를 DataSource에 batchSubscribe한다")
-        void batchSubscribeAllPairs() {
-
-            FundingInfoMessageStream mockStream = mock(FundingInfoMessageStream.class);
-            when(dataSource.batchSubscribe(anySet())).thenReturn(mockStream);
-
-            // when
-            tracker.start();
-
-            // then
-            ArgumentCaptor<Set<String>> captor = ArgumentCaptor.forClass(Set.class);
-            verify(dataSource).batchSubscribe(captor.capture());
-            assertThat(captor.getValue()).containsExactlyInAnyOrderElementsOf(DEFAULT_SUBLIST.keySet());
-        }
-    }
-
-    @Nested
-    @DisplayName("종료시")
-    class StopTest {
-
-        @Test
-        @DisplayName("DataSource에 unsubscribe를 호출한다")
-        void unsubscribeFromDataSource() {
-            // given
-            FundingInfoMessageStream mockStream = mock(FundingInfoMessageStream.class);
-            when(dataSource.batchSubscribe(anySet())).thenReturn(mockStream);
-            tracker.start();
-
-            // when
-            tracker.shutdown();
-
-            // then
-            verify(dataSource).unsubscribe(mockStream);
-        }
-
-        @Test
-        @DisplayName("processTask가 있으면 취소한다")
-        void cancelProcessTask() {
-            // given
-            Future<?> mockTask = mock(Future.class);
-            doReturn(mockTask).when(ioExecutor).submit(any(Runnable.class));
-
-            tracker.start();
-
-            // when
-            tracker.shutdown();
-
-            // then
-            verify(mockTask).cancel(true);
-        }
-    }
-
-    void registerTradingPair(String tradingPair) {
+    private void register(String tradingPair) {
         tracker.registerTradingPairs(Set.of(tradingPair));
+    }
+
+    private FundingInfoEvent.Received received(
+            String tradingPair,
+            String markPrice,
+            String fundingRate,
+            Instant nextFundingTime,
+            Duration interval
+    ) {
+        return new FundingInfoEvent.Received(
+                tradingPair,
+                EVENT_TIME,
+                new BigDecimal(markPrice),
+                new BigDecimal(fundingRate),
+                nextFundingTime,
+                interval
+        );
     }
 }

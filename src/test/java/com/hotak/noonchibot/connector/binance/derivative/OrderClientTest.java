@@ -13,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -45,7 +47,7 @@ class OrderClientTest extends RestClientTest {
             OrderPlaceResult result = orderClient.placeOrder(OrderFixture.btcUsdtLimitBuyOrder());
             assertThat(result.exchangeOrderId()).isNotNull();
             assertThat(result.orderState()).isEqualTo(OrderState.OPEN);
-            assertThat(result.timestamp()).isNotNull();
+            assertThat(result.timestamp()).isEqualTo(Instant.ofEpochMilli(1_780_302_734_417L));
         });
 
 
@@ -85,7 +87,7 @@ class OrderClientTest extends RestClientTest {
         runWith(OrderFixture.btcUsdtLimitBuyMarginInsufficientBadRequest(), () -> {
             assertThatThrownBy(() -> orderClient.placeOrder(OrderFixture.btcUsdtLimitBuyOrder()))
                     .isInstanceOf(ExchangeApiException.class)
-                    .hasMessageContaining("insufficient balance");
+                    .hasMessageContaining("Margin is insufficient.");
         });
     }
 
