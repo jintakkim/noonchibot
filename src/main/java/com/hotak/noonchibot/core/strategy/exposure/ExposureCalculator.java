@@ -1,5 +1,9 @@
 package com.hotak.noonchibot.core.strategy.exposure;
 
+import com.hotak.noonchibot.core.strategy.model.ExchangeOrderView;
+import com.hotak.noonchibot.core.strategy.model.ExchangePosition;
+
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.derivative.Position;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.order.OrderState;
@@ -12,12 +16,15 @@ import java.util.Collection;
 public class ExposureCalculator {
     public ExposureSnapshot calculate(
             String strategyId,
+            Exchange exchange,
             String tradingPair,
             PositionSide positionSide,
-            Collection<Position> positions,
-            Collection<OrderView> orders
+            Collection<ExchangePosition> positions,
+            Collection<ExchangeOrderView> orders
     ) {
         BigDecimal filled = positions.stream()
+                .filter(position -> position.exchange() == exchange)
+                .map(ExchangePosition::position)
                 .filter(position -> position.getTradingPair().equals(tradingPair))
                 .filter(position -> position.getPositionSide() == positionSide)
                 .map(this::signedPositionAmount)
@@ -28,7 +35,9 @@ public class ExposureCalculator {
         BigDecimal pendingCancelBuy = BigDecimal.ZERO;
         BigDecimal pendingCancelSell = BigDecimal.ZERO;
 
-        for (OrderView order : orders) {
+        for (ExchangeOrderView exchangeOrder : orders) {
+            if (exchangeOrder.exchange() != exchange) continue;
+            OrderView order = exchangeOrder.order();
             if (!order.tradingPair().equals(tradingPair)) continue;
             if (order.state().isTerminal()) continue;
 
@@ -53,6 +62,7 @@ public class ExposureCalculator {
 
         return new ExposureSnapshot(
                 strategyId,
+                exchange,
                 tradingPair,
                 positionSide,
                 filled,

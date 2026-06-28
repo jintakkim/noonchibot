@@ -1,11 +1,14 @@
 package com.hotak.noonchibot.core.strategy.exposure;
 
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 public record ExposureSnapshot(
         String strategyId,
+        Exchange exchange,
         String tradingPair,
         PositionSide positionSide,
         BigDecimal filledBaseAmount,
@@ -15,6 +18,10 @@ public record ExposureSnapshot(
         BigDecimal pendingCancelSellBaseAmount
 ) {
     public ExposureSnapshot {
+        Objects.requireNonNull(strategyId, "strategyId");
+        Objects.requireNonNull(exchange, "exchange");
+        Objects.requireNonNull(tradingPair, "tradingPair");
+        Objects.requireNonNull(positionSide, "positionSide");
         filledBaseAmount = zeroIfNull(filledBaseAmount);
         openBuyBaseAmount = zeroIfNull(openBuyBaseAmount);
         openSellBaseAmount = zeroIfNull(openSellBaseAmount);
@@ -23,15 +30,7 @@ public record ExposureSnapshot(
     }
 
     public BigDecimal projectedBaseAmount() {
-        return filledBaseAmount
-                .add(openBuyBaseAmount)
-                .subtract(openSellBaseAmount);
-    }
-
-    public BigDecimal cancelingProjectedBaseAmount() {
-        return filledBaseAmount
-                .add(pendingCancelBuyBaseAmount)
-                .subtract(pendingCancelSellBaseAmount);
+        return filledBaseAmount.add(openBuyBaseAmount).subtract(openSellBaseAmount);
     }
 
     public boolean hasOpenOrders() {

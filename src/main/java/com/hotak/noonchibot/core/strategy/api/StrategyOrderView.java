@@ -1,12 +1,9 @@
 package com.hotak.noonchibot.core.strategy.api;
 
-import com.hotak.noonchibot.core.order.OrderView;
+import com.hotak.noonchibot.core.strategy.model.ExchangeOrderView;
 
 import java.util.Collection;
-import java.util.Optional;
 
 public interface StrategyOrderView {
-    Optional<OrderView> findByClientOrderId(String clientOrderId);
-
-    Collection<OrderView> openOrders();
+    Collection<ExchangeOrderView> openOrders();
 }

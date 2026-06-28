@@ -2,13 +2,13 @@ package com.hotak.noonchibot.core.strategy.funding;
 
 import com.hotak.noonchibot.core.strategy.snapshot.StrategySnapshot;
 import com.hotak.noonchibot.core.strategy.model.TargetOrderStyle;
-import com.hotak.noonchibot.core.strategy.exposure.VenueExposureCalculator;
-import com.hotak.noonchibot.core.strategy.model.VenuePosition;
-import com.hotak.noonchibot.core.strategy.api.VenueStrategyAccountView;
-import com.hotak.noonchibot.core.strategy.api.VenueStrategyContext;
-import com.hotak.noonchibot.core.strategy.api.VenueStrategyDecision;
-import com.hotak.noonchibot.core.strategy.api.VenueStrategyMarketView;
-import com.hotak.noonchibot.core.strategy.model.VenueTargetPosition;
+import com.hotak.noonchibot.core.strategy.exposure.ExposureCalculator;
+import com.hotak.noonchibot.core.strategy.model.ExchangePosition;
+import com.hotak.noonchibot.core.strategy.api.StrategyAccountView;
+import com.hotak.noonchibot.core.strategy.api.StrategyContext;
+import com.hotak.noonchibot.core.strategy.api.StrategyDecision;
+import com.hotak.noonchibot.core.strategy.api.StrategyMarketView;
+import com.hotak.noonchibot.core.strategy.model.TargetPosition;
 
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.derivative.Position;
@@ -33,13 +33,13 @@ class FundingArbitrageStrategyTest {
     @DisplayName("초기에는 양쪽 거래소에 slice 크기만큼 long/short target을 만든다")
     void onTick_withoutExposure_targetsFirstSliceOnBothLegs() {
         List<StrategySnapshot> snapshots = new ArrayList<>();
-        FundingArbitrageStrategy strategy = new FundingArbitrageStrategy(config("0.2", "0.2"), new VenueExposureCalculator());
+        FundingArbitrageStrategy strategy = new FundingArbitrageStrategy(config("0.2", "0.2"), new ExposureCalculator());
 
-        VenueStrategyDecision decision = strategy.onTick(context(List.of(), snapshots));
+        StrategyDecision decision = strategy.onTick(context(List.of(), snapshots));
 
-        VenueStrategyDecision.Targets targets = (VenueStrategyDecision.Targets) decision;
+        StrategyDecision.Targets targets = (StrategyDecision.Targets) decision;
         assertThat(targets.positions()).containsExactly(
-                new VenueTargetPosition(
+                new TargetPosition(
                         "funding-arb",
                         Exchange.BINANCE_DERIVATIVE,
                         "BTC-USDT",
@@ -49,7 +49,7 @@ class FundingArbitrageStrategyTest {
                         NOW.plusSeconds(5),
                         "funding arbitrage long leg"
                 ),
-                new VenueTargetPosition(
+                new TargetPosition(
                         "funding-arb",
                         Exchange.HYPERLIQUID_DERIVATIVE,
                         "BTC-USDC",
@@ -69,13 +69,13 @@ class FundingArbitrageStrategyTest {
     @Test
     @DisplayName("이미 잡힌 노출이 있으면 현재 노출에서 한 slice만큼만 더 진행한다")
     void onTick_withExistingExposure_movesOneSliceTowardFinalTarget() {
-        FundingArbitrageStrategy strategy = new FundingArbitrageStrategy(config("0.3", "0.3"), new VenueExposureCalculator());
-        List<VenuePosition> positions = List.of(
-                venuePosition(Exchange.BINANCE_DERIVATIVE, "BTC-USDT", PositionSide.LONG, "0.3"),
-                venuePosition(Exchange.HYPERLIQUID_DERIVATIVE, "BTC-USDC", PositionSide.SHORT, "0.3")
+        FundingArbitrageStrategy strategy = new FundingArbitrageStrategy(config("0.3", "0.3"), new ExposureCalculator());
+        List<ExchangePosition> positions = List.of(
+                exchangePosition(Exchange.BINANCE_DERIVATIVE, "BTC-USDT", PositionSide.LONG, "0.3"),
+                exchangePosition(Exchange.HYPERLIQUID_DERIVATIVE, "BTC-USDC", PositionSide.SHORT, "0.3")
         );
 
-        VenueStrategyDecision.Targets targets = (VenueStrategyDecision.Targets) strategy.onTick(context(positions, new ArrayList<>()));
+        StrategyDecision.Targets targets = (StrategyDecision.Targets) strategy.onTick(context(positions, new ArrayList<>()));
 
         assertThat(targets.positions().get(0).targetBaseAmount()).isEqualByComparingTo("0.6");
         assertThat(targets.positions().get(1).targetBaseAmount()).isEqualByComparingTo("-0.6");
@@ -84,13 +84,13 @@ class FundingArbitrageStrategyTest {
     @Test
     @DisplayName("최종 target을 넘지 않고 cap에서 멈춘다")
     void onTick_nearFinalTarget_capsAtTotalBaseAmount() {
-        FundingArbitrageStrategy strategy = new FundingArbitrageStrategy(config("0.4", "0.4"), new VenueExposureCalculator());
-        List<VenuePosition> positions = List.of(
-                venuePosition(Exchange.BINANCE_DERIVATIVE, "BTC-USDT", PositionSide.LONG, "0.8"),
-                venuePosition(Exchange.HYPERLIQUID_DERIVATIVE, "BTC-USDC", PositionSide.SHORT, "0.8")
+        FundingArbitrageStrategy strategy = new FundingArbitrageStrategy(config("0.4", "0.4"), new ExposureCalculator());
+        List<ExchangePosition> positions = List.of(
+                exchangePosition(Exchange.BINANCE_DERIVATIVE, "BTC-USDT", PositionSide.LONG, "0.8"),
+                exchangePosition(Exchange.HYPERLIQUID_DERIVATIVE, "BTC-USDC", PositionSide.SHORT, "0.8")
         );
 
-        VenueStrategyDecision.Targets targets = (VenueStrategyDecision.Targets) strategy.onTick(context(positions, new ArrayList<>()));
+        StrategyDecision.Targets targets = (StrategyDecision.Targets) strategy.onTick(context(positions, new ArrayList<>()));
 
         assertThat(targets.positions().get(0).targetBaseAmount()).isEqualByComparingTo("1.0");
         assertThat(targets.positions().get(1).targetBaseAmount()).isEqualByComparingTo("-1.0");
@@ -107,12 +107,12 @@ class FundingArbitrageStrategyTest {
                 context -> false,
                 UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
         );
-        FundingArbitrageStrategy strategy = new FundingArbitrageStrategy(config, new VenueExposureCalculator());
+        FundingArbitrageStrategy strategy = new FundingArbitrageStrategy(config, new ExposureCalculator());
         List<StrategySnapshot> snapshots = new ArrayList<>();
 
-        VenueStrategyDecision decision = strategy.onTick(context(List.of(), snapshots));
+        StrategyDecision decision = strategy.onTick(context(List.of(), snapshots));
 
-        assertThat(decision).isEqualTo(new VenueStrategyDecision.Noop("entry condition rejected"));
+        assertThat(decision).isEqualTo(new StrategyDecision.Noop("entry condition rejected"));
         assertThat(snapshots).hasSize(1);
     }
 
@@ -164,13 +164,13 @@ class FundingArbitrageStrategyTest {
         );
     }
 
-    private VenuePosition venuePosition(
+    private ExchangePosition exchangePosition(
             Exchange exchange,
             String tradingPair,
             PositionSide positionSide,
             String amount
     ) {
-        return new VenuePosition(
+        return new ExchangePosition(
                 exchange,
                 new Position(
                         tradingPair,
@@ -183,14 +183,14 @@ class FundingArbitrageStrategyTest {
         );
     }
 
-    private VenueStrategyContext context(
-            List<VenuePosition> positions,
+    private StrategyContext context(
+            List<ExchangePosition> positions,
             List<StrategySnapshot> snapshots
     ) {
-        return new VenueStrategyContext(
+        return new StrategyContext(
                 NOW,
-                new VenueStrategyMarketView() {},
-                new VenueStrategyAccountView() {},
+                new StrategyMarketView() {},
+                new StrategyAccountView() {},
                 () -> List.of(),
                 () -> positions,
                 snapshots::add

@@ -1,25 +1,25 @@
 package com.hotak.noonchibot.core.strategy.funding;
 
 import com.hotak.noonchibot.core.strategy.snapshot.StrategySnapshot;
-import com.hotak.noonchibot.core.strategy.exposure.VenueExposureCalculator;
-import com.hotak.noonchibot.core.strategy.exposure.VenueExposureSnapshot;
-import com.hotak.noonchibot.core.strategy.api.VenueStrategy;
-import com.hotak.noonchibot.core.strategy.api.VenueStrategyContext;
-import com.hotak.noonchibot.core.strategy.api.VenueStrategyDecision;
-import com.hotak.noonchibot.core.strategy.model.VenueTargetPosition;
+import com.hotak.noonchibot.core.strategy.exposure.ExposureCalculator;
+import com.hotak.noonchibot.core.strategy.exposure.ExposureSnapshot;
+import com.hotak.noonchibot.core.strategy.api.Strategy;
+import com.hotak.noonchibot.core.strategy.api.StrategyContext;
+import com.hotak.noonchibot.core.strategy.api.StrategyDecision;
+import com.hotak.noonchibot.core.strategy.model.TargetPosition;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-public class FundingArbitrageStrategy implements VenueStrategy {
+public class FundingArbitrageStrategy implements Strategy {
     private final FundingArbitrageConfig config;
-    private final VenueExposureCalculator exposureCalculator;
+    private final ExposureCalculator exposureCalculator;
 
     public FundingArbitrageStrategy(
             FundingArbitrageConfig config,
-            VenueExposureCalculator exposureCalculator
+            ExposureCalculator exposureCalculator
     ) {
         this.config = config;
         this.exposureCalculator = exposureCalculator;
@@ -31,19 +31,19 @@ public class FundingArbitrageStrategy implements VenueStrategy {
     }
 
     @Override
-    public VenueStrategyDecision onTick(VenueStrategyContext context) {
+    public StrategyDecision onTick(StrategyContext context) {
         FundingArbitrageLeg longLeg = config.longLeg();
         FundingArbitrageLeg shortLeg = config.shortLeg();
-        VenueExposureSnapshot longExposure = calculateExposure(longLeg, context);
-        VenueExposureSnapshot shortExposure = calculateExposure(shortLeg, context);
+        ExposureSnapshot longExposure = calculateExposure(longLeg, context);
+        ExposureSnapshot shortExposure = calculateExposure(shortLeg, context);
 
         publishSnapshot(context, longExposure, shortExposure);
 
         if (!config.entryCondition().canEnter(context)) {
-            return new VenueStrategyDecision.Noop("entry condition rejected");
+            return new StrategyDecision.Noop("entry condition rejected");
         }
         if (!longLeg.legCondition().canEnter(context) || !shortLeg.legCondition().canEnter(context)) {
-            return new VenueStrategyDecision.Noop("leg condition rejected");
+            return new StrategyDecision.Noop("leg condition rejected");
         }
 
         BigDecimal nextLongTarget = moveToward(
@@ -59,19 +59,19 @@ public class FundingArbitrageStrategy implements VenueStrategy {
 
         if (nextLongTarget.compareTo(longExposure.projectedBaseAmount()) == 0
                 && nextShortTarget.compareTo(shortExposure.projectedBaseAmount()) == 0) {
-            return new VenueStrategyDecision.Noop("target exposure reached");
+            return new StrategyDecision.Noop("target exposure reached");
         }
 
         Instant now = context.now();
-        return new VenueStrategyDecision.Targets(List.of(
+        return new StrategyDecision.Targets(List.of(
                 toTarget(longLeg, nextLongTarget, now, "funding arbitrage long leg"),
                 toTarget(shortLeg, nextShortTarget, now, "funding arbitrage short leg")
         ));
     }
 
-    private VenueExposureSnapshot calculateExposure(
+    private ExposureSnapshot calculateExposure(
             FundingArbitrageLeg leg,
-            VenueStrategyContext context
+            StrategyContext context
     ) {
         return exposureCalculator.calculate(
                 config.strategyId(),
@@ -83,13 +83,13 @@ public class FundingArbitrageStrategy implements VenueStrategy {
         );
     }
 
-    private VenueTargetPosition toTarget(
+    private TargetPosition toTarget(
             FundingArbitrageLeg leg,
             BigDecimal targetBaseAmount,
             Instant now,
             String reason
     ) {
-        return new VenueTargetPosition(
+        return new TargetPosition(
                 config.strategyId(),
                 leg.exchange(),
                 leg.tradingPair(),
@@ -110,9 +110,9 @@ public class FundingArbitrageStrategy implements VenueStrategy {
     }
 
     private void publishSnapshot(
-            VenueStrategyContext context,
-            VenueExposureSnapshot longExposure,
-            VenueExposureSnapshot shortExposure
+            StrategyContext context,
+            ExposureSnapshot longExposure,
+            ExposureSnapshot shortExposure
     ) {
         context.snapshotSink().publish(new StrategySnapshot(
                 config.strategyId(),

@@ -43,6 +43,7 @@ public class StrategyEngine {
         if (decision instanceof StrategyDecision.Noop) {
             return ExecutionPlan.empty();
         }
+
         StrategyDecision.Targets targets = (StrategyDecision.Targets) decision;
         ExecutionPlan plan = ExecutionPlan.empty();
         for (TargetPosition target : targets.positions()) {
@@ -51,6 +52,7 @@ public class StrategyEngine {
             }
             ExposureSnapshot exposure = exposureCalculator.calculate(
                     target.strategyId(),
+                    target.exchange(),
                     target.tradingPair(),
                     target.positionSide(),
                     context.positionView().positions(),

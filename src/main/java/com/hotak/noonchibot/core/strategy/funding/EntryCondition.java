@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.core.strategy.funding;
 
-import com.hotak.noonchibot.core.strategy.api.VenueStrategyContext;
+import com.hotak.noonchibot.core.strategy.api.StrategyContext;
 
 public interface EntryCondition {
-    boolean canEnter(VenueStrategyContext context);
+    boolean canEnter(StrategyContext context);
 }

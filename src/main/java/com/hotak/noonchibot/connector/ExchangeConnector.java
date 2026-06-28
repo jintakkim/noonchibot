@@ -38,4 +38,3 @@ public class ExchangeConnector implements SmartLifecycle {
         return isRunning;
     }
 }
-

@@ -5,11 +5,11 @@ import com.hotak.noonchibot.core.order.OrderView;
 
 import java.util.Objects;
 
-public record VenueOrderView(
+public record ExchangeOrderView(
         Exchange exchange,
         OrderView order
 ) {
-    public VenueOrderView {
+    public ExchangeOrderView {
         Objects.requireNonNull(exchange, "exchange");
         Objects.requireNonNull(order, "order");
     }

@@ -15,12 +15,12 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class EventPublishingVenueExecutionPlanExecutorTest {
+class EventPublishingExecutionPlanExecutorTest {
     @Test
-    @DisplayName("venue execution command를 거래소가 포함된 order event로 변환한다")
+    @DisplayName("execution command를 거래소가 포함된 order event로 변환한다")
     void execute_publishesExchangeScopedOrderEvents() {
         TestEventPublisher eventPublisher = new TestEventPublisher();
-        EventPublishingVenueExecutionPlanExecutor executor = new EventPublishingVenueExecutionPlanExecutor(eventPublisher);
+        EventPublishingExecutionPlanExecutor executor = new EventPublishingExecutionPlanExecutor(eventPublisher);
         OrderCandidate candidate = OrderCandidate.builder()
                 .tradingPair("BTC-USDT")
                 .orderType(OrderType.LIMIT)
@@ -31,14 +31,14 @@ class EventPublishingVenueExecutionPlanExecutorTest {
                 .postOnly(true)
                 .build();
 
-        executor.execute(new VenueExecutionPlan(List.of(
-                new VenueExecutionCommand.SubmitOrder(
+        executor.execute(new ExecutionPlan(List.of(
+                new ExecutionCommand.SubmitOrder(
                         "funding-arb",
                         Exchange.BINANCE_DERIVATIVE,
                         "long leg",
                         candidate
                 ),
-                new VenueExecutionCommand.CancelOrder(
+                new ExecutionCommand.CancelOrder(
                         "funding-arb",
                         Exchange.HYPERLIQUID_DERIVATIVE,
                         "stale order",

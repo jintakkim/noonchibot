@@ -5,21 +5,21 @@ import com.hotak.noonchibot.core.Exchange;
 import java.math.BigDecimal;
 import java.util.Map;
 
-public record VenueRiskPolicy(
+public record RiskPolicy(
         boolean rejectWholePlanOnAnySubmitRejection,
         boolean allowSubmitWhenBalanceUnknown,
         BigDecimal quoteBalanceBufferRate,
         Map<Exchange, BigDecimal> maxOrderNotionalByExchange
 ) {
-    public VenueRiskPolicy {
+    public RiskPolicy {
         quoteBalanceBufferRate = quoteBalanceBufferRate == null ? BigDecimal.ZERO : quoteBalanceBufferRate;
         maxOrderNotionalByExchange = maxOrderNotionalByExchange == null
                 ? Map.of()
                 : Map.copyOf(maxOrderNotionalByExchange);
     }
 
-    public static VenueRiskPolicy conservative() {
-        return new VenueRiskPolicy(
+    public static RiskPolicy conservative() {
+        return new RiskPolicy(
                 true,
                 false,
                 BigDecimal.ZERO,

@@ -1,9 +1,9 @@
 package com.hotak.noonchibot.core.strategy.risk;
 
 import com.hotak.noonchibot.core.strategy.snapshot.StrategySnapshot;
-import com.hotak.noonchibot.core.strategy.execution.VenueExecutionCommand;
-import com.hotak.noonchibot.core.strategy.execution.VenueExecutionPlan;
-import com.hotak.noonchibot.core.strategy.api.VenueStrategyContext;
+import com.hotak.noonchibot.core.strategy.execution.ExecutionCommand;
+import com.hotak.noonchibot.core.strategy.execution.ExecutionPlan;
+import com.hotak.noonchibot.core.strategy.api.StrategyContext;
 
 import com.hotak.noonchibot.core.order.OrderCandidate;
 import com.hotak.noonchibot.core.order.OrderType;
@@ -16,19 +16,19 @@ import java.util.List;
 import java.util.Optional;
 
 @Slf4j
-public class ConservativeVenueRiskGate implements VenueRiskGate {
-    private final VenueRiskPolicy policy;
+public class ConservativeRiskGate implements RiskGate {
+    private final RiskPolicy policy;
 
-    public ConservativeVenueRiskGate(VenueRiskPolicy policy) {
-        this.policy = policy == null ? VenueRiskPolicy.conservative() : policy;
+    public ConservativeRiskGate(RiskPolicy policy) {
+        this.policy = policy == null ? RiskPolicy.conservative() : policy;
     }
 
     @Override
-    public VenueExecutionPlan approve(VenueExecutionPlan plan, VenueStrategyContext context) {
-        List<VenueExecutionCommand> approved = new ArrayList<>();
+    public ExecutionPlan approve(ExecutionPlan plan, StrategyContext context) {
+        List<ExecutionCommand> approved = new ArrayList<>();
         List<String> rejectionReasons = new ArrayList<>();
 
-        for (VenueExecutionCommand command : plan.commands()) {
+        for (ExecutionCommand command : plan.commands()) {
             Optional<String> rejectionReason = rejectionReason(command, context);
             if (rejectionReason.isPresent()) {
                 rejectionReasons.add(rejectionReason.get());
@@ -40,23 +40,23 @@ public class ConservativeVenueRiskGate implements VenueRiskGate {
         if (!rejectionReasons.isEmpty()) {
             publishRejectionSnapshot(context, rejectionReasons);
             if (policy.rejectWholePlanOnAnySubmitRejection()) {
-                return new VenueExecutionPlan(plan.commands().stream()
-                        .filter(VenueExecutionCommand.CancelOrder.class::isInstance)
+                return new ExecutionPlan(plan.commands().stream()
+                        .filter(ExecutionCommand.CancelOrder.class::isInstance)
                         .toList());
             }
         }
 
-        return new VenueExecutionPlan(approved);
+        return new ExecutionPlan(approved);
     }
 
     private Optional<String> rejectionReason(
-            VenueExecutionCommand command,
-            VenueStrategyContext context
+            ExecutionCommand command,
+            StrategyContext context
     ) {
-        if (command instanceof VenueExecutionCommand.CancelOrder) {
+        if (command instanceof ExecutionCommand.CancelOrder) {
             return Optional.empty();
         }
-        VenueExecutionCommand.SubmitOrder submit = (VenueExecutionCommand.SubmitOrder) command;
+        ExecutionCommand.SubmitOrder submit = (ExecutionCommand.SubmitOrder) command;
         OrderCandidate candidate = submit.candidate();
 
         if (candidate.getAmount().signum() <= 0) {
@@ -116,10 +116,10 @@ public class ConservativeVenueRiskGate implements VenueRiskGate {
     }
 
     private void publishRejectionSnapshot(
-            VenueStrategyContext context,
+            StrategyContext context,
             List<String> rejectionReasons
     ) {
-        log.warn("venue risk gate rejected execution plan: {}", rejectionReasons);
+        log.warn("risk gate rejected execution plan: {}", rejectionReasons);
         context.snapshotSink().publish(new StrategySnapshot(
                 "RISK_GATE",
                 context.now(),

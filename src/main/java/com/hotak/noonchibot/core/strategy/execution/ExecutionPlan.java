@@ -17,8 +17,11 @@ public record ExecutionPlan(List<ExecutionCommand> commands) {
     }
 
     public ExecutionPlan merge(ExecutionPlan other) {
+        if (isEmpty()) return other;
+        if (other.isEmpty()) return this;
+
         List<ExecutionCommand> merged = new ArrayList<>(commands);
-        merged.addAll(other.commands());
+        merged.addAll(other.commands);
         return new ExecutionPlan(merged);
     }
 }

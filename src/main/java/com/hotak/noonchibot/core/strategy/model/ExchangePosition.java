@@ -5,11 +5,11 @@ import com.hotak.noonchibot.core.derivative.Position;
 
 import java.util.Objects;
 
-public record VenuePosition(
+public record ExchangePosition(
         Exchange exchange,
         Position position
 ) {
-    public VenuePosition {
+    public ExchangePosition {
         Objects.requireNonNull(exchange, "exchange");
         Objects.requireNonNull(position, "position");
     }
