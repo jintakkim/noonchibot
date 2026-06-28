@@ -122,6 +122,34 @@ class ExchangeOrderExecutorTest {
     }
 
     @Test
+    @DisplayName("거래소가 지정된 생성 요청은 해당 거래소 executor만 처리한다")
+    void createRequested_whenExchangeDoesNotMatch_ignoresRequest() {
+        executor.processCreateRequest(new OrderEvent.CreateRequested(
+                limitBuy("0.019999", "50000.123"),
+                "cid-1",
+                Exchange.HYPERLIQUID_DERIVATIVE
+        ));
+
+        assertThat(eventPublisher.totalCount()).isZero();
+        verifyNoInteractions(orderTracker);
+    }
+
+    @Test
+    @DisplayName("전략 주문처럼 clientOrderId가 없으면 executor가 생성한다")
+    void createRequested_withoutClientOrderId_generatesClientOrderId() {
+        when(orderIdGenerator.createClientOrderId(true, "BTC-USDT", "NB", 36)).thenReturn("generated-id");
+
+        executor.processCreateRequest(new OrderEvent.CreateRequested(
+                limitBuy("0.019999", "50000.123"),
+                null,
+                EXCHANGE
+        ));
+
+        OrderEvent.ExchangeCreateRequested event = eventPublisher.only(OrderEvent.ExchangeCreateRequested.class);
+        assertThat(event.inFlightOrder().getClientOrderId()).isEqualTo("generated-id");
+    }
+
+    @Test
     @DisplayName("주문 생성 검증에 실패하면 실패 이벤트를 발행한다")
     void createRequested_whenValidationFails_publishesFailedEvent() {
         executor.processCreateRequest(new OrderEvent.CreateRequested(
@@ -183,6 +211,18 @@ class ExchangeOrderExecutorTest {
         assertThat(request.tradingPair()).isEqualTo("BTC-USDT");
         assertThat(request.clientOrderId()).isEqualTo("cid-1");
         assertThat(request.exchangeOrderId()).isEqualTo("ex-1");
+    }
+
+    @Test
+    @DisplayName("거래소가 지정된 취소 요청은 해당 거래소 executor만 처리한다")
+    void cancelRequested_whenExchangeDoesNotMatch_ignoresRequest() {
+        executor.processCancelRequest(new OrderEvent.CancelRequested(
+                "cid-1",
+                Exchange.HYPERLIQUID_DERIVATIVE
+        ));
+
+        assertThat(eventPublisher.totalCount()).isZero();
+        verifyNoInteractions(orderTracker);
     }
 
     @Test

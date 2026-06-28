@@ -109,33 +109,45 @@ public class ExchangeOrderExecutor implements LifecycleAware {
 
     @VisibleForTesting
     void processCreateRequest(OrderEvent.CreateRequested event) {
+        if (!canHandle(event.exchange())) return;
+        String clientOrderId = event.clientOrderId();
         try {
-            InFlightOrder order = createValidatedInFlightOrder(event);
+            if (clientOrderId == null) {
+                clientOrderId = createClientOrderId(
+                        event.candidate().getTradeType() == TradeType.BUY,
+                        event.candidate().getTradingPair()
+                );
+            }
+            InFlightOrder order = createValidatedInFlightOrder(event, clientOrderId);
             orderTracker.startTrackingOrder(order);
             eventPublisher.publish(new OrderEvent.ExchangeCreateRequested(order));
         } catch (Exception cause) {
             eventPublisher.publish(new OrderEvent.Failed(
                     event.candidate().getTradingPair(),
-                    event.clientOrderId(),
+                    clientOrderId,
                     null,
                     cause
             ));
         }
     }
 
-    private InFlightOrder createValidatedInFlightOrder(OrderEvent.CreateRequested event) {
+    private boolean canHandle(Exchange requestedExchange) {
+        return requestedExchange == null || requestedExchange == exchange;
+    }
+
+    private InFlightOrder createValidatedInFlightOrder(OrderEvent.CreateRequested event, String clientOrderId) {
         OrderCandidate candidate = event.candidate();
         TradingRule tradingRule = findTradingRuleOrElseThrow(candidate.getTradingPair());
 
         BigDecimal quantizedPrice = quantizeOrderPrice(candidate);
         BigDecimal quantizedAmount = quantizeOrderAmount(candidate.getTradingPair(), candidate.getAmount());
-        validateOrderType(event, tradingRule);
-        validateTimeInForce(event);
-        validateOrderSize(event, quantizedAmount, tradingRule);
-        validateNotionalSize(event, candidate, quantizedPrice, quantizedAmount, tradingRule);
+        validateOrderType(clientOrderId, event, tradingRule);
+        validateTimeInForce(clientOrderId, event);
+        validateOrderSize(clientOrderId, event, quantizedAmount, tradingRule);
+        validateNotionalSize(clientOrderId, candidate, quantizedPrice, quantizedAmount, tradingRule);
 
         return new InFlightOrder(
-                event.clientOrderId(),
+                clientOrderId,
                 candidate.getTradingPair(),
                 candidate.getOrderType(),
                 candidate.getTradeType(),
@@ -170,20 +182,20 @@ public class ExchangeOrderExecutor implements LifecycleAware {
         return amount.divideToIntegralValue(sizeQuantum).multiply(sizeQuantum);
     }
 
-    private void validateOrderType(OrderEvent.CreateRequested event, TradingRule tradingRule) {
+    private void validateOrderType(String clientOrderId, OrderEvent.CreateRequested event, TradingRule tradingRule) {
         if (!tradingRule.supportedOrderTypes().contains(event.candidate().getOrderType())) {
             throw new OrderValidationException.UnsupportedOrderTypeException(
-                    event.clientOrderId(),
+                    clientOrderId,
                     event.candidate().getTradingPair(),
                     "해당 오더 타입은 지원하지 않습니다."
             );
         }
     }
 
-    private void validateTimeInForce(OrderEvent.CreateRequested event) {
+    private void validateTimeInForce(String clientOrderId, OrderEvent.CreateRequested event) {
         if (!supportedTimeInForce.contains(event.candidate().getTimeInForce())) {
             throw new OrderValidationException.UnsupportedTimeInForceException(
-                    event.clientOrderId(),
+                    clientOrderId,
                     event.candidate().getTradingPair(),
                     "해당 timeInForce는 지원하지 않습니다."
             );
@@ -191,13 +203,14 @@ public class ExchangeOrderExecutor implements LifecycleAware {
     }
 
     private void validateOrderSize(
+            String clientOrderId,
             OrderEvent.CreateRequested event,
             BigDecimal quantizedAmount,
             TradingRule tradingRule
     ) {
         if (quantizedAmount.compareTo(tradingRule.minOrderSize()) < 0) {
             throw new OrderValidationException.BelowMinOrderSizeException(
-                    event.clientOrderId(),
+                    clientOrderId,
                     event.candidate().getTradingPair(),
                     "주문 수량이 최소 주문 수량보다 커야합니다."
             );
@@ -205,7 +218,7 @@ public class ExchangeOrderExecutor implements LifecycleAware {
     }
 
     private void validateNotionalSize(
-            OrderEvent.CreateRequested event,
+            String clientOrderId,
             OrderCandidate candidate,
             BigDecimal quantizedPrice,
             BigDecimal quantizedAmount,
@@ -215,7 +228,7 @@ public class ExchangeOrderExecutor implements LifecycleAware {
         BigDecimal notionalSize = estimatedPrice.multiply(quantizedAmount);
         if (notionalSize.compareTo(tradingRule.minNotionalSize()) < 0) {
             throw new OrderValidationException.BelowMinNotionalException(
-                    event.clientOrderId(),
+                    clientOrderId,
                     candidate.getTradingPair(),
                     "주문 금액이 최소 주문 금액보다 커야합니다."
             );
@@ -275,6 +288,7 @@ public class ExchangeOrderExecutor implements LifecycleAware {
 
     @VisibleForTesting
     void processCancelRequest(OrderEvent.CancelRequested event) {
+        if (!canHandle(event.exchange())) return;
         try {
             InFlightOrder order = orderTracker.getInFlightOrderByClientId(event.clientOrderId());
             if (order == null) {
