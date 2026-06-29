@@ -1,7 +1,8 @@
 package com.hotak.noonchibot.core.strategy.api;
 
+import com.hotak.noonchibot.core.strategy.execution.ExecutionPlan;
+
 public interface Strategy {
     String id();
-
-    StrategyDecision onTick(StrategyContext context);
+    ExecutionPlan onTick(StrategyContext context);
 }

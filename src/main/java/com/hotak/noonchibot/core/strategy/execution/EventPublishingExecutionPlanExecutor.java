@@ -33,6 +33,14 @@ public class EventPublishingExecutionPlanExecutor implements ExecutionPlanExecut
                     cancel.clientOrderId(),
                     cancel.exchange()
             ));
+            return;
+        }
+        if (command instanceof ExecutionCommand.ModifyOrder modify) {
+            eventPublisher.publish(new OrderEvent.ModifyRequested(
+                    modify.clientOrderId(),
+                    modify.replacement(),
+                    modify.exchange()
+            ));
         }
     }
 }

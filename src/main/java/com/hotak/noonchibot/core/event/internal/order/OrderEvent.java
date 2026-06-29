@@ -25,6 +25,13 @@ public sealed interface OrderEvent extends CoreEvent {
         }
     }
 
+    record ModifyRequested(
+            String clientOrderId,
+            OrderCandidate replacement,
+            Exchange exchange
+    ) implements OrderEvent {
+    }
+
     record ExchangeCreateRequested(InFlightOrder inFlightOrder) implements OrderEvent {}
 
     record ExchangeCancelRequested(String tradingPair, String clientOrderId, String exchangeOrderId) implements OrderEvent {}

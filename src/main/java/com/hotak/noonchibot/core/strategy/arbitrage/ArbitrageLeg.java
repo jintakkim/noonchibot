@@ -1,34 +1,35 @@
-package com.hotak.noonchibot.core.strategy.funding;
+package com.hotak.noonchibot.core.strategy.arbitrage;
 
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.derivative.PositionSide;
+import com.hotak.noonchibot.core.strategy.api.StrategyCondition;
 
 import java.util.Objects;
 
-public record FundingArbitrageLeg(
+public record ArbitrageLeg(
         String legId,
         Exchange exchange,
         String tradingPair,
         PositionSide positionSide,
         LegExecutionPolicy executionPolicy,
-        EntryCondition legCondition
+        StrategyCondition<ArbitrageEvaluation> legCondition
 ) {
-    public FundingArbitrageLeg(
+    public ArbitrageLeg(
             String legId,
             Exchange exchange,
             String tradingPair,
             PositionSide positionSide,
             LegExecutionPolicy executionPolicy
     ) {
-        this(legId, exchange, tradingPair, positionSide, executionPolicy, new AlwaysEnterCondition());
+        this(legId, exchange, tradingPair, positionSide, executionPolicy, StrategyCondition.always());
     }
 
-    public FundingArbitrageLeg {
+    public ArbitrageLeg {
         Objects.requireNonNull(legId, "legId");
         Objects.requireNonNull(exchange, "exchange");
         Objects.requireNonNull(tradingPair, "tradingPair");
         Objects.requireNonNull(positionSide, "positionSide");
         Objects.requireNonNull(executionPolicy, "executionPolicy");
-        legCondition = legCondition == null ? new AlwaysEnterCondition() : legCondition;
+        legCondition = legCondition == null ? StrategyCondition.always() : legCondition;
     }
 }

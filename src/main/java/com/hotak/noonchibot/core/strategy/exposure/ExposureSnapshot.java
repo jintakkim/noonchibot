@@ -37,6 +37,16 @@ public record ExposureSnapshot(
         return openBuyBaseAmount.signum() > 0 || openSellBaseAmount.signum() > 0;
     }
 
+    public boolean hasActiveOrders() {
+        return hasOpenOrders()
+                || hasPendingCancelOrders();
+    }
+
+    public boolean hasPendingCancelOrders() {
+        return pendingCancelBuyBaseAmount.signum() > 0
+                || pendingCancelSellBaseAmount.signum() > 0;
+    }
+
     private static BigDecimal zeroIfNull(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }

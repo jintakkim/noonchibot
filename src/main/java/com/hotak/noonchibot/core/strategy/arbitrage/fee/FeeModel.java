@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.core.strategy.funding;
+package com.hotak.noonchibot.core.strategy.arbitrage.fee;
 
 import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.trade.TradeType;

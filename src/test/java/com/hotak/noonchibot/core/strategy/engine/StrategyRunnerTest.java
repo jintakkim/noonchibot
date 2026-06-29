@@ -1,12 +1,10 @@
 package com.hotak.noonchibot.core.strategy.engine;
 
-import com.hotak.noonchibot.core.strategy.exposure.ReconcilePolicy;
 import com.hotak.noonchibot.core.strategy.snapshot.StrategySnapshotSink;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionCommand;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionPlan;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionPlanExecutor;
-import com.hotak.noonchibot.core.strategy.exposure.ExposureCalculator;
-import com.hotak.noonchibot.core.strategy.exposure.ExposureReconciler;
+import com.hotak.noonchibot.core.strategy.api.Strategy;
 import com.hotak.noonchibot.core.strategy.api.StrategyAccountView;
 import com.hotak.noonchibot.core.strategy.api.StrategyContext;
 import com.hotak.noonchibot.core.strategy.api.StrategyMarketView;
@@ -22,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class StrategyRunnerTest {
     @Test
-    @DisplayName("tick마다 context를 만들고 strategy engine 결과를 executor로 전달한다")
-    void onTick_executesEnginePlan() {
+    @DisplayName("tick마다 context를 만들고 strategy plan을 executor로 전달한다")
+    void onTick_executesStrategyPlan() {
         Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
         RecordingExecutor executor = new RecordingExecutor();
         ExecutionPlan expectedPlan = new ExecutionPlan(List.of(
@@ -35,10 +33,10 @@ class StrategyRunnerTest {
                 )
         ));
         StrategyRunner runner = new StrategyRunner(
-                new StubEngine(expectedPlan),
+                new StubStrategy(expectedPlan),
                 now -> new StrategyContext(
                         now,
-                        new StrategyMarketView() {},
+                        StrategyMarketView.UNAVAILABLE,
                         new StrategyAccountView() {},
                         () -> List.of(),
                         () -> List.of(),
@@ -68,10 +66,10 @@ class StrategyRunnerTest {
         ExecutionPlan approvedPlan = ExecutionPlan.empty();
         RecordingExecutor executor = new RecordingExecutor();
         StrategyRunner runner = new StrategyRunner(
-                new StubEngine(rawPlan),
+                new StubStrategy(rawPlan),
                 now -> new StrategyContext(
                         now,
-                        new StrategyMarketView() {},
+                        StrategyMarketView.UNAVAILABLE,
                         new StrategyAccountView() {},
                         () -> List.of(),
                         () -> List.of(),
@@ -86,12 +84,55 @@ class StrategyRunnerTest {
         assertThat(executor.executedPlans()).isEmpty();
     }
 
-    private static class StubEngine extends StrategyEngine {
+    @Test
+    @DisplayName("risk gate가 조정한 plan을 실행한다")
+    void onTick_executesRiskAdjustedPlan() {
+        Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
+        ExecutionPlan rawPlan = new ExecutionPlan(List.of(new ExecutionCommand.CancelOrder(
+                "funding-arb",
+                Exchange.BINANCE_DERIVATIVE,
+                "raw",
+                "cid-1"
+        )));
+        ExecutionPlan sizedPlan = new ExecutionPlan(List.of(new ExecutionCommand.CancelOrder(
+                "funding-arb",
+                Exchange.BINANCE_DERIVATIVE,
+                "sized",
+                "cid-1"
+        )));
+        RecordingExecutor executor = new RecordingExecutor();
+        StrategyRunner runner = new StrategyRunner(
+                new StubStrategy(rawPlan),
+                now -> new StrategyContext(
+                        now,
+                        StrategyMarketView.UNAVAILABLE,
+                        new StrategyAccountView() {},
+                        () -> List.of(),
+                        () -> List.of(),
+                        StrategySnapshotSink.NOOP
+                ),
+                (plan, context) -> {
+                    assertThat(plan).isSameAs(rawPlan);
+                    return sizedPlan;
+                },
+                executor
+        );
+
+        runner.onTick(timestamp);
+
+        assertThat(executor.executedPlans()).containsExactly(sizedPlan);
+    }
+
+    private static class StubStrategy implements Strategy {
         private final ExecutionPlan plan;
 
-        private StubEngine(ExecutionPlan plan) {
-            super(List.of(), new ExposureCalculator(), new ExposureReconciler(ReconcilePolicy.conservative()));
+        private StubStrategy(ExecutionPlan plan) {
             this.plan = plan;
+        }
+
+        @Override
+        public String id() {
+            return "stub";
         }
 
         @Override

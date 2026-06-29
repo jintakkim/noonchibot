@@ -31,4 +31,8 @@ public record TargetOrderStyle(
     public static TargetOrderStyle market() {
         return new TargetOrderStyle(OrderType.MARKET, null, TimeInForce.GTC, false, false);
     }
+
+    public static TargetOrderStyle marketReduceOnly() {
+        return new TargetOrderStyle(OrderType.MARKET, null, TimeInForce.GTC, false, true);
+    }
 }
