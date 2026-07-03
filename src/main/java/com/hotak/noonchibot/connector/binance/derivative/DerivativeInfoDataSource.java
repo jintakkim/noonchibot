@@ -40,7 +40,7 @@ class DerivativeInfoDataSource implements LifecycleAware {
 
     @Override
     public int phase() {
-        return Phases.DERIVATIVE_INFO_SETUP;
+        return Phases.DERIVATIVE_INFO_DATASOURCE_SETUP;
     }
 
     @Override

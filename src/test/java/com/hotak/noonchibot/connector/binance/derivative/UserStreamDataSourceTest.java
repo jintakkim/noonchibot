@@ -6,9 +6,7 @@ import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.connector.web.testutils.MockRestAssistant;
 import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
-import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.TestTaskScheduler;
-import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
@@ -25,23 +23,21 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Duration;
-import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 
 class UserStreamDataSourceTest extends RestClientTest {
     private TestEventPublisher eventPublisher;
     private TestTaskScheduler taskScheduler;
+    private MockWsAssistant wsAssistant;
     private TestableUserStreamDataSource dataSource;
 
     @BeforeEach
     void setUp() {
         eventPublisher = new TestEventPublisher();
         taskScheduler = new TestTaskScheduler();
-        dataSource = createDataSource(restAssistant, new MockWsAssistant(), new VirtualThreadIoExecutor());
+        wsAssistant = new MockWsAssistant();
+        dataSource = createDataSource(restAssistant, wsAssistant);
     }
 
     @Test
@@ -58,31 +54,21 @@ class UserStreamDataSourceTest extends RestClientTest {
     @Test
     @DisplayName("시작 시 listenKey keep-alive task를 45분 fixed delay로 등록한다")
     void onStart_registersListenKeyKeepAliveTask() {
-        IoExecutor ioExecutor = mock(IoExecutor.class);
-        Future<?> connectionFuture = mock(Future.class);
-        doReturn(connectionFuture).when(ioExecutor).submit(any(Runnable.class));
-        dataSource = createDataSource(restAssistant, new MockWsAssistant(), ioExecutor);
+        startDataSource();
 
-        dataSource.onStart();
-
-        assertThat(taskScheduler.onlyScheduledTask().kind())
+        assertThat(keepAliveTask().kind())
                 .isEqualTo(TestTaskScheduler.ScheduleKind.FIXED_DELAY);
-        assertThat(taskScheduler.onlyScheduledTask().delay())
+        assertThat(keepAliveTask().delay())
                 .isEqualTo(Duration.ofMinutes(45));
     }
 
     @Test
     @DisplayName("keep-alive task 실행 시 listenKey 갱신 REST 요청을 보낸다")
     void keepAliveTask_renewsListenKey() {
-        IoExecutor ioExecutor = mock(IoExecutor.class);
-        Future<?> connectionFuture = mock(Future.class);
-        doReturn(connectionFuture).when(ioExecutor).submit(any(Runnable.class));
-        dataSource = createDataSource(restAssistant, new MockWsAssistant(), ioExecutor);
-
-        dataSource.onStart();
+        startDataSource();
 
         runWith(BinanceDerivativeFixture.listenKeyKeepAliveSuccess(), () ->
-                taskScheduler.onlyScheduledTask().task().run()
+                keepAliveTask().task().run()
         );
     }
 
@@ -165,15 +151,11 @@ class UserStreamDataSourceTest extends RestClientTest {
     @Test
     @DisplayName("종료 시 listenKey keep-alive task를 취소한다")
     void onShutdown_cancelsListenKeyKeepAliveTask() {
-        IoExecutor ioExecutor = mock(IoExecutor.class);
-        Future<?> connectionFuture = mock(Future.class);
-        doReturn(connectionFuture).when(ioExecutor).submit(any(Runnable.class));
-        dataSource = createDataSource(restAssistant, new MockWsAssistant(), ioExecutor);
-        dataSource.onStart();
+        startDataSource();
 
         dataSource.onShutdown();
 
-        assertThat(taskScheduler.onlyScheduledTask().isCancelled()).isTrue();
+        assertThat(keepAliveTask().isCancelled()).isTrue();
     }
 
     @Test
@@ -182,10 +164,23 @@ class UserStreamDataSourceTest extends RestClientTest {
         assertThat(dataSource.phase()).isEqualTo(Phases.USER_STREAM_DATASOURCE_SETUP);
     }
 
+    private TestTaskScheduler.ScheduledTask keepAliveTask() {
+        return taskScheduler.scheduledTasks().stream()
+                .filter(task -> task.kind() == TestTaskScheduler.ScheduleKind.FIXED_DELAY)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private void startDataSource() {
+        wsAssistant.addMockConnection(
+                ApiSpec.WSS_PRIVATE_URL + "/" + BinanceDerivativeFixture.LISTEN_KEY
+        );
+        runWith(BinanceDerivativeFixture.listenKeyCreateSuccess(), dataSource::onStart);
+    }
+
     private TestableUserStreamDataSource createDataSource(
             MockRestAssistant restAssistant,
-            WsAssistant wsAssistant,
-            IoExecutor ioExecutor
+            WsAssistant wsAssistant
     ) {
         return new TestableUserStreamDataSource(
                 restAssistant,
@@ -194,7 +189,7 @@ class UserStreamDataSourceTest extends RestClientTest {
                 new ObjectMapper(),
                 BinanceDerivativeFixture.BTC_ETH_SOL_REGISTRY,
                 eventPublisher,
-                ioExecutor
+                ApiSpec.WSS_PRIVATE_URL
         );
     }
 
@@ -206,9 +201,18 @@ class UserStreamDataSourceTest extends RestClientTest {
                 ObjectMapper objectMapper,
                 com.hotak.noonchibot.connector.TradingPairSymbolRegistry tradingPairSymbolRegistry,
                 TestEventPublisher eventPublisher,
-                IoExecutor ioExecutor
+                String websocketUrl
         ) {
-            super(restAssistant, wsAssistant, taskScheduler, objectMapper, tradingPairSymbolRegistry, eventPublisher, ioExecutor);
+            super(
+                    restAssistant,
+                    wsAssistant,
+                    taskScheduler,
+                    objectMapper,
+                    tradingPairSymbolRegistry,
+                    eventPublisher,
+                    event -> { },
+                    websocketUrl
+            );
         }
 
         URI exposeConnectionUri() {

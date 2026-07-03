@@ -2,15 +2,11 @@ package com.hotak.noonchibot.core.strategy.execution;
 
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import lombok.RequiredArgsConstructor;
 
-import java.util.Objects;
-
+@RequiredArgsConstructor
 public class EventPublishingExecutionPlanExecutor implements ExecutionPlanExecutor {
     private final EventPublisher eventPublisher;
-
-    public EventPublishingExecutionPlanExecutor(EventPublisher eventPublisher) {
-        this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher");
-    }
 
     @Override
     public void execute(ExecutionPlan plan) {

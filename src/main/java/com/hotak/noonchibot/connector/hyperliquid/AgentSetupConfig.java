@@ -14,10 +14,12 @@ public class AgentSetupConfig {
     @Bean
     public AgentSetupRunner agentSetupRunner() {
         ObjectMapper objectMapper = new ObjectMapper();
-        boolean isMainnet = !"true".equals(System.getenv("HYPERLIQUID_TESTNET"));
+        boolean isMainnet = !"testnet".equalsIgnoreCase(System.getenv("HYPERLIQUID_NETWORK"));
         String baseUrl = isMainnet ? DerivativeApiSpec.BASE_URL : DerivativeApiSpec.TESTNET_BASE_URL;
         RestAssistantImpl restAssistant = new RestAssistantImpl(
-                RestClient.builder().baseUrl(baseUrl).build(),
+                RestClient.builder()
+                        .baseUrl(baseUrl)
+                        .build(),
                 List.of(),
                 List.of(),
                 null,

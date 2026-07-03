@@ -18,9 +18,13 @@ public final class ApiSpec {
 
     public static final String PLATFORM_NAME = "binanceFuture";
     public static final String REST_BASE_URL = "https://fapi.binance.com/fapi";
+    public static final String TESTNET_REST_BASE_URL = "https://testnet.binancefuture.com/fapi";
     public static final String WSS_PUBLIC_URL = "wss://fstream.binance.com/public/ws";
+    public static final String TESTNET_WSS_PUBLIC_URL = "wss://stream.binancefuture.com/ws";
     public static final String WSS_MARKET_URL = "wss://market.binance.com/market/ws";
+    public static final String TESTNET_WSS_MARKET_URL = "wss://stream.binancefuture.com/ws";
     public static final String WSS_PRIVATE_URL = "wss://fstream.binance.com/ws";
+    public static final String TESTNET_WSS_PRIVATE_URL = "wss://stream.binancefuture.com/ws";
 
     public static final String SERVER_TIME_PATH_URL = "/v1/time";
     public static final String MARK_PRICE_PATH_URL = "/v1/premiumIndex";

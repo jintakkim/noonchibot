@@ -3,11 +3,11 @@ package com.hotak.noonchibot.connector.binance.spot;
 import com.hotak.noonchibot.connector.binance.BinanceAuthenticator;
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsConnection;
+import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
 import com.hotak.noonchibot.connector.web.testutils.MockWsConnection;
-import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
+import com.hotak.noonchibot.core.TestTaskScheduler;
 import com.hotak.noonchibot.core.balance.AssetState;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
@@ -44,7 +44,7 @@ class UserStreamDataSourceTest {
                 "timestamp", 1_780_000_000_000L,
                 "signature", "sig"
         ));
-        dataSource = createDataSource(new MockWsAssistant(), new VirtualThreadIoExecutor());
+        dataSource = createDataSource(new MockWsAssistant(), new TestTaskScheduler());
     }
 
     @Test
@@ -65,6 +65,67 @@ class UserStreamDataSourceTest {
         assertThat(wsConnection.sentRequests.getFirst().payload())
                 .asInstanceOf(MAP)
                 .containsEntry("method", "userDataStream.subscribe.signature");
+    }
+
+    @Test
+    @DisplayName("user stream 인증 실패도 백오프 재연결한다")
+    void onStart_authenticationFailureSchedulesReconnect() {
+        MockWsAssistant wsAssistant = new MockWsAssistant();
+        MockWsConnection connection = wsAssistant.addMockConnection(ApiSpec.WSS_API_URL);
+        connection.setResponseFactory(request -> new WsResponse("""
+                {
+                  "id": "%s",
+                  "status": 401,
+                  "error": {
+                    "code": -2015,
+                    "msg": "Invalid API-key, IP, or permissions for action."
+                  }
+                }
+                """.formatted(requestId(request)), WsResponse.MessageType.TEXT));
+        TestTaskScheduler taskScheduler = new TestTaskScheduler();
+        dataSource = createDataSource(wsAssistant, taskScheduler);
+
+        dataSource.onStart();
+
+        assertThat(connection.isConnected()).isFalse();
+        assertThat(taskScheduler.onlyScheduledTask().kind())
+                .isEqualTo(TestTaskScheduler.ScheduleKind.ONE_SHOT);
+    }
+
+    @Test
+    @DisplayName("인증 오류가 아닌 구독 실패는 백오프 재연결한다")
+    void onStart_subscriptionFailureSchedulesReconnect() {
+        MockWsAssistant wsAssistant = new MockWsAssistant();
+        MockWsConnection connection = wsAssistant.addMockConnection(ApiSpec.WSS_API_URL);
+        connection.setResponseFactory(request -> new WsResponse("""
+                {
+                  "id": "%s",
+                  "status": 429,
+                  "error": {"code": -1003, "msg": "Too many requests"}
+                }
+                """.formatted(requestId(request)), WsResponse.MessageType.TEXT));
+        TestTaskScheduler taskScheduler = new TestTaskScheduler();
+        dataSource = createDataSource(wsAssistant, taskScheduler);
+
+        dataSource.onStart();
+
+        assertThat(connection.isConnected()).isFalse();
+        assertThat(taskScheduler.onlyScheduledTask().kind())
+                .isEqualTo(TestTaskScheduler.ScheduleKind.ONE_SHOT);
+    }
+
+    @Test
+    @DisplayName("현재 구독 요청과 id가 다른 command 오류 응답은 구독 실패로 판단하지 않는다")
+    void processMessage_unmatchedCommandErrorIsIgnored() {
+        dataSource.exposeProcessMessage(new WsResponse("""
+                {
+                  "id": "another-request",
+                  "status": 401,
+                  "error": {"code": -2015, "msg": "Invalid API-key"}
+                }
+                """, WsResponse.MessageType.TEXT));
+
+        assertThat(eventPublisher.totalCount()).isZero();
     }
 
     @Test
@@ -118,15 +179,20 @@ class UserStreamDataSourceTest {
         assertThat(dataSource.phase()).isEqualTo(Phases.USER_STREAM_DATASOURCE_SETUP);
     }
 
-    private TestableUserStreamDataSource createDataSource(WsAssistant wsAssistant, IoExecutor ioExecutor) {
+    private TestableUserStreamDataSource createDataSource(WsAssistant wsAssistant, TestTaskScheduler taskScheduler) {
         return new TestableUserStreamDataSource(
                 wsAssistant,
                 new ObjectMapper(),
                 authenticator,
                 BinanceSpotFixture.BTC_ETH_SOL_REGISTRY,
                 eventPublisher,
-                ioExecutor
+                taskScheduler,
+                ApiSpec.WSS_API_URL
         );
+    }
+
+    private static Object requestId(WsRequest request) {
+        return ((Map<?, ?>) request.payload()).get("id");
     }
 
     private static class TestableUserStreamDataSource extends UserStreamDataSource {
@@ -136,9 +202,19 @@ class UserStreamDataSourceTest {
                 BinanceAuthenticator authenticator,
                 com.hotak.noonchibot.connector.TradingPairSymbolRegistry tradingPairSymbolRegistry,
                 TestEventPublisher eventPublisher,
-                IoExecutor ioExecutor
+                TestTaskScheduler taskScheduler,
+                String websocketApiUrl
         ) {
-            super(wsAssistant, objectMapper, authenticator, tradingPairSymbolRegistry, eventPublisher, ioExecutor);
+            super(
+                    wsAssistant,
+                    objectMapper,
+                    authenticator,
+                    tradingPairSymbolRegistry,
+                    eventPublisher,
+                    taskScheduler,
+                    event -> { },
+                    websocketApiUrl
+            );
         }
 
         URI exposeConnectionUri() {
@@ -146,7 +222,7 @@ class UserStreamDataSourceTest {
         }
 
         void exposeOnConnected() {
-            onConnected();
+            handleConnected();
         }
 
         void exposeProcessMessage(WsResponse response) {

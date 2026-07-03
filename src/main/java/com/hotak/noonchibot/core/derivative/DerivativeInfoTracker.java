@@ -2,6 +2,7 @@ package com.hotak.noonchibot.core.derivative;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.core.LifecycleAware;
+import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.derivative.LeverageChangeEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.MarginModeChangeEvent;
@@ -68,5 +69,10 @@ public class DerivativeInfoTracker implements LifecycleAware {
     @Override
     public void onShutdown() {
         subscriptions.forEach(Subscription::close);
+    }
+
+    @Override
+    public int phase() {
+        return Phases.DERIVATIVE_INFO_TRACKER_SETUP;
     }
 }

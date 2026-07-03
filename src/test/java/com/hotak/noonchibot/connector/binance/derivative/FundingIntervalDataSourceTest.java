@@ -33,7 +33,8 @@ class FundingIntervalDataSourceTest extends RestClientTest {
                 BinanceDerivativeFixture.fundingInfoIntervalSuccess(Map.of(
                         "BTCUSDT", 4,
                         "ETHUSDT", 4,
-                        "SOLUSDT", 1
+                        "SOLUSDT", 1,
+                        "SUSHIUSDT", 8
                 )),
                 () -> {
                     fundingIntervalDataSource.onEvent(new FundingInfoEvent.IntervalRestFetchRequested());
@@ -44,7 +45,8 @@ class FundingIntervalDataSourceTest extends RestClientTest {
                                     assertThat(event.snapshot())
                                             .containsEntry("BTC-USDT", Duration.ofHours(4))
                                             .containsEntry("ETH-USDT", Duration.ofHours(4))
-                                            .containsEntry("SOL-USDT", Duration.ofHours(1)));
+                                            .containsEntry("SOL-USDT", Duration.ofHours(1))
+                                            .doesNotContainKey("SUSHI-USDT"));
                 }
         );
     }

@@ -11,7 +11,7 @@ import java.util.concurrent.Executors;
 
 
 @Slf4j
-public class EventBus implements EventPublisher, EventSubscriber {
+public class EventBus implements EventPublisher, EventSubscriber, SequentialDispatcher {
     public static final int DEFAULT_SEQ_CAPACITY = 1000;
 
     private final Map<String, Sequencer> sequencers = new ConcurrentHashMap<>();
@@ -31,14 +31,10 @@ public class EventBus implements EventPublisher, EventSubscriber {
     public <E extends Event> Subscription subscribe(
             Class<E> type,
             EventHandler<E> handler,
-            ExecutionPolicy policy
+        ExecutionPolicy policy
     ) {
         if (policy instanceof ExecutionPolicy.Sequential s) {
-            sequencers.computeIfAbsent(s.key(), k -> {
-                Sequencer seq = new Sequencer(k, seqCapacity);
-                seq.start();
-                return seq;
-            });
+            sequencer(s.key());
         }
         HandlerEntry<E> entry = new HandlerEntry<>(handler, policy);
         handlers.computeIfAbsent(type, k -> new CopyOnWriteArrayList<>()).add(entry);
@@ -49,7 +45,13 @@ public class EventBus implements EventPublisher, EventSubscriber {
     public void publish(Event event, EventMetadata metadata) {
         List<HandlerEntry<?>> entries = handlers.get(event.getClass());
         if (entries == null || entries.isEmpty()) {
-            log.warn("No handlers registered for event: {}", event.getClass().getSimpleName());
+            log.warn(
+                    "No handlers registered: type={}, event={}, corrId={}, timestamp={}",
+                    event.getClass().getName(),
+                    event,
+                    metadata.corrId(),
+                    metadata.timestamp()
+            );
             return;
         }
         for (HandlerEntry<?> raw : entries) {
@@ -62,6 +64,11 @@ public class EventBus implements EventPublisher, EventSubscriber {
     @Override
     public void publish(Event event) {
         publish(event, EventContext.currentOrRoot().derive());
+    }
+
+    @Override
+    public void dispatchSequential(Runnable task) {
+        sequencer(EventConstants.DOMAIN_KEY).submit(task);
     }
 
     private void dispatch(HandlerEntry<Event> entry, Event event, EventMetadata metadata) {
@@ -79,10 +86,18 @@ public class EventBus implements EventPublisher, EventSubscriber {
             }
         });
         switch (entry.policy()) {
-            case ExecutionPolicy.Sequential s -> sequencers.get(s.key()).submit(task);
+            case ExecutionPolicy.Sequential s -> sequencer(s.key()).submit(task);
             case ExecutionPolicy.Concurrent c -> concurrentExecutor.submit(task);
             case ExecutionPolicy.Inline i     -> task.run();
         }
+    }
+
+    private Sequencer sequencer(String key) {
+        return sequencers.computeIfAbsent(key, k -> {
+            Sequencer created = new Sequencer(k, seqCapacity);
+            created.start();
+            return created;
+        });
     }
 
     private record HandlerEntry<E extends Event>(

@@ -21,12 +21,19 @@ import com.hotak.noonchibot.core.derivative.FundingPaymentSnapshotUpdater;
 import com.hotak.noonchibot.core.derivative.FundingPaymentTracker;
 import com.hotak.noonchibot.core.derivative.PositionTracker;
 import com.hotak.noonchibot.core.event.EventBus;
+import com.hotak.noonchibot.core.event.ExecutionPolicy;
+import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
+import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
+import com.hotak.noonchibot.core.order.OrderSnapshotUpdater;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
+import com.hotak.noonchibot.core.order.OrderRecoveryBootstrap;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
+import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.WebSocketClient;
@@ -35,22 +42,26 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.HashSet;
 import java.util.List;
 
-public class ExchangeAdapterFactory {
+public class DerivativeExchangeAdapterFactory {
     public static DerivativeExchangeConnector create(
             BootStrap bootStrap,
             BinanceConfig.Properties props,
             OrderSnapshotRepository orderSnapshotRepository,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
-            OrderSnapshotRepository orderHistoryRepository
-
+            TradingSafetyController tradingSafetyController
     ) {
         EventBus eventBus = new EventBus();
-        RestClient restClient = RestClient.builder().baseUrl(ApiSpec.REST_BASE_URL).build();
+        tradingSafetyController.connect(eventBus);
+        boolean testnet = props.network().isTestnet();
+        RestClient restClient = RestClient.builder()
+                .baseUrl(testnet ? ApiSpec.TESTNET_REST_BASE_URL : ApiSpec.REST_BASE_URL)
+                .build();
         TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(props.derivative().tradingPairSymbolMap());
         AsyncThrottler throttler = new AsyncThrottlerImpl(ApiSpec.RATE_LIMITS, ioExecutor);
         TimeSynchronizer timeSynchronizer = new TimeSynchronizer(
@@ -62,21 +73,30 @@ public class ExchangeAdapterFactory {
         bootStrap.register(timeSynchronizer);
 
         BinanceAuthenticator authenticator = new BinanceAuthenticator(props.apiKey(), props.secretKey(), timeSynchronizer, objectMapper);
-        RestAssistant restAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
+        RestAssistant restAssistant = new RestAssistantImpl(
+                restClient,
+                List.of(new ThrottlerLimitIdPreProcessor()),
+                List.of(),
+                authenticator,
+                throttler,
+                objectMapper
+        );
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
         OrderBookDataSource orderBookDataSource = new OrderBookDataSource(
                 wsAssistant,
                 objectMapper,
                 ioExecutor,
                 taskScheduler,
+                applicationEventPublisher,
                 tradingPairSymbolRegistry,
                 restAssistant,
+                testnet ? ApiSpec.TESTNET_WSS_PUBLIC_URL : ApiSpec.WSS_PUBLIC_URL,
                 eventBus,
                 eventBus
         );
         bootStrap.register(orderBookDataSource);
 
-        OrderTracker orderTracker = new OrderTracker(eventBus, tradeRepository, orderHistoryRepository, eventBus);
+        OrderTracker orderTracker = new OrderTracker(eventBus, tradeRepository, orderSnapshotRepository, eventBus);
         bootStrap.register(orderTracker);
 
         OrderBookTracker orderBookTracker = new OrderBookTracker(
@@ -100,7 +120,8 @@ public class ExchangeAdapterFactory {
                 objectMapper,
                 tradingPairSymbolRegistry,
                 eventBus,
-                ioExecutor
+                applicationEventPublisher,
+                testnet ? ApiSpec.TESTNET_WSS_PRIVATE_URL : ApiSpec.WSS_PRIVATE_URL
         );
         bootStrap.register(userStreamDataSource);
 
@@ -135,32 +156,24 @@ public class ExchangeAdapterFactory {
                 eventBus,
                 orderClient,
                 eventBus,
-                Exchange.BINANCE_SPOT,
+                Exchange.BINANCE_DERIVATIVE,
                 orderSnapshotRepository
         );
         bootStrap.register(exchangeOrderExecutor);
-
-        OrderStatusPoller orderStatusPoller = new OrderStatusPoller(
-                eventBus,
-                orderTracker,
-                tradingPairSymbolRegistry,
-                taskScheduler
+        eventBus.subscribe(
+                OrderEvent.SnapshotUpdateRequested.class,
+                new OrderSnapshotUpdater(orderSnapshotRepository),
+                ExecutionPolicy.sequential()
         );
-        bootStrap.register(orderStatusPoller);
-
-        TradePoller tradePoller = new TradePoller(
-                eventBus,
-                taskScheduler,
-                orderTracker
-        );
-        bootStrap.register(tradePoller);
 
         WsFundingInfoDataSource fundingInfoDataSource = new WsFundingInfoDataSource(
                 wsAssistant,
                 objectMapper,
-                ioExecutor,
+                taskScheduler,
+                applicationEventPublisher,
                 eventBus,
-                tradingPairSymbolRegistry
+                tradingPairSymbolRegistry,
+                testnet ? ApiSpec.TESTNET_WSS_MARKET_URL : ApiSpec.WSS_MARKET_URL
         );
         bootStrap.register(fundingInfoDataSource);
 
@@ -171,6 +184,18 @@ public class ExchangeAdapterFactory {
                 eventBus
         );
         bootStrap.register(fundingInfoTracker);
+
+        FundingIntervalDataSource fundingIntervalDataSource = new FundingIntervalDataSource(
+                restAssistant,
+                tradingPairSymbolRegistry,
+                eventBus
+        );
+        eventBus.subscribe(
+                FundingInfoEvent.IntervalRestFetchRequested.class,
+                fundingIntervalDataSource,
+                ExecutionPolicy.concurrent()
+        );
+        bootStrap.register(new FundingIntervalFetchScheduler(taskScheduler, eventBus));
 
         DerivativeInfoTracker derivativeInfoTracker = new DerivativeInfoTracker(eventBus);
         bootStrap.register(derivativeInfoTracker);
@@ -193,25 +218,37 @@ public class ExchangeAdapterFactory {
                 eventBus
         );
         bootStrap.register(derivativeInfoDataSource);
-
-
-       OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
+        OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
                 tradingPairSymbolRegistry,
                 restAssistant,
                 eventBus,
                 eventBus
         );
         bootStrap.register(orderStatusDataSource);
-
-        TradeDataSource tradeDataSource = new TradeDataSource(tradingPairSymbolRegistry, restAssistant, eventBus, eventBus);
+        TradeDataSource tradeDataSource = new TradeDataSource(
+                tradingPairSymbolRegistry,
+                restAssistant,
+                eventBus,
+                eventBus
+        );
         bootStrap.register(tradeDataSource);
-
-        bootStrap.register(new OrderStatusPoller(eventBus, orderTracker, tradingPairSymbolRegistry, taskScheduler));
-        bootStrap.register(new TradePoller(eventBus, taskScheduler, orderTracker));
-
-
-
+        bootStrap.register(new OrderRecoveryBootstrap(
+                Exchange.BINANCE_DERIVATIVE,
+                orderSnapshotRepository,
+                orderStatusDataSource,
+                tradeDataSource,
+                orderTracker
+        ));
+        bootStrap.register(new OrderStatusPoller(
+                eventBus,
+                eventBus,
+                orderTracker,
+                tradingPairSymbolRegistry,
+                taskScheduler
+        ));
+        bootStrap.register(new TradePoller(eventBus, eventBus, taskScheduler, orderTracker));
         return new DerivativeExchangeConnector(
+                Exchange.BINANCE_DERIVATIVE,
                 ApiSpec.PLATFORM_NAME,
                 orderTracker,
                 orderBookTracker,
@@ -219,6 +256,7 @@ public class ExchangeAdapterFactory {
                 feeSchemaLoader,
                 binanceTradingRuleRegistry,
                 exchangeOrderExecutor,
+                eventBus,
                 fundingInfoTracker,
                 positionTracker
         );

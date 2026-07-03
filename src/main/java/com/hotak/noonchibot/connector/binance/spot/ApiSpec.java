@@ -20,8 +20,11 @@ final class ApiSpec {
 
 
     public static final String REST_BASE_URL = "https://api.binance.com/api";
+    public static final String TESTNET_REST_BASE_URL = "https://demo-api.binance.com/api";
     public static final String WSS_URL = "wss://stream.binance.com:9443/ws";
+    public static final String TESTNET_WSS_URL = "wss://demo-stream.binance.com/ws";
     public static final String WSS_API_URL = "wss://ws-api.binance.com:443/ws-api/v3";
+    public static final String TESTNET_WSS_API_URL = "wss://demo-ws-api.binance.com/ws-api/v3";
     public static final String WS_SUBSCRIBE = "SUBSCRIBE";
     public static final String WS_UNSUBSCRIBE = "UNSUBSCRIBE";
     public static final String TICKER_PRICE_CHANGE_PATH_URL = "/v3/ticker/24hr";

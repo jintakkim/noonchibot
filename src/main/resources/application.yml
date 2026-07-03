@@ -7,16 +7,18 @@ spring:
         username: root
         password: mine407603
         driver-class-name: com.mysql.cj.jdbc.Driver
-        jpa:
+
+    jpa:
+        hibernate:
+            ddl-auto: create
+        properties:
             hibernate:
-                ddl-auto: create
-            properties:
-                hibernate:
-                    dialect: org.hibernate.dialect.MySQLDialect
-                    format_sql: true
-            show-sql: false
+                dialect: org.hibernate.dialect.MySQLDialect
+                format_sql: true
+        show-sql: false
 
 binance:
+    network: ${BINANCE_NETWORK}
     api_key: ${BINANCE_API_KEY}
     secret_key: ${BINANCE_SECRET_KEY}
     spot:
@@ -24,6 +26,7 @@ binance:
             "BTC-USDT": "BTCUSDT"
             "ETH-USDT": "ETHUSDT"
             "SOL-USDT": "SOLUSDT"
+            "USDC-USDT": "USDCUSDT"
     derivative:
         trading-pair-symbol-map:
             "BTC-USDT": "BTCUSDT"
@@ -31,12 +34,11 @@ binance:
             "SOL-USDT": "SOLUSDT"
 
 hyperliquid:
-    address: 0x
-    secret: 0x
+    network: ${HYPERLIQUID_NETWORK}
+    address: ${HYPERLIQUID_ADDRESS}
+    secret: ${HYPERLIQUID_SECRET}
     derivative:
         trading-pair-symbol-map:
           "BTC-USDC": "BTC"
           "ETH-USDC": "ETH"
           "SOL-USDC": "SOL"
-
-

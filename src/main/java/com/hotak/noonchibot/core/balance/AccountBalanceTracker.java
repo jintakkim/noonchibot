@@ -2,6 +2,7 @@ package com.hotak.noonchibot.core.balance;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.core.LifecycleAware;
+import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.EventSubscriber;
 import com.hotak.noonchibot.core.event.ExecutionPolicy;
 import com.hotak.noonchibot.core.event.Subscription;
@@ -118,5 +119,10 @@ public class AccountBalanceTracker implements LifecycleAware {
     public void onShutdown() {
         subscriptions.forEach(Subscription::close);
         subscriptions.clear();
+    }
+
+    @Override
+    public int phase() {
+        return Phases.ACCOUNT_BALANCE_TRACKER_SETUP;
     }
 }

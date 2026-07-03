@@ -7,6 +7,7 @@ import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
+import com.hotak.noonchibot.core.order.OrderTradeReader;
 import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
@@ -19,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 @RequiredArgsConstructor
-class TradeDataSource implements EventHandler<TradeEvent.UpdateRequested>, LifecycleAware {
+class TradeDataSource implements EventHandler<TradeEvent.UpdateRequested>, LifecycleAware, OrderTradeReader {
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
     private final EventPublisher eventPublisher;
@@ -32,10 +33,15 @@ class TradeDataSource implements EventHandler<TradeEvent.UpdateRequested>, Lifec
         if (request.exchangeOrderId() == null || request.exchangeOrderId().equals("UNKNOWN")) {
             throw new IllegalArgumentException("exchangeOrderId가 없습니다, trade를 조회할 수 없습니다.");
         }
-        eventPublisher.publish(fetchAllTradeUpdatesForOrder(request));
+        eventPublisher.publish(fetch(
+                request.clientOrderId(),
+                request.exchangeOrderId(),
+                request.tradingPair()
+        ));
     }
 
-    private TradeEvent.Received fetchAllTradeUpdatesForOrder(TradeEvent.UpdateRequested request) {
+    @Override
+    public TradeEvent.Received fetch(String clientOrderId, String exchangeOrderId, String tradingPair) {
         JsonNode fills = restAssistant.executeRequestAndGetJsonBody(RestRequest.builder()
                 .method(HttpMethod.POST)
                 .pathUrl(DerivativeApiSpec.INFO_PATH_URL)
@@ -48,13 +54,13 @@ class TradeDataSource implements EventHandler<TradeEvent.UpdateRequested>, Lifec
 
         List<TradeEvent.Fill> matched = new ArrayList<>();
         for (JsonNode fill : fills) {
-            if (!request.exchangeOrderId().equals(String.valueOf(fill.get("oid").asLong()))) continue;
+            if (!exchangeOrderId.equals(String.valueOf(fill.get("oid").asLong()))) continue;
             matched.add(parseFill(fill));
         }
         return new TradeEvent.Received(
-                request.clientOrderId(),
-                request.exchangeOrderId(),
-                request.tradingPair(),
+                clientOrderId,
+                exchangeOrderId,
+                tradingPair,
                 matched
         );
     }

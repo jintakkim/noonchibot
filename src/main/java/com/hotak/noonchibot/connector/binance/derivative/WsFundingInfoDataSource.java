@@ -3,11 +3,12 @@ package com.hotak.noonchibot.connector.binance.derivative;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsRequest;
-import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSource;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -26,22 +27,27 @@ class WsFundingInfoDataSource extends AbstractWsFundingInfoDataSource {
     }
 
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
+    private final String websocketUrl;
 
     public WsFundingInfoDataSource(
             WsAssistant wsAssistant,
             ObjectMapper objectMapper,
-            IoExecutor ioExecutor,
+            TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             EventPublisher eventPublisher,
-            TradingPairSymbolRegistry tradingPairSymbolRegistry
+            TradingPairSymbolRegistry tradingPairSymbolRegistry,
+            String websocketUrl
     ) {
         super(
                 wsAssistant,
                 objectMapper,
-                ioExecutor,
+                taskScheduler,
+                applicationEventPublisher,
                 eventPublisher,
                 tradingPairSymbolRegistry.getAllTradingPairs()
         );
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
+        this.websocketUrl = websocketUrl;
     }
 
     @Override
@@ -92,6 +98,6 @@ class WsFundingInfoDataSource extends AbstractWsFundingInfoDataSource {
 
     @Override
     protected URI connectionUri() {
-        return URI.create(ApiSpec.WSS_MARKET_URL);
+        return URI.create(websocketUrl);
     }
 }

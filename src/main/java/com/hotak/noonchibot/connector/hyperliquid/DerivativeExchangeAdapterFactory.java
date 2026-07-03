@@ -19,13 +19,19 @@ import com.hotak.noonchibot.core.derivative.FundingPaymentSnapshotUpdater;
 import com.hotak.noonchibot.core.derivative.FundingPaymentTracker;
 import com.hotak.noonchibot.core.derivative.PositionTracker;
 import com.hotak.noonchibot.core.event.EventBus;
+import com.hotak.noonchibot.core.event.ExecutionPolicy;
+import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
+import com.hotak.noonchibot.core.order.OrderSnapshotUpdater;
+import com.hotak.noonchibot.core.order.OrderRecoveryBootstrap;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
+import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
 import org.msgpack.jackson.dataformat.MessagePackMapper;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.WebSocketClient;
@@ -42,15 +48,22 @@ public class DerivativeExchangeAdapterFactory {
             OrderSnapshotRepository orderSnapshotRepository,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             ObjectMapper objectMapper,
             MessagePackMapper messagePackMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
-            OrderSnapshotRepository orderHistoryRepository
+            TradingSafetyController tradingSafetyController
     ) {
         EventBus eventBus = new EventBus();
-        RestClient restClient = RestClient.builder().baseUrl(DerivativeApiSpec.BASE_URL).build();
+        tradingSafetyController.connect(eventBus);
+        boolean testnet = props.network().isTestnet();
+        String restBaseUrl = testnet ? DerivativeApiSpec.TESTNET_BASE_URL : DerivativeApiSpec.BASE_URL;
+        String websocketUrl = testnet ? DerivativeApiSpec.TESTNET_WS_URL : DerivativeApiSpec.WS_URL;
+        RestClient restClient = RestClient.builder()
+                .baseUrl(restBaseUrl)
+                .build();
         TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(
                 props.derivative().tradingPairSymbolMap()
         );
@@ -59,11 +72,18 @@ public class DerivativeExchangeAdapterFactory {
                 objectMapper,
                 messagePackMapper,
                 null,
-                true,
+                !testnet,
                 props.address(),
                 props.secret()
         );
-        RestAssistant restAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
+        RestAssistant restAssistant = new RestAssistantImpl(
+                restClient,
+                List.of(new HyperliquidRateLimitPreProcessor()),
+                List.of(),
+                authenticator,
+                throttler,
+                objectMapper
+        );
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
 
         OrderBookDataSource orderBookDataSource = new OrderBookDataSource(
@@ -71,14 +91,16 @@ public class DerivativeExchangeAdapterFactory {
                 objectMapper,
                 ioExecutor,
                 taskScheduler,
+                applicationEventPublisher,
                 restAssistant,
                 tradingPairSymbolRegistry,
+                websocketUrl,
                 eventBus,
                 eventBus
         );
         bootStrap.register(orderBookDataSource);
 
-        OrderTracker orderTracker = new OrderTracker(eventBus, tradeRepository, orderHistoryRepository, eventBus);
+        OrderTracker orderTracker = new OrderTracker(eventBus, tradeRepository, orderSnapshotRepository, eventBus);
         bootStrap.register(orderTracker);
 
         OrderBookTracker orderBookTracker = new OrderBookTracker(
@@ -103,10 +125,12 @@ public class DerivativeExchangeAdapterFactory {
         UserStreamDataSource userStreamDataSource = new UserStreamDataSource(
                 wsAssistant,
                 objectMapper,
-                ioExecutor,
+                taskScheduler,
+                applicationEventPublisher,
                 props.address(),
                 tradingPairSymbolRegistry,
-                eventBus
+                eventBus,
+                websocketUrl
         );
         bootStrap.register(userStreamDataSource);
 
@@ -141,22 +165,49 @@ public class DerivativeExchangeAdapterFactory {
                 orderSnapshotRepository
         );
         bootStrap.register(exchangeOrderExecutor);
+        eventBus.subscribe(
+                OrderEvent.SnapshotUpdateRequested.class,
+                new OrderSnapshotUpdater(orderSnapshotRepository),
+                ExecutionPolicy.sequential()
+        );
 
-        bootStrap.register(new OrderStatusDataSource(restAssistant, eventBus, eventBus, props.address()));
-        bootStrap.register(new OrderStatusPoller(eventBus, orderTracker, taskScheduler));
-        bootStrap.register(new TradeDataSource(tradingPairSymbolRegistry, restAssistant, eventBus, eventBus, props.address()));
-        bootStrap.register(new TradePoller(eventBus, taskScheduler, orderTracker));
+        OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
+                restAssistant,
+                eventBus,
+                eventBus,
+                props.address()
+        );
+        bootStrap.register(orderStatusDataSource);
+        TradeDataSource tradeDataSource = new TradeDataSource(
+                tradingPairSymbolRegistry,
+                restAssistant,
+                eventBus,
+                eventBus,
+                props.address()
+        );
+        bootStrap.register(tradeDataSource);
+        bootStrap.register(new OrderRecoveryBootstrap(
+                Exchange.HYPERLIQUID_DERIVATIVE,
+                orderSnapshotRepository,
+                orderStatusDataSource,
+                tradeDataSource,
+                orderTracker
+        ));
+        bootStrap.register(new OrderStatusPoller(eventBus, eventBus, orderTracker, taskScheduler));
+        bootStrap.register(new TradePoller(eventBus, eventBus, taskScheduler, orderTracker));
         DeriviativeInnerTransfer innerTransfer = new DeriviativeInnerTransfer(restAssistant);
         bootStrap.register(new TransferDispatcher(List.of(innerTransfer), eventBus, eventBus));
 
         HyperliquidWsFundingInfoDataSource fundingInfoDataSource = new HyperliquidWsFundingInfoDataSource(
                 wsAssistant,
                 objectMapper,
-                ioExecutor,
+                taskScheduler,
+                applicationEventPublisher,
                 tradingPairSymbolRegistry,
                 restAssistant,
                 eventBus,
-                tradingPairSymbolRegistry.getAllTradingPairs()
+                tradingPairSymbolRegistry.getAllTradingPairs(),
+                websocketUrl
         );
         bootStrap.register(fundingInfoDataSource);
 
@@ -183,6 +234,7 @@ public class DerivativeExchangeAdapterFactory {
         bootStrap.register(new FundingPaymentSnapshotUpdater(fundingPaymentRepository, eventBus));
 
         return new DerivativeExchangeConnector(
+                Exchange.HYPERLIQUID_DERIVATIVE,
                 DerivativeApiSpec.PLATFORM_NAME,
                 orderTracker,
                 orderBookTracker,
@@ -190,6 +242,7 @@ public class DerivativeExchangeAdapterFactory {
                 feeSchemaLoader,
                 tradingRuleRegistry,
                 exchangeOrderExecutor,
+                eventBus,
                 fundingInfoTracker,
                 positionTracker
         );

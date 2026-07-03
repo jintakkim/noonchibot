@@ -1,21 +1,23 @@
 package com.hotak.noonchibot.connector.web.testutils;
 
 import com.hotak.noonchibot.connector.web.WsConnection;
+import com.hotak.noonchibot.connector.web.WsConnectionListener;
 import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
+import org.springframework.web.socket.CloseStatus;
 
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Function;
 
 public class MockWsConnection implements WsConnection {
     private final URI wsUri;
     private WsResponse ackResponse;
+    private Function<WsRequest, WsResponse> responseFactory;
     public final List<WsRequest> sentRequests = new ArrayList<>();
-    private final BlockingQueue<WsResponse> incoming = new LinkedBlockingQueue<>();
     private volatile boolean connected = true;
+    private volatile WsConnectionListener listener;
 
     public MockWsConnection(URI wsUri, WsResponse ackResponse) {
         this.wsUri = wsUri;
@@ -37,22 +39,27 @@ public class MockWsConnection implements WsConnection {
     @Override
     public void send(WsRequest request) {
         sentRequests.add(request);
-        if(ackResponse != null) {
-            incoming.add(ackResponse);
-        }
+        WsResponse response = responseFactory == null ? ackResponse : responseFactory.apply(request);
+        if (response != null && listener != null) listener.onMessage(response);
     }
 
     public void setAckResponse(WsResponse ackResponse) {
         this.ackResponse = ackResponse;
     }
 
+    public void setResponseFactory(Function<WsRequest, WsResponse> responseFactory) {
+        this.responseFactory = responseFactory;
+    }
+
     public void push(WsResponse response) {
-        incoming.add(response);
+        if (listener == null) throw new IllegalStateException("WebSocket is not connected");
+        listener.onMessage(response);
     }
 
     @Override
-    public void disconnect() {
+    public void disconnect(CloseStatus status) {
         connected = false;
+        if (listener != null) listener.onClosed(status);
     }
 
     @Override
@@ -60,9 +67,10 @@ public class MockWsConnection implements WsConnection {
         return connected;
     }
 
-    @Override
-    public WsResponse take() throws InterruptedException {
-        return incoming.take();
+    public void connect(WsConnectionListener listener) {
+        this.listener = listener;
+        this.connected = true;
+        listener.onConnected(this);
     }
 
     public void clearRequests() {

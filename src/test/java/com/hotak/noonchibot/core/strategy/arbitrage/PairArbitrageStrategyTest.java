@@ -11,8 +11,8 @@ import com.hotak.noonchibot.core.strategy.api.StrategyContext;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionPlan;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionCommand;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionUrgency;
+import com.hotak.noonchibot.core.strategy.safety.TradingStatus;
 import com.hotak.noonchibot.core.strategy.api.StrategyMarketView;
-import com.hotak.noonchibot.core.strategy.arbitrage.condition.MaxPositionGapCondition;
 import com.hotak.noonchibot.core.strategy.arbitrage.condition.PriceGapCondition;
 import com.hotak.noonchibot.core.strategy.arbitrage.fee.FeeRateSchedule;
 import com.hotak.noonchibot.core.strategy.arbitrage.fee.RateFeeModel;
@@ -25,6 +25,7 @@ import com.hotak.noonchibot.core.order.TimeInForce;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.order.OrderView;
+import com.hotak.noonchibot.core.strategy.snapshot.StrategySnapshotSink;
 import com.hotak.noonchibot.core.trade.TradeType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,7 +59,8 @@ class PairArbitrageStrategyTest {
         assertThat(snapshots).hasSize(1);
         assertThat(snapshots.getFirst().metrics())
                 .containsEntry("targetBaseAmount", new BigDecimal("1.0"))
-                .containsEntry("unbalancedLegHandling", UnbalancedLegHandling.AGGRESSIVELY_COMPLETE_OTHER_LEG.name());
+                .containsEntry("entryMatched", true)
+                .containsEntry("orderValid", true);
     }
 
     @Test
@@ -100,8 +102,7 @@ class PairArbitrageStrategyTest {
                 shortLeg(),
                 new BigDecimal("1.0"),
                 new BigDecimal("0.2"),
-                context -> false,
-                UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
+                context -> false
         );
         PairArbitrageStrategy strategy = new PairArbitrageStrategy(config, new ExposureCalculator());
         List<StrategySnapshot> snapshots = new ArrayList<>();
@@ -127,18 +128,76 @@ class PairArbitrageStrategyTest {
     }
 
     @Test
-    @DisplayName("HOLD 구간에서 acceptable gap을 넘으면 부족한 leg만 보정한다")
-    void onTick_whileHolding_rebalancesOnlyDeficientLeg() {
+    @DisplayName("주문 유효 조건을 이탈하면 활성 주문부터 취소한다")
+    void onTick_whenOrderValidityIsLost_cancelsActiveOrderFirst() {
         ArbitragePair pair = new ArbitragePair(
                 "btc",
                 longLeg(),
                 shortLeg(),
                 new BigDecimal("1.0"),
                 new BigDecimal("0.2"),
-                new BigDecimal("0.05"),
+                StrategyCondition.never(),
+                StrategyCondition.never(),
+                StrategyCondition.never()
+        );
+        PairArbitrageStrategy strategy = new PairArbitrageStrategy(
+                new PairArbitrageConfig("funding-arb", List.of(pair)),
+                new ExposureCalculator()
+        );
+
+        ExecutionPlan plan = strategy.onTick(context(
+                List.of(),
+                List.of(openOrder(Exchange.BINANCE_DERIVATIVE, "BTC-USDT", TradeType.BUY, "0.2")),
+                new ArrayList<>()
+        ));
+
+        assertThat(plan.commands()).singleElement().isInstanceOf(ExecutionCommand.CancelOrder.class);
+    }
+
+    @Test
+    @DisplayName("주문 유효 조건을 이탈하면 큰 leg를 줄인다")
+    void onTick_whenOrderValidityConditionRejects_reducesLargerLeg() {
+        ArbitragePair pair = new ArbitragePair(
+                "btc",
+                longLeg(),
+                shortLeg(),
+                new BigDecimal("1.0"),
+                new BigDecimal("0.2"),
                 context -> false,
                 context -> false,
-                UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
+                context -> false
+        );
+        PairArbitrageStrategy strategy = new PairArbitrageStrategy(
+                new PairArbitrageConfig("funding-arb", List.of(pair)),
+                new ExposureCalculator()
+        );
+        List<ExchangePosition> positions = List.of(
+                exchangePosition(Exchange.BINANCE_DERIVATIVE, "BTC-USDT", PositionSide.LONG, "0.5"),
+                exchangePosition(Exchange.HYPERLIQUID_DERIVATIVE, "BTC-USDC", PositionSide.SHORT, "0.2")
+        );
+
+        ExecutionPlan plan = strategy.onTick(context(positions, new ArrayList<>()));
+
+        assertThat(submitOrders(plan)).singleElement().satisfies(command -> {
+            assertThat(command.exchange()).isEqualTo(Exchange.BINANCE_DERIVATIVE);
+            assertThat(command.candidate().getAmount()).isEqualByComparingTo("0.2");
+            assertThat(command.candidate().getTradeType()).isEqualTo(TradeType.SELL);
+            assertThat(command.candidate().getReduceOnly()).isTrue();
+        });
+    }
+
+    @Test
+    @DisplayName("entry 이탈 후에도 주문 유효 조건 안이면 부족한 leg를 늘린다")
+    void onTick_betweenEntryAndOrderValidity_increasesDeficientLeg() {
+        ArbitragePair pair = new ArbitragePair(
+                "btc",
+                longLeg(),
+                shortLeg(),
+                new BigDecimal("1.0"),
+                new BigDecimal("0.2"),
+                context -> true,
+                context -> false,
+                context -> false
         );
         PairArbitrageStrategy strategy = new PairArbitrageStrategy(
                 new PairArbitrageConfig("funding-arb", List.of(pair)),
@@ -155,6 +214,34 @@ class PairArbitrageStrategyTest {
             assertThat(command.exchange()).isEqualTo(Exchange.HYPERLIQUID_DERIVATIVE);
             assertThat(command.candidate().getAmount()).isEqualByComparingTo("0.2");
             assertThat(command.candidate().getTradeType()).isEqualTo(TradeType.SELL);
+            assertThat(command.candidate().getReduceOnly()).isFalse();
+        });
+    }
+
+    @Test
+    @DisplayName("거래 중지 상태에서 불균형이면 큰 leg를 reduce-only로 줄인다")
+    void onTick_whileTradingPaused_reducesLargerLeg() {
+        PairArbitrageStrategy strategy = new PairArbitrageStrategy(config("0.2"), new ExposureCalculator());
+        List<ExchangePosition> positions = List.of(
+                exchangePosition(Exchange.BINANCE_DERIVATIVE, "BTC-USDT", PositionSide.LONG, "0.5"),
+                exchangePosition(Exchange.HYPERLIQUID_DERIVATIVE, "BTC-USDC", PositionSide.SHORT, "0.2")
+        );
+        StrategyContext context = new StrategyContext(
+                NOW,
+                StrategyMarketView.UNAVAILABLE,
+                new StrategyAccountView() {},
+                () -> List.of(),
+                () -> positions,
+                StrategySnapshotSink.NOOP,
+                () -> TradingStatus.TRADING_PAUSED
+        );
+
+        ExecutionPlan plan = strategy.onTick(context);
+
+        assertThat(submitOrders(plan)).singleElement().satisfies(command -> {
+            assertThat(command.exchange()).isEqualTo(Exchange.BINANCE_DERIVATIVE);
+            assertThat(command.candidate().getTradeType()).isEqualTo(TradeType.SELL);
+            assertThat(command.candidate().getReduceOnly()).isTrue();
         });
     }
 
@@ -167,10 +254,9 @@ class PairArbitrageStrategyTest {
                 shortLeg(),
                 new BigDecimal("1.0"),
                 new BigDecimal("0.2"),
-                new BigDecimal("0.05"),
-                context -> false,
                 context -> true,
-                UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
+                context -> false,
+                context -> true
         );
         PairArbitrageStrategy strategy = new PairArbitrageStrategy(
                 new PairArbitrageConfig("funding-arb", List.of(pair)),
@@ -197,10 +283,9 @@ class PairArbitrageStrategyTest {
                 shortLeg(),
                 new BigDecimal("1.0"),
                 new BigDecimal("0.2"),
-                new BigDecimal("0.05"),
-                context -> false,
                 context -> true,
-                UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
+                context -> false,
+                context -> true
         );
         PairArbitrageStrategy strategy = new PairArbitrageStrategy(
                 new PairArbitrageConfig("funding-arb", List.of(pair)),
@@ -225,10 +310,9 @@ class PairArbitrageStrategyTest {
                 shortLeg("BTC-USDC"),
                 new BigDecimal("1.0"),
                 new BigDecimal("0.2"),
-                new BigDecimal("0.05"),
                 StrategyCondition.always(),
-                StrategyCondition.never(),
-                UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
+                StrategyCondition.always(),
+                StrategyCondition.never()
         );
         ArbitragePair ethPair = new ArbitragePair(
                 "eth",
@@ -236,10 +320,9 @@ class PairArbitrageStrategyTest {
                 shortLeg("ETH-USDC"),
                 new BigDecimal("2.0"),
                 new BigDecimal("0.5"),
-                new BigDecimal("0.1"),
                 StrategyCondition.always(),
-                StrategyCondition.never(),
-                UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
+                StrategyCondition.always(),
+                StrategyCondition.never()
         );
         PairArbitrageStrategy strategy = new PairArbitrageStrategy(
                 new PairArbitrageConfig("funding-arb", List.of(btcPair, ethPair)),
@@ -266,11 +349,10 @@ class PairArbitrageStrategyTest {
                 shortLeg(),
                 new BigDecimal("1.0"),
                 new BigDecimal("0.2"),
-                new MaxPositionGapCondition(new BigDecimal("0.05")),
+                StrategyCondition.always(),
                 entryCondition,
                 StrategyCondition.never(),
-                StrategyCondition.never(),
-                UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
+                StrategyCondition.never()
         );
         PairArbitrageStrategy strategy = new PairArbitrageStrategy(
                 new PairArbitrageConfig("funding-arb", List.of(pair)),
@@ -314,8 +396,7 @@ class PairArbitrageStrategyTest {
                 StrategyCondition.always(),
                 StrategyCondition.always(),
                 StrategyCondition.always(),
-                StrategyCondition.always(),
-                UnbalancedLegHandling.WAIT_FOR_OTHER_LEG
+                StrategyCondition.always()
         );
         PairArbitrageStrategy strategy = new PairArbitrageStrategy(
                 new PairArbitrageConfig("funding-arb", List.of(pair)),
@@ -345,8 +426,7 @@ class PairArbitrageStrategyTest {
                 shortLeg(),
                 new BigDecimal("1.0"),
                 new BigDecimal(slice),
-                StrategyCondition.always(),
-                UnbalancedLegHandling.AGGRESSIVELY_COMPLETE_OTHER_LEG
+                StrategyCondition.always()
         );
     }
 

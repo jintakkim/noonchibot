@@ -35,4 +35,8 @@ public record TargetOrderStyle(
     public static TargetOrderStyle marketReduceOnly() {
         return new TargetOrderStyle(OrderType.MARKET, null, TimeInForce.GTC, false, true);
     }
+
+    public TargetOrderStyle asReduceOnly() {
+        return new TargetOrderStyle(orderType, limitPrice, timeInForce, postOnly, true);
+    }
 }

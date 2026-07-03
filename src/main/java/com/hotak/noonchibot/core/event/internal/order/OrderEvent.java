@@ -5,6 +5,7 @@ import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderCandidate;
 import com.hotak.noonchibot.core.order.OrderState;
+import com.hotak.noonchibot.core.order.OrderView;
 
 import java.time.Instant;
 
@@ -44,6 +45,8 @@ public sealed interface OrderEvent extends CoreEvent {
             String clientOrderId
     ) implements OrderEvent {}
 
+    record StatusPollingRequested(Exchange exchange) implements OrderEvent {}
+
     record StatusReceived(
             String tradingPair,
             String clientOrderId,
@@ -55,12 +58,7 @@ public sealed interface OrderEvent extends CoreEvent {
     /**
      * persist db 정보 업데이트 요청
      */
-    record SnapshotUpdateRequested(
-            String clientOrderId,
-            String exchangeOrderId,
-            OrderState orderState,
-            Instant timestamp
-    ) implements OrderEvent {}
+    record SnapshotUpdateRequested(OrderView order) implements OrderEvent {}
 
     record Failed(
             String tradingPair,

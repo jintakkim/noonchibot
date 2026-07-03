@@ -109,6 +109,35 @@ class OrderTrackerTest {
     }
 
     @Nested
+    @DisplayName("주문 복구")
+    class RecoveryTest {
+        @Test
+        @DisplayName("DB 주문 복원 후 REST 체결과 상태를 적용한다")
+        void restoresAndReconcilesOrder() {
+            tracker.restore(order);
+            tracker.reconcile(tradeReceived(fill("T-1", "0.4", "20000", "0.05")));
+            tracker.reconcile(status(OrderState.OPEN));
+
+            assertThat(order.getExecutedAmountBase()).isEqualByComparingTo("0.4");
+            assertThat(order.getCurrentState()).isEqualTo(OrderState.OPEN);
+            assertThat(order.getExchangeOrderId()).isEqualTo(EXCHANGE_ORDER_ID);
+        }
+
+        @Test
+        @DisplayName("WS와 REST에서 같은 체결이 들어오면 중복 적용하지 않는다")
+        void duplicateRestTradeIsIgnored() {
+            tracker.restore(order);
+            TradeEvent.Received trade = tradeReceived(fill("T-1", "0.4", "20000", "0.05"));
+
+            tracker.processTradeUpdate(trade);
+            tracker.reconcile(trade);
+
+            assertThat(order.getExecutedAmountBase()).isEqualByComparingTo("0.4");
+            assertThat(order.getProcessedTradeIds()).containsExactly("T-1");
+        }
+    }
+
+    @Nested
     @DisplayName("주문 상태 업데이트")
     class OrderStatusUpdateTest {
         @Test
@@ -123,21 +152,22 @@ class OrderTrackerTest {
             assertThat(order.getLastUpdateTimestamp()).isEqualTo(UPDATED_AT);
 
             OrderEvent.SnapshotUpdateRequested event = eventPublisher.only(OrderEvent.SnapshotUpdateRequested.class);
-            assertThat(event.clientOrderId()).isEqualTo(CLIENT_ORDER_ID);
-            assertThat(event.exchangeOrderId()).isEqualTo(EXCHANGE_ORDER_ID);
-            assertThat(event.orderState()).isEqualTo(OrderState.OPEN);
-            assertThat(event.timestamp()).isEqualTo(UPDATED_AT);
+            assertThat(event.order().clientOrderId()).isEqualTo(CLIENT_ORDER_ID);
+            assertThat(event.order().exchangeOrderId()).isEqualTo(EXCHANGE_ORDER_ID);
+            assertThat(event.order().state()).isEqualTo(OrderState.OPEN);
+            assertThat(event.order().updatedAt()).isEqualTo(UPDATED_AT);
         }
 
         @Test
-        @DisplayName("상태가 변경되지 않으면 snapshot update 요청을 발행하지 않는다")
-        void sameStateDoesNotPublishSnapshotUpdateRequested() {
+        @DisplayName("상태가 같아도 exchangeOrderId가 설정되면 snapshot update 요청을 발행한다")
+        void exchangeOrderIdChangePublishesSnapshotUpdateRequested() {
             tracker.startTrackingOrder(order);
 
             tracker.processOrderUpdate(status(OrderState.PENDING_CREATE, CLIENT_ORDER_ID, EXCHANGE_ORDER_ID));
 
             assertThat(order.getExchangeOrderId()).isEqualTo(EXCHANGE_ORDER_ID);
-            assertThat(eventPublisher.totalCount()).isZero();
+            assertThat(eventPublisher.only(OrderEvent.SnapshotUpdateRequested.class)
+                    .order().exchangeOrderId()).isEqualTo(EXCHANGE_ORDER_ID);
         }
 
         @Test
@@ -154,25 +184,45 @@ class OrderTrackerTest {
             assertThat(view.clientOrderId()).isEqualTo(CLIENT_ORDER_ID);
             assertThat(view.exchangeOrderId()).isEqualTo(EXCHANGE_ORDER_ID);
             assertThat(view.state()).isEqualTo(OrderState.FILLED);
-            assertThat(eventPublisher.only(OrderEvent.SnapshotUpdateRequested.class).orderState()).isEqualTo(OrderState.FILLED);
+            assertThat(eventPublisher.only(OrderEvent.SnapshotUpdateRequested.class).order().state())
+                    .isEqualTo(OrderState.FILLED);
         }
 
         @Test
-        @DisplayName("트래킹 중인 주문을 찾지 못하면 예외를 던진다")
-        void missingOrderThrows() {
-            assertThatThrownBy(() -> tracker.processOrderUpdate(status(OrderState.OPEN)))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining(CLIENT_ORDER_ID);
+        @DisplayName("종료 후 늦게 도착한 상태 업데이트는 무시한다")
+        void missingOrderUpdateIsIgnored() {
+            tracker.processOrderUpdate(status(OrderState.OPEN));
+
+            assertThat(eventPublisher.totalCount()).isZero();
         }
 
         @Test
-        @DisplayName("ID가 일치하지 않는 상태 업데이트는 예외를 던진다")
-        void mismatchedIdThrows() {
+        @DisplayName("ID가 일치하지 않는 상태 업데이트는 무시한다")
+        void mismatchedIdIsIgnored() {
             tracker.startTrackingOrder(order);
 
-            assertThatThrownBy(() -> tracker.processOrderUpdate(
-                    status(OrderState.OPEN, "other-client", "other-exchange")
-            )).isInstanceOf(IllegalArgumentException.class);
+            tracker.processOrderUpdate(status(OrderState.OPEN, "other-client", "other-exchange"));
+
+            assertThat(order.getCurrentState()).isEqualTo(OrderState.PENDING_CREATE);
+        }
+
+        @Test
+        @DisplayName("현재 주문보다 오래된 상태 응답은 무시한다")
+        void staleStatusIsIgnored() {
+            tracker.startTrackingOrder(order);
+            tracker.processOrderUpdate(status(OrderState.OPEN));
+            eventPublisher.clear();
+
+            tracker.processOrderUpdate(new OrderEvent.StatusReceived(
+                    TRADING_PAIR,
+                    CLIENT_ORDER_ID,
+                    EXCHANGE_ORDER_ID,
+                    OrderState.PENDING_CANCEL,
+                    UPDATED_AT.minusSeconds(1)
+            ));
+
+            assertThat(order.getCurrentState()).isEqualTo(OrderState.OPEN);
+            assertThat(eventPublisher.totalCount()).isZero();
         }
     }
 
@@ -190,7 +240,8 @@ class OrderTrackerTest {
             assertThat(order.getExecutedAmountQuote()).isEqualByComparingTo("20000");
             assertThat(order.getAccumulatedFees()).containsEntry("USDT", new BigDecimal("0.05"));
             assertThat(order.getProcessedTradeIds()).containsExactly("T-1");
-            assertThat(eventPublisher.totalCount()).isZero();
+            assertThat(eventPublisher.only(OrderEvent.SnapshotUpdateRequested.class)
+                    .order().executedBaseAmount()).isEqualByComparingTo("0.4");
         }
 
         @Test

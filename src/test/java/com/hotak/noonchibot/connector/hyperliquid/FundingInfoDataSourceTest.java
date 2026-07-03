@@ -54,11 +54,13 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
         return new HyperliquidWsFundingInfoDataSource(
                 wsAssistant,
                 OM,
-                new com.hotak.noonchibot.core.VirtualThreadIoExecutor(),
+                new com.hotak.noonchibot.core.TestTaskScheduler(),
+                event -> { },
                 tradingPairSymbolRegistry,
                 restAssistant,
                 eventPublisher,
-                tradingPairSymbolRegistry.getAllTradingPairs()
+                tradingPairSymbolRegistry.getAllTradingPairs(),
+                DerivativeApiSpec.WS_URL
         );
     }
 

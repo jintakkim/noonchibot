@@ -4,7 +4,6 @@ import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
 import com.hotak.noonchibot.core.Exchange;
-import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.derivative.FundingPayment;
@@ -17,6 +16,7 @@ import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -37,6 +37,7 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
     private final TaskScheduler taskScheduler;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final EventPublisher eventPublisher;
+    private final String websocketUrl;
 
     private volatile ScheduledFuture<?> listenKeyKeepAliveTask;
 
@@ -47,28 +48,30 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
             ObjectMapper objectMapper,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             EventPublisher eventPublisher,
-            IoExecutor ioExecutor
+            ApplicationEventPublisher applicationEventPublisher,
+            String websocketUrl
     ) {
-        super(wsAssistant, objectMapper, ioExecutor);
+        super(wsAssistant, objectMapper, taskScheduler, applicationEventPublisher);
         this.restAssistant = restAssistant;
         this.taskScheduler = taskScheduler;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.eventPublisher = eventPublisher;
+        this.websocketUrl = websocketUrl;
     }
 
 
     @Override
     protected URI connectionUri() {
-        return URI.create(ApiSpec.WSS_PRIVATE_URL + "/" + fetchListenKey());
+        return URI.create(websocketUrl + "/" + fetchListenKey());
     }
 
     @Override
-    protected void onConnected() {
+    protected void handleConnected() {
         // user stream은 subscribe message 없음
     }
 
     @Override
-    protected void processMessage(WsResponse response) {
+    protected WebsocketMessageResult processMessage(WsResponse response) {
         if (response.messageType() != WsResponse.MessageType.TEXT) {
             throw new IllegalStateException("cant handle non-text message");
         }
@@ -77,9 +80,17 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
         String eventType = eventMessage.get("e").asString();
 
         switch (eventType) {
-            case "ORDER_TRADE_UPDATE" -> processOrderTradeUpdate(eventMessage);
-            case "ACCOUNT_UPDATE" -> processAccountUpdate(eventMessage);
-            default -> log.debug("unknown user stream event: {}", eventMessage);
+            case "ORDER_TRADE_UPDATE" -> {
+                processOrderTradeUpdate(eventMessage);
+                return WebsocketMessageResult.processed();
+            }
+            case "ACCOUNT_UPDATE" -> {
+                processAccountUpdate(eventMessage);
+                return WebsocketMessageResult.processed();
+            }
+            default -> {
+                return WebsocketMessageResult.ignored("Unknown user stream event: " + eventMessage);
+            }
         }
     }
 

@@ -3,7 +3,7 @@ package com.hotak.noonchibot.connector.binance.derivative;
 import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
-import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
+import com.hotak.noonchibot.core.TestTaskScheduler;
 import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSourceTest;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
@@ -70,7 +70,13 @@ class WsFundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Ws
     @Override
     protected WsFundingInfoDataSource createWsFundingInfoDataSource(MockWsAssistant wsAssistant, TestEventPublisher eventPublisher) {
         return new WsFundingInfoDataSource(
-                wsAssistant, OM, new VirtualThreadIoExecutor(), eventPublisher, BinanceDerivativeFixture.BTC_ETH_SOL_REGISTRY
+                wsAssistant,
+                OM,
+                new TestTaskScheduler(),
+                event -> { },
+                eventPublisher,
+                BinanceDerivativeFixture.BTC_ETH_SOL_REGISTRY,
+                ApiSpec.WSS_MARKET_URL
         );
     }
 }

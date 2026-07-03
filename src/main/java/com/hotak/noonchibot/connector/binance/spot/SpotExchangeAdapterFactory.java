@@ -18,11 +18,15 @@ import com.hotak.noonchibot.core.event.EventBus;
 import com.hotak.noonchibot.core.event.ExecutionPolicy;
 import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
+import com.hotak.noonchibot.core.order.OrderSnapshotUpdater;
+import com.hotak.noonchibot.core.order.OrderRecoveryBootstrap;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
-import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
+import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.WebSocketClient;
@@ -31,21 +35,28 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.HashSet;
 import java.util.List;
 
-public class ExchangeAdapterFactory {
+public class SpotExchangeAdapterFactory {
     public static ExchangeConnector create(
             BootStrap bootStrap,
             BinanceConfig.Properties props,
             OrderSnapshotRepository orderSnapshotRepository,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
-            OrderSnapshotRepository orderHistoryRepository
+            TradingSafetyController tradingSafetyController
     ) {
         EventBus eventBus = new EventBus();
-        RestClient restClient = RestClient.builder().baseUrl(ApiSpec.REST_BASE_URL).build();
-        TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(props.spot().tradingPairSymbolMap());
+        tradingSafetyController.connect(eventBus);
+        boolean testnet = props.network().isTestnet();
+        RestClient restClient = RestClient.builder()
+                .baseUrl(testnet ? ApiSpec.TESTNET_REST_BASE_URL : ApiSpec.REST_BASE_URL)
+                .build();
+        TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(
+                props.spot().tradingPairSymbolMap()
+        );
         AsyncThrottler throttler = new AsyncThrottlerImpl(ApiSpec.RATE_LIMITS, ioExecutor);
         TimeSynchronizer timeSynchronizer = new TimeSynchronizer(
                 new BinanceServerTimeProvider(
@@ -56,7 +67,14 @@ public class ExchangeAdapterFactory {
         bootStrap.register(timeSynchronizer);
 
         BinanceAuthenticator authenticator = new BinanceAuthenticator(props.apiKey(), props.secretKey(), timeSynchronizer, objectMapper);
-        RestAssistant restAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
+        RestAssistant restAssistant = new RestAssistantImpl(
+                restClient,
+                List.of(new ThrottlerLimitIdPreProcessor()),
+                List.of(),
+                authenticator,
+                throttler,
+                objectMapper
+        );
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
 
         OrderBookDataSource orderBookDataSource = new OrderBookDataSource(
@@ -64,15 +82,17 @@ public class ExchangeAdapterFactory {
                 objectMapper,
                 ioExecutor,
                 taskScheduler,
+                applicationEventPublisher,
                 tradingPairSymbolRegistry,
                 restAssistant,
                 timeSynchronizer,
+                testnet ? ApiSpec.TESTNET_WSS_URL : ApiSpec.WSS_URL,
                 eventBus,
                 eventBus
         );
         bootStrap.register(orderBookDataSource);
 
-        OrderTracker orderTracker = new OrderTracker(eventBus, tradeRepository, orderHistoryRepository, eventBus);
+        OrderTracker orderTracker = new OrderTracker(eventBus, tradeRepository, orderSnapshotRepository, eventBus);
         bootStrap.register(orderTracker);
 
         OrderBookTracker orderBookTracker = new OrderBookTracker(
@@ -95,7 +115,9 @@ public class ExchangeAdapterFactory {
                 authenticator,
                 tradingPairSymbolRegistry,
                 eventBus,
-                ioExecutor
+                taskScheduler,
+                applicationEventPublisher,
+                testnet ? ApiSpec.TESTNET_WSS_API_URL : ApiSpec.WSS_API_URL
         );
         bootStrap.register(userStreamDataSource);
 
@@ -129,6 +151,11 @@ public class ExchangeAdapterFactory {
                 orderSnapshotRepository
         );
         bootStrap.register(exchangeOrderExecutor);
+        eventBus.subscribe(
+                OrderEvent.SnapshotUpdateRequested.class,
+                new OrderSnapshotUpdater(orderSnapshotRepository),
+                ExecutionPolicy.sequential()
+        );
 
         OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
                 tradingPairSymbolRegistry,
@@ -137,21 +164,33 @@ public class ExchangeAdapterFactory {
                 eventBus
         );
         bootStrap.register(orderStatusDataSource);
-
-        TradeDataSource tradeDataSource = new TradeDataSource(tradingPairSymbolRegistry, restAssistant, eventBus, eventBus);
+        TradeDataSource tradeDataSource = new TradeDataSource(
+                tradingPairSymbolRegistry,
+                restAssistant,
+                eventBus,
+                eventBus
+        );
         bootStrap.register(tradeDataSource);
-
-        bootStrap.register(new OrderStatusPoller(eventBus, orderTracker, taskScheduler));
-        bootStrap.register(new TradePoller(eventBus, taskScheduler, orderTracker));
+        bootStrap.register(new OrderRecoveryBootstrap(
+                Exchange.BINANCE_SPOT,
+                orderSnapshotRepository,
+                orderStatusDataSource,
+                tradeDataSource,
+                orderTracker
+        ));
+        bootStrap.register(new OrderStatusPoller(eventBus, eventBus, orderTracker, taskScheduler));
+        bootStrap.register(new TradePoller(eventBus, eventBus, taskScheduler, orderTracker));
 
         return new ExchangeConnector(
+                Exchange.BINANCE_SPOT,
                 ApiSpec.PLATFORM_NAME,
                 orderTracker,
                 orderBookTracker,
                 accountBalanceTracker,
                 feeSchemaLoader,
                 tradingRuleRegistry,
-                exchangeOrderExecutor
+                exchangeOrderExecutor,
+                eventBus
         );
     }
 }

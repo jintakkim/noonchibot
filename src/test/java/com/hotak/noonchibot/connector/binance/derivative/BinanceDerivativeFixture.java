@@ -577,29 +577,25 @@ public final class BinanceDerivativeFixture {
     public static final List<OrderBookEntry> DIFF_BIDS = List.of(new OrderBookEntry(0L, DIFF_BID_PRICE, DIFF_BID_QTY));
     public static final List<OrderBookEntry> DIFF_ASKS = List.of(new OrderBookEntry(0L, DIFF_ASK_PRICE, DIFF_ASK_QTY));
 
-    /** WS depthUpdate (combined stream 래핑). diff 메시지. */
+    /** WS depthUpdate raw stream 메시지. */
     public static WsResponse wsDepthUpdate(String exchangeSymbol) {
         String json = """
             {
-                "stream": "%s@depth",
-                "data": {
-                    "e": "depthUpdate",
-                    "E": %d,
-                    "T": 1779849678694,
-                    "s": "%s",
-                    "U": %d,
-                    "u": %d,
-                    "pu": %d,
-                    "b": [
-                        ["%s", "%s"]
-                    ],
-                    "a": [
-                        ["%s", "%s"]
-                    ]
-                }
+                "e": "depthUpdate",
+                "E": %d,
+                "T": 1779849678694,
+                "s": "%s",
+                "U": %d,
+                "u": %d,
+                "pu": %d,
+                "b": [
+                    ["%s", "%s"]
+                ],
+                "a": [
+                    ["%s", "%s"]
+                ]
             }
             """.formatted(
-                exchangeSymbol.toLowerCase(),
                 DIFF_EVENT_TIME.toEpochMilli(),
                 exchangeSymbol,
                 DIFF_FIRST_UPDATE_ID,
@@ -617,24 +613,20 @@ public final class BinanceDerivativeFixture {
     public static final BigDecimal TRADE_QTY   = new BigDecimal("0.150");
     public static final Instant TRADE_TIME = Instant.ofEpochMilli(1779849678694L);
 
-    /** WS aggTrade (combined stream 래핑). m=false → BUY(taker가 매수). */
+    /** WS aggTrade raw stream 메시지. m=false → BUY(taker가 매수). */
     public static WsResponse wsAggTrade(String exchangeSymbol) {
         String json = """
             {
-                "stream": "%s@aggTrade",
-                "data": {
-                    "e": "aggTrade",
-                    "E": %d,
-                    "s": "%s",
-                    "a": %d,
-                    "p": "%s",
-                    "q": "%s",
-                    "T": %d,
-                    "m": false
-                }
+                "e": "aggTrade",
+                "E": %d,
+                "s": "%s",
+                "a": %d,
+                "p": "%s",
+                "q": "%s",
+                "T": %d,
+                "m": false
             }
             """.formatted(
-                exchangeSymbol.toLowerCase(),
                 TRADE_TIME.toEpochMilli(),
                 exchangeSymbol,
                 TRADE_ID,

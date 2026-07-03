@@ -2,13 +2,14 @@ package com.hotak.noonchibot.core.derivative;
 
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
-import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -24,29 +25,32 @@ public abstract class AbstractWsFundingInfoDataSource extends AbstractWebsocketD
     public AbstractWsFundingInfoDataSource(
             WsAssistant wsAssistant,
             ObjectMapper objectMapper,
-            IoExecutor ioExecutor,
+            TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             EventPublisher eventPublisher,
             List<String> pairsToSubscribe
             ) {
-        super(wsAssistant, objectMapper, ioExecutor);
+        super(wsAssistant, objectMapper, taskScheduler, applicationEventPublisher);
         this.eventPublisher = eventPublisher;
         this.pairsToSubscribe = pairsToSubscribe;
     }
 
     @Override
-    protected void onConnected() {
+    protected void handleConnected() {
         sendSubscribe(new HashSet<>(pairsToSubscribe));
     }
 
     @Override
-    protected void processMessage(WsResponse response) {
-        if (response.messageType() != WsResponse.MessageType.TEXT) return;
+    protected WebsocketMessageResult processMessage(WsResponse response) {
+        if (response.messageType() != WsResponse.MessageType.TEXT) {
+            return WebsocketMessageResult.ignored("Unsupported message type: " + response.messageType());
+        }
         JsonNode msg = objectMapper.readTree(response.data());
 
         if (isErrorMessage(msg)) {
-            throw new WebsocketErrorMessageReceivedException(msg.toString());
+            return WebsocketMessageResult.reconnect(msg.toString());
         }
-        if (isAckMessage(msg)) return;
+        if (isAckMessage(msg)) return WebsocketMessageResult.acknowledged();
 
         FundingInfoMessage fundingMessage = parseFundingInfoMessage(msg);
         eventPublisher.publish(new FundingInfoEvent.Received(
@@ -57,6 +61,7 @@ public abstract class AbstractWsFundingInfoDataSource extends AbstractWebsocketD
                 fundingMessage.nextFundingTime(),
                 fundingMessage.fundingInterval()
         ));
+        return WebsocketMessageResult.processed();
     }
 
     protected abstract void sendSubscribe(Set<String> tradingPairs);

@@ -44,6 +44,6 @@ public class FundingPaymentTracker implements LifecycleAware {
 
     @Override
     public int phase() {
-        return Phases.DERIVATIVE_INFO_SETUP;
+        return Phases.FUNDING_PAYMENT_TRACKER_SETUP;
     }
 }

@@ -12,6 +12,7 @@ import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
 import com.hotak.noonchibot.core.trade.TradeType;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.context.ApplicationEventPublisher;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -27,22 +28,26 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
     private final TimeSynchronizer timeSynchronizer;
+    private final String websocketUrl;
 
     public OrderBookDataSource(
             WsAssistant wsAssistant,
             ObjectMapper objectMapper,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant,
             TimeSynchronizer timeSynchronizer,
+            String websocketUrl,
             EventPublisher eventPublisher,
             EventSubscriber eventSubscriber
     ) {
-        super(wsAssistant, objectMapper, ioExecutor, taskScheduler, eventPublisher, eventSubscriber);
+        super(wsAssistant, objectMapper, ioExecutor, taskScheduler, applicationEventPublisher, eventPublisher, eventSubscriber);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
         this.timeSynchronizer = timeSynchronizer;
+        this.websocketUrl = websocketUrl;
     }
 
     @Override
@@ -170,6 +175,6 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
 
     @Override
     protected URI connectionUri() {
-        return URI.create(ApiSpec.WSS_URL);
+        return URI.create(websocketUrl);
     }
 }

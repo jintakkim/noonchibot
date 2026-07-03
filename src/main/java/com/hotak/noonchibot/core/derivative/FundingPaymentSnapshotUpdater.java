@@ -42,6 +42,6 @@ public class FundingPaymentSnapshotUpdater implements
 
     @Override
     public int phase() {
-        return Phases.DERIVATIVE_INFO_SETUP;
+        return Phases.SNAPSHOT_UPDATER_SETUP;
     }
 }

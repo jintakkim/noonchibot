@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector.binance.derivative;
 import com.hotak.noonchibot.core.TestTaskScheduler;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
+import com.hotak.noonchibot.core.event.EventSubscriber;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderTracker;
@@ -33,7 +34,7 @@ class TradePollerTest {
         eventPublisher = new TestEventPublisher();
         taskScheduler = new TestTaskScheduler();
         orderTracker = mock(OrderTracker.class);
-        poller = new TradePoller(eventPublisher, taskScheduler, orderTracker);
+        poller = new TradePoller(eventPublisher, mock(EventSubscriber.class), taskScheduler, orderTracker);
     }
 
     @Test

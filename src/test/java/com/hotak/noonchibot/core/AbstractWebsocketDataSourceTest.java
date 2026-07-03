@@ -15,6 +15,6 @@ public abstract class AbstractWebsocketDataSourceTest<T extends AbstractWebsocke
     protected abstract T createWebsocketDataSource(MockWsAssistant wsAssistant);
 
     public void doConnection() {
-        dataSource.doConnection();
+        dataSource.onStart();
     }
 }

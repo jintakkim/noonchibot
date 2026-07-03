@@ -14,10 +14,21 @@ java {
     }
 }
 
+sourceSets {
+    testnetTest {
+        java.srcDir 'src/testnetTest/java'
+        resources.srcDir 'src/testnetTest/resources'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
 configurations {
     compileOnly {
         extendsFrom annotationProcessor
     }
+    testnetTestImplementation.extendsFrom testImplementation
+    testnetTestRuntimeOnly.extendsFrom testRuntimeOnly
 }
 
 repositories {
@@ -45,4 +56,13 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+tasks.register('testnetTest', Test) {
+    description = 'Runs tests that exercise testnet-facing integrations.'
+    group = 'verification'
+    testClassesDirs = sourceSets.testnetTest.output.classesDirs
+    classpath = sourceSets.testnetTest.runtimeClasspath
+    useJUnitPlatform()
+    shouldRunAfter tasks.named('test')
 }

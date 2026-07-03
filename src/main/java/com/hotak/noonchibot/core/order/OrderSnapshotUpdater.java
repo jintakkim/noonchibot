@@ -13,11 +13,11 @@ public class OrderSnapshotUpdater implements EventHandler<OrderEvent.SnapshotUpd
     @Override
     public void onEvent(OrderEvent.SnapshotUpdateRequested event) {
         OrderSnapshot snapshot = orderSnapshotRepository
-                .findById(event.clientOrderId())
-                .orElseThrow(() -> new IllegalStateException("OrderSnapshot not found. clientOrderId=" + event.clientOrderId()));
-        if(snapshot.getExchangeOrderId() == null) snapshot.setExchangeOrderId(event.clientOrderId());
-        snapshot.setState(event.orderState());
-        snapshot.setUpdatedAt(event.timestamp());
+                .findById(event.order().clientOrderId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "OrderSnapshot not found. clientOrderId=" + event.order().clientOrderId()
+                ));
+        snapshot.update(event.order());
         orderSnapshotRepository.save(snapshot);
     }
 }

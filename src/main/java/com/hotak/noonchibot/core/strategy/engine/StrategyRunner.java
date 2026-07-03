@@ -5,6 +5,7 @@ import com.hotak.noonchibot.core.strategy.execution.ExecutionPlanExecutor;
 import com.hotak.noonchibot.core.strategy.risk.RiskGate;
 import com.hotak.noonchibot.core.strategy.api.StrategyContext;
 import com.hotak.noonchibot.core.strategy.api.Strategy;
+import com.hotak.noonchibot.core.strategy.safety.TradingStateView;
 
 import com.hotak.noonchibot.core.TimeIterator;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import java.util.Objects;
 public class StrategyRunner extends TimeIterator {
     private final Strategy strategy;
     private final StrategyContextFactory contextFactory;
+    private final TradingStateView tradingStateView;
     private final RiskGate riskGate;
     private final ExecutionPlanExecutor planExecutor;
 
@@ -24,7 +26,7 @@ public class StrategyRunner extends TimeIterator {
             StrategyContextFactory contextFactory,
             ExecutionPlanExecutor planExecutor
     ) {
-        this(strategy, contextFactory, RiskGate.PASS_THROUGH, planExecutor);
+        this(strategy, contextFactory, null, RiskGate.PASS_THROUGH, planExecutor);
     }
 
     public StrategyRunner(
@@ -33,8 +35,19 @@ public class StrategyRunner extends TimeIterator {
             RiskGate riskGate,
             ExecutionPlanExecutor planExecutor
     ) {
+        this(strategy, contextFactory, null, riskGate, planExecutor);
+    }
+
+    public StrategyRunner(
+            Strategy strategy,
+            StrategyContextFactory contextFactory,
+            TradingStateView tradingStateView,
+            RiskGate riskGate,
+            ExecutionPlanExecutor planExecutor
+    ) {
         this.strategy = Objects.requireNonNull(strategy, "strategy");
         this.contextFactory = Objects.requireNonNull(contextFactory, "contextFactory");
+        this.tradingStateView = tradingStateView;
         this.riskGate = Objects.requireNonNull(riskGate, "riskGate");
         this.planExecutor = Objects.requireNonNull(planExecutor, "planExecutor");
     }
@@ -43,6 +56,9 @@ public class StrategyRunner extends TimeIterator {
     public void onTick(Instant timestamp) {
         super.onTick(timestamp);
         StrategyContext context = contextFactory.create(timestamp);
+        if (tradingStateView != null) {
+            context = context.withTradingStateView(tradingStateView);
+        }
         ExecutionPlan plan = strategy.onTick(context);
         ExecutionPlan approvedPlan = riskGate.approve(plan, context);
         if (!approvedPlan.isEmpty()) {

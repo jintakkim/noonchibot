@@ -8,7 +8,6 @@ import com.hotak.noonchibot.core.strategy.arbitrage.ArbitrageEvaluation;
 import com.hotak.noonchibot.core.strategy.arbitrage.PairArbitrageConfig;
 import com.hotak.noonchibot.core.strategy.arbitrage.ArbitragePair;
 import com.hotak.noonchibot.core.strategy.arbitrage.PairArbitrageStrategy;
-import com.hotak.noonchibot.core.strategy.arbitrage.condition.MaxPositionGapCondition;
 import com.hotak.noonchibot.core.strategy.arbitrage.condition.PriceGapCondition;
 
 import java.util.List;
@@ -46,11 +45,12 @@ public class PriceGapArbitrageStrategy extends PairArbitrageStrategy {
                 pair.shortLeg(),
                 pair.totalBaseAmount(),
                 pair.sliceBaseAmount(),
-                new MaxPositionGapCondition(pair.acceptablePositionGap()),
+                PriceGapCondition.atLeast(pair.orderValidityPriceGap()),
                 entryCondition,
                 PriceGapCondition.atMost(pair.exitPriceGap()),
-                PriceGapCondition.atMost(pair.stopLossPriceGap()),
-                pair.unbalancedLegHandling()
+                pair.stopLossPriceGap() == null
+                        ? StrategyCondition.never()
+                        : PriceGapCondition.atMost(pair.stopLossPriceGap())
         );
     }
 }

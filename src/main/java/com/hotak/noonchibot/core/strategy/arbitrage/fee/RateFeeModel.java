@@ -2,16 +2,13 @@ package com.hotak.noonchibot.core.strategy.arbitrage.fee;
 
 import com.hotak.noonchibot.core.order.OrderType;
 import com.hotak.noonchibot.core.trade.TradeType;
+import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
-import java.util.Objects;
 
+@RequiredArgsConstructor
 public class RateFeeModel implements FeeModel {
     private final FeeRateSchedule feeRateSchedule;
-
-    public RateFeeModel(FeeRateSchedule feeRateSchedule) {
-        this.feeRateSchedule = Objects.requireNonNull(feeRateSchedule, "feeRateSchedule");
-    }
 
     @Override
     public BigDecimal estimateFee(

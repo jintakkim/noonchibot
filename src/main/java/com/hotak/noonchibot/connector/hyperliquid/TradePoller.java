@@ -2,8 +2,12 @@ package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.core.LifecycleAware;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.EventPublisher;
+import com.hotak.noonchibot.core.event.EventSubscriber;
+import com.hotak.noonchibot.core.event.ExecutionPolicy;
+import com.hotak.noonchibot.core.event.Subscription;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderTracker;
@@ -18,17 +22,31 @@ class TradePoller implements LifecycleAware {
     private static final Duration TRADE_POLLING_INTERVAL = Duration.ofMinutes(1);
 
     private final EventPublisher eventPublisher;
+    private final EventSubscriber eventSubscriber;
     private final TaskScheduler taskScheduler;
     private final OrderTracker orderTracker;
     private volatile ScheduledFuture<?> scheduledFuture;
+    private Subscription subscription;
 
     @Override
     public void onStart() {
-        scheduledFuture = taskScheduler.scheduleWithFixedDelay(this::poll, TRADE_POLLING_INTERVAL);
+        subscription = eventSubscriber.subscribe(
+                TradeEvent.PollingRequested.class,
+                this::poll,
+                ExecutionPolicy.sequential()
+        );
+        scheduledFuture = taskScheduler.scheduleWithFixedDelay(
+                () -> eventPublisher.publish(new TradeEvent.PollingRequested(Exchange.HYPERLIQUID_DERIVATIVE)),
+                TRADE_POLLING_INTERVAL
+        );
     }
 
     @Override
     public void onShutdown() {
+        if (subscription != null) {
+            subscription.close();
+            subscription = null;
+        }
         if (scheduledFuture != null) {
             scheduledFuture.cancel(true);
             scheduledFuture = null;
@@ -49,5 +67,9 @@ class TradePoller implements LifecycleAware {
                     inFlightOrder.getTradingPair()
             ));
         }
+    }
+
+    private void poll(TradeEvent.PollingRequested event) {
+        if (event.exchange() == Exchange.HYPERLIQUID_DERIVATIVE) poll();
     }
 }

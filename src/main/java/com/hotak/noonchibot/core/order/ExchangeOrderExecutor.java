@@ -275,15 +275,7 @@ public class ExchangeOrderExecutor implements LifecycleAware {
     }
 
     private void saveInitialSnapshot(InFlightOrder order) {
-        orderSnapshotRepository.save(new OrderSnapshot(
-                order.getClientOrderId(),
-                exchange,
-                order.getTradingPair(),
-                order.getCurrentState(),
-                order.getExchangeOrderId(),
-                order.getCreationTimestamp(),
-                order.getLastUpdateTimestamp()
-        ));
+        orderSnapshotRepository.save(OrderSnapshot.from(exchange, order.toView()));
     }
 
     @VisibleForTesting
@@ -294,6 +286,13 @@ public class ExchangeOrderExecutor implements LifecycleAware {
             if (order == null) {
                 throw new IllegalArgumentException("주문을 찾을 수 없습니다. clientOrderId: " + event.clientOrderId());
             }
+            eventPublisher.publish(new OrderEvent.StatusReceived(
+                    order.getTradingPair(),
+                    order.getClientOrderId(),
+                    order.getExchangeOrderId(),
+                    OrderState.PENDING_CANCEL,
+                    Instant.now()
+            ));
             eventPublisher.publish(new OrderEvent.ExchangeCancelRequested(
                     order.getTradingPair(),
                     order.getClientOrderId(),

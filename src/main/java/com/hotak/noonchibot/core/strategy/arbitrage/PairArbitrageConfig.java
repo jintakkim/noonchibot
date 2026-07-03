@@ -17,8 +17,7 @@ public record PairArbitrageConfig(
             ArbitrageLeg shortLeg,
             BigDecimal totalBaseAmount,
             BigDecimal sliceBaseAmount,
-            StrategyCondition<ArbitrageEvaluation> entryCondition,
-            UnbalancedLegHandling unbalancedLegHandling
+            StrategyCondition<ArbitrageEvaluation> entryCondition
     ) {
         this(
                 strategyId,
@@ -28,10 +27,9 @@ public record PairArbitrageConfig(
                         shortLeg,
                         totalBaseAmount,
                         sliceBaseAmount,
-                        BigDecimal.ZERO,
                         entryCondition,
-                        StrategyCondition.never(),
-                        unbalancedLegHandling
+                        entryCondition,
+                        StrategyCondition.never()
                 ))
         );
     }

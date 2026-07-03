@@ -8,6 +8,7 @@ import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.OrderState;
+import com.hotak.noonchibot.core.order.OrderStatusReader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -18,7 +19,7 @@ import java.util.Map;
 
 @Slf4j
 @RequiredArgsConstructor
-class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateRequested>, LifecycleAware {
+class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateRequested>, LifecycleAware, OrderStatusReader {
 
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
@@ -28,23 +29,28 @@ class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateReque
 
     @Override
     public void onEvent(OrderEvent.StatusUpdateRequested event) {
-        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(event.tradingPair());
+        eventPublisher.publish(fetch(event.tradingPair(), event.clientOrderId()));
+    }
+
+    @Override
+    public OrderEvent.StatusReceived fetch(String tradingPair, String clientOrderId) {
+        String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.GET)
                 .pathUrl(ApiSpec.ORDER_PATH_URL)
-                .params(Map.of("symbol", symbol, "origClientOrderId", event.clientOrderId()))
+                .params(Map.of("symbol", symbol, "origClientOrderId", clientOrderId))
                 .authRequired(true)
                 .build();
 
         JsonNode updatedOrder = restAssistant.executeRequestAndGetJsonBody(request);
         OrderState newState = ApiSpec.ORDER_STATE.get(updatedOrder.get("status").asString());
-        eventPublisher.publish(new OrderEvent.StatusReceived(
-                event.tradingPair(),
-                event.clientOrderId(),
+        return new OrderEvent.StatusReceived(
+                tradingPair,
+                clientOrderId,
                 updatedOrder.get("orderId").asString(),
                 newState,
                 Instant.ofEpochMilli(updatedOrder.get("updateTime").asLong())
-        ));
+        );
     }
 
     @Override
