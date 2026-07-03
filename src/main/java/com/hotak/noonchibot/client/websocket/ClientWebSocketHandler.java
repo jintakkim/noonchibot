@@ -43,7 +43,7 @@ public class ClientWebSocketHandler extends TextWebSocketHandler {
                         METHOD_REQUIRED
                 );
             }
-            dispatcher.dispatch(session.getId(), method.asText(), request.get(SUBSCRIPTION_FIELD));
+            dispatcher.dispatch(session.getId(), method.asString(), request.get(SUBSCRIPTION_FIELD));
         } catch (WebSocketRequestException exception) {
             sessions.send(session.getId(), exception.toMessage());
         } catch (Exception exception) {

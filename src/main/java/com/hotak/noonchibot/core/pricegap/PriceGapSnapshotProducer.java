@@ -64,6 +64,7 @@ public class PriceGapSnapshotProducer extends TimeIterator {
             return;
         }
         lastPublishedAt = timestamp;
+        List<PriceGapSnapshot> snapshots = new ArrayList<>();
         for (PriceGapSubscriptionKey key : subscriptionRegistry.activeKeys()) {
             PriceGapFeedDefinition definition = definitions.get(key);
             if (definition == null) {
@@ -74,9 +75,10 @@ public class PriceGapSnapshotProducer extends TimeIterator {
             }
             createSnapshot(definition, timestamp).ifPresent(snapshot -> {
                 snapshotStore.update(snapshot);
-                snapshotPublisher.publish(snapshot);
+                snapshots.add(snapshot);
             });
         }
+        if (!snapshots.isEmpty()) snapshotPublisher.publish(List.copyOf(snapshots));
     }
 
     private Optional<PriceGapSnapshot> createSnapshot(

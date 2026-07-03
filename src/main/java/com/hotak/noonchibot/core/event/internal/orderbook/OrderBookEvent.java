@@ -7,9 +7,11 @@ import com.hotak.noonchibot.core.trade.TradeType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 public sealed interface OrderBookEvent extends CoreEvent {
     record TrackingRequested(String tradingPair) implements OrderBookEvent {}
+    record TrackingBatchRequested(Set<String> tradingPairs) implements OrderBookEvent {}
 
     record SnapshotReceived(
             String tradingPair,

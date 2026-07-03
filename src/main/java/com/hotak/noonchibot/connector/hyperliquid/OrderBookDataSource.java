@@ -20,10 +20,12 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
 class OrderBookDataSource extends AbstractOrderBookDataSource {
+    private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
     @RequiredArgsConstructor
     @Getter
     private enum MessageMethod {
@@ -56,6 +58,16 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
     @Override
     protected URI connectionUri() {
         return URI.create(websocketUrl);
+    }
+
+    @Override
+    protected Duration heartbeatInterval() {
+        return HEARTBEAT_INTERVAL;
+    }
+
+    @Override
+    protected void sendHeartbeat(WsConnection connection) {
+        connection.send(new WsRequest(Map.of("method", "ping"), false));
     }
 
     @Override
@@ -105,7 +117,9 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
 
     @Override
     protected boolean isAckMessage(JsonNode msg) {
-        return msg.has("channel") && "subscriptionResponse".equals(msg.get("channel").asString());
+        return msg.has("channel")
+                && ("subscriptionResponse".equals(msg.get("channel").asString())
+                || "pong".equals(msg.get("channel").asString()));
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.connector.web.WsConnection;
 import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSource;
 import com.hotak.noonchibot.core.event.EventPublisher;
@@ -32,6 +33,7 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
     }
 
     private static final Duration FUNDING_INTERVAL = Duration.ofHours(1);
+    private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
 
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
@@ -60,6 +62,16 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
     }
 
     @Override
+    protected Duration heartbeatInterval() {
+        return HEARTBEAT_INTERVAL;
+    }
+
+    @Override
+    protected void sendHeartbeat(WsConnection connection) {
+        connection.send(new WsRequest(Map.of("method", "ping"), false));
+    }
+
+    @Override
     protected void sendSubscribe(Set<String> tradingPairs) {
         sendSubscriptionRequest(MessageMethod.SUBSCRIBE, tradingPairs);
 
@@ -80,7 +92,9 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
     @Override
     protected boolean isAckMessage(JsonNode msg) {
         JsonNode channel = msg.get("channel");
-        return channel != null && "subscriptionResponse".equals(channel.asString());
+        return channel != null
+                && ("subscriptionResponse".equals(channel.asString())
+                || "pong".equals(channel.asString()));
     }
 
     @Override

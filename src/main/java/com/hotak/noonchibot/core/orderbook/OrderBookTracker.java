@@ -74,6 +74,15 @@ public class OrderBookTracker implements LifecycleAware {
         eventPublisher.publish(new OrderBookEvent.TrackingRequested(tradingPair));
     }
 
+    private void addInitialTradingPairs() {
+        pairsToSubscribe.forEach(tradingPair ->
+                orderBooks.put(tradingPair, new OrderBook(isDex))
+        );
+        if (!pairsToSubscribe.isEmpty()) {
+            eventPublisher.publish(new OrderBookEvent.TrackingBatchRequested(Set.copyOf(pairsToSubscribe)));
+        }
+    }
+
     public Map<String, OrderBook> getOrderBooks() {
         return new HashMap<>(orderBooks);
     }
@@ -122,7 +131,7 @@ public class OrderBookTracker implements LifecycleAware {
         subscriptions.add(
                 eventSubscriber.subscribe(OrderBookEvent.SnapshotReceived.class, this::processSnapshot, ExecutionPolicy.sequential())
         );
-        pairsToSubscribe.forEach(this::addTradingPair);
+        addInitialTradingPairs();
     }
 
     @Override

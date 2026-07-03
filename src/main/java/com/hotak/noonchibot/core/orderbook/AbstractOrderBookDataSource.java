@@ -69,6 +69,24 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
         }
     }
 
+    void trackingOrderBooks(OrderBookEvent.TrackingBatchRequested req) {
+        Set<String> newPairs = new HashSet<>(req.tradingPairs());
+        newPairs.removeAll(subscribedPairs);
+        if (newPairs.isEmpty()) return;
+        subscribedPairs.addAll(newPairs);
+        if (!isConnected()) {
+            log.warn("WebSocket not connected; subscriptions will be sent after reconnect: {}", newPairs);
+            return;
+        }
+        try {
+            sendSubscribe(newPairs);
+            newPairs.forEach(this::publishSnapshot);
+        } catch (Exception e) {
+            subscribedPairs.removeAll(newPairs);
+            throw e;
+        }
+    }
+
     /**
      * 연결이 종료되고 재연결시 기존 구독분을 다시 연결한다.
      *
@@ -139,6 +157,12 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
                 OrderBookEvent.TrackingRequested.class,
                 this::trackingOrderBook,
                 ExecutionPolicy.concurrent()
+                ));
+        handlerSubscriptions.add(
+                eventSubscriber.subscribe(
+                        OrderBookEvent.TrackingBatchRequested.class,
+                        this::trackingOrderBooks,
+                        ExecutionPolicy.concurrent()
                 ));
         snapshotRefreshTask = taskScheduler.scheduleAtFixedRate(
                 this::refreshAllSnapshots,

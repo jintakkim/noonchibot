@@ -38,7 +38,7 @@ class PriceGapSnapshotProducerTest {
         PriceGapSnapshotProducer producer = new PriceGapSnapshotProducer(
                 registry,
                 store,
-                published::add,
+                published::addAll,
                 List.of(new PriceGapFeedDefinition(
                         key,
                         Map.of(

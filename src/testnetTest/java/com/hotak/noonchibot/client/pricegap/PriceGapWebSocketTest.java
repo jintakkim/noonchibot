@@ -81,7 +81,7 @@ class PriceGapWebSocketTest {
                       "method": "subscribe",
                       "subscription": {
                         "type": "priceGap",
-                        "pair": "BTC-USDT"
+                        "pairs": ["BTC-USDT"]
                       }
                     }
                     """));
@@ -94,10 +94,10 @@ class PriceGapWebSocketTest {
             assertThat(clientHandler.messageReceived.await(10, TimeUnit.SECONDS)).isTrue();
             JsonNode message = objectMapper.readTree(clientHandler.payload.get());
             assertThat(message.path("type").asString()).isEqualTo(LAST_TRADE_PRICE_GAP_EVENT);
-            assertThat(message.path("data").path("key").path("tradingPair").asText())
+            assertThat(message.path("data").get(0).path("key").path("tradingPair").asText())
                     .isEqualTo("BTC-USDT");
-            assertThat(message.path("data").path("exchanges").size()).isEqualTo(2);
-            assertThat(message.path("data").path("spread").isObject()).isTrue();
+            assertThat(message.path("data").get(0).path("exchanges").size()).isEqualTo(2);
+            assertThat(message.path("data").get(0).path("spread").isObject()).isTrue();
             assertThat(store.latest(KEY)).isPresent();
         } finally {
             session.close(CloseStatus.NORMAL);

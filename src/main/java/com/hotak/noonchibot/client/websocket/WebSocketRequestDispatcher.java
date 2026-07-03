@@ -43,7 +43,7 @@ public class WebSocketRequestDispatcher {
                 || !subscription.get(TYPE_FIELD).isString()) {
             throw new WebSocketRequestException(INVALID_REQUEST, TYPE_REQUIRED);
         }
-        return subscription.get(TYPE_FIELD).asText();
+        return subscription.get(TYPE_FIELD).asString();
     }
 
     private record RequestKey(String method, String subscriptionType) {

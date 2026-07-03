@@ -1,6 +1,8 @@
 package com.hotak.noonchibot.core.pricegap;
 
 import java.util.Set;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -15,9 +17,17 @@ public class PriceGapSubscriptionRegistry {
         keysBySubscriber.computeIfAbsent(subscriberId, ignored -> ConcurrentHashMap.newKeySet()).add(key);
     }
 
+    public void subscribe(String subscriberId, Set<PriceGapSubscriptionKey> keys) {
+        keys.forEach(key -> subscribe(subscriberId, key));
+    }
+
     public void unsubscribe(String subscriberId, PriceGapSubscriptionKey key) {
         remove(subscribersByKey, key, subscriberId);
         remove(keysBySubscriber, subscriberId, key);
+    }
+
+    public void unsubscribe(String subscriberId, Set<PriceGapSubscriptionKey> keys) {
+        keys.forEach(key -> unsubscribe(subscriberId, key));
     }
 
     public void removeSubscriber(String subscriberId) {
@@ -34,6 +44,13 @@ public class PriceGapSubscriptionRegistry {
 
     public Set<String> subscribers(PriceGapSubscriptionKey key) {
         return Set.copyOf(subscribersByKey.getOrDefault(key, Set.of()));
+    }
+
+    public Map<String, Set<PriceGapSubscriptionKey>> subscriptionsBySubscriber() {
+        return keysBySubscriber.entrySet().stream().collect(Collectors.toUnmodifiableMap(
+                Map.Entry::getKey,
+                entry -> Set.copyOf(entry.getValue())
+        ));
     }
 
     private <K, V> void remove(ConcurrentMap<K, Set<V>> map, K key, V value) {

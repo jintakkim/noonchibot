@@ -1,8 +1,10 @@
 package com.hotak.noonchibot.core.pricegap;
 
+import java.util.List;
+
 @FunctionalInterface
 public interface PriceGapSnapshotPublisher {
-    PriceGapSnapshotPublisher NOOP = snapshot -> {};
+    PriceGapSnapshotPublisher NOOP = snapshots -> {};
 
-    void publish(PriceGapSnapshot snapshot);
+    void publish(List<PriceGapSnapshot> snapshots);
 }

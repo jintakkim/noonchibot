@@ -9,7 +9,7 @@ public final class WebSocketErrorConstants {
 
     public static final String METHOD_REQUIRED = "websocket request method is required";
     public static final String TYPE_REQUIRED = "subscription type is required";
-    public static final String PAIR_REQUIRED = "pair is required";
+    public static final String PAIR_OR_PAIRS_REQUIRED = "pair or pairs is required";
 
     private WebSocketErrorConstants() {
     }

@@ -1,7 +1,5 @@
 package com.hotak.noonchibot.core;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.client.websocket.WebSocketRequestException;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
 import com.hotak.noonchibot.core.event.internal.WebsocketUnavailableEvent;
@@ -17,8 +15,7 @@ import java.time.Instant;
 import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
-public abstract class AbstractWebsocketDataSource
-        implements LifecycleAware, WebsocketStatus, WsConnectionListener {
+public abstract class AbstractWebsocketDataSource implements LifecycleAware, WebsocketStatus, WsConnectionListener {
     private static final int MAX_CONSECUTIVE_FAILURES = 5;
     private static final Duration INITIAL_RETRY_DELAY = Duration.ofSeconds(1);
     private static final Duration MAX_RETRY_DELAY = Duration.ofSeconds(30);
@@ -30,6 +27,7 @@ public abstract class AbstractWebsocketDataSource
     private volatile boolean running;
     private int consecutiveFailures;
     private volatile ScheduledFuture<?> reconnectTask;
+    private volatile ScheduledFuture<?> heartbeatTask;
     private volatile Instant lastRecvTime;
     protected volatile WsConnection wsConnection;
 
@@ -53,6 +51,7 @@ public abstract class AbstractWebsocketDataSource
         }
         wsConnection = connection;
         handleConnected();
+        startHeartbeat(connection);
     }
 
     @Override
@@ -70,6 +69,7 @@ public abstract class AbstractWebsocketDataSource
 
     @Override
     public final void onClosed(CloseStatus status) {
+        stopHeartbeat();
         wsConnection = null;
         scheduleReconnect(status);
     }
@@ -114,12 +114,35 @@ public abstract class AbstractWebsocketDataSource
         consecutiveFailures = 0;
     }
 
+    private void startHeartbeat(WsConnection connection) {
+        Duration interval = heartbeatInterval();
+        if (interval == null) return;
+        stopHeartbeat();
+        heartbeatTask = taskScheduler.scheduleAtFixedRate(
+                () -> {
+                    if (connection == wsConnection && connection.isConnected()) {
+                        sendHeartbeat(connection);
+                    }
+                },
+                Instant.now().plus(interval),
+                interval
+        );
+    }
+
+    private void stopHeartbeat() {
+        ScheduledFuture<?> task = heartbeatTask;
+        heartbeatTask = null;
+        if (task != null) task.cancel(false);
+    }
+
     private String endpoint() {
         URI uri = connectionUri();
         return uri.getScheme() + "://" + uri.getAuthority();
     }
 
     protected abstract URI connectionUri();
+    protected Duration heartbeatInterval() { return null; }
+    protected void sendHeartbeat(WsConnection connection) { }
     protected abstract void handleConnected();
     protected abstract WebsocketMessageResult processMessage(WsResponse wsResponse);
 
@@ -143,6 +166,7 @@ public abstract class AbstractWebsocketDataSource
     @Override
     public void onShutdown() {
         running = false;
+        stopHeartbeat();
         ScheduledFuture<?> task = reconnectTask;
         reconnectTask = null;
         if (task != null) task.cancel(false);

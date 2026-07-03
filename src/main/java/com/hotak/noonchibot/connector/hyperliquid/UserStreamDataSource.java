@@ -20,11 +20,13 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
 class UserStreamDataSource extends AbstractWebsocketDataSource {
+    private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
     private final String userAddress;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final EventPublisher eventPublisher;
@@ -50,6 +52,16 @@ class UserStreamDataSource extends AbstractWebsocketDataSource {
     @Override
     protected URI connectionUri() {
         return URI.create(websocketUrl);
+    }
+
+    @Override
+    protected Duration heartbeatInterval() {
+        return HEARTBEAT_INTERVAL;
+    }
+
+    @Override
+    protected void sendHeartbeat(WsConnection connection) {
+        connection.send(new WsRequest(Map.of("method", "ping"), false));
     }
 
     @Override

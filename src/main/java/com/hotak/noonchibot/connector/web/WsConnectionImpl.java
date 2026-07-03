@@ -10,6 +10,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.List;
 
 @Slf4j
@@ -18,6 +19,7 @@ public class WsConnectionImpl extends TextWebSocketHandler implements WsConnecti
     private static final int SEND_TIME_LIMIT_MILLIS = 10_000;
     private static final int SEND_BUFFER_SIZE_LIMIT_BYTES = 1024 * 1024;
 
+    private final URI connectionUri;
     private final ObjectMapper objectMapper;
     private final Authenticator authenticator;
     private final List<WsPreProcessor> preProcessors;
@@ -72,19 +74,25 @@ public class WsConnectionImpl extends TextWebSocketHandler implements WsConnecti
                 SEND_TIME_LIMIT_MILLIS,
                 SEND_BUFFER_SIZE_LIMIT_BYTES
         );
+        log.info(
+                "WebSocket connected: source={}, endpoint={}, sessionId={}",
+                listener.getClass().getName(), endpoint(), session.getId()
+        );
         listener.onConnected(this);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        log.info("WebSocket connection closed: endpoint={}, status={}", endpoint(session), status);
+        log.info(
+                "WebSocket connection closed: source={}, endpoint={}, sessionId={}, status={}",
+                listener.getClass().getName(), endpoint(), session.getId(), status
+        );
         this.session = null;
         listener.onClosed(status);
     }
 
-    private String endpoint(WebSocketSession session) {
-        if (session.getUri() == null) return "unknown";
-        return session.getUri().getScheme() + "://" + session.getUri().getAuthority();
+    private String endpoint() {
+        return connectionUri.getScheme() + "://" + connectionUri.getRawAuthority();
     }
 
     @Override

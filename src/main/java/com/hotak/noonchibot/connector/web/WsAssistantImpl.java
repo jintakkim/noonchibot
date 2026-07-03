@@ -23,6 +23,7 @@ public class WsAssistantImpl implements WsAssistant {
     public WsConnection connect(URI wsUrl, WsConnectionListener listener) {
         log.info("WebSocket connecting: {}://{}", wsUrl.getScheme(), wsUrl.getRawAuthority());
         WsConnectionImpl wsConnection = new WsConnectionImpl(
+                wsUrl,
                 objectMapper,
                 authenticator,
                 preProcessors,
