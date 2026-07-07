@@ -27,26 +27,30 @@ public class RestAssistantImpl implements RestAssistant {
     }
 
     public RestResponse executeRequestAndGetResponse(RestRequest request) {
-        RestRequest finalRequest = applyAuthentication(applyPreProcessors(request));
-        if(finalRequest.weightOverrides() == null) {
+        RestRequest processedRequest = applyPreProcessors(request);
+        if(processedRequest.weightOverrides() == null) {
             return asyncThrottler.execute(
-                    finalRequest.throttlerLimitId(),
+                    processedRequest.throttlerLimitId(),
                     () -> {
-                        RestResponse response = call(finalRequest);
-                        return applyPostProcessors(response);
+                        RestResponse response = executeReadyRequest(processedRequest);
+                        if (response.statusCode().isError() && request.throwError()) {
+                            log.error("네트워크 문제 발생, response: {}", response);
+                            throw new ExchangeApiException(response.statusCode(), response.body());
+                        }
+                        return response;
                     }).join();
         }
         return asyncThrottler.execute(
-                finalRequest.throttlerLimitId(),
+                processedRequest.throttlerLimitId(),
                 () -> {
-                    RestResponse response = applyPostProcessors(call(finalRequest));
+                    RestResponse response = executeReadyRequest(processedRequest);
                     if (response.statusCode().isError() && request.throwError()) {
                         log.error("네트워크 문제 발생, response: {}", response);
                         throw new ExchangeApiException(response.statusCode(), response.body());
                     }
                     return response;
                 },
-                finalRequest.weightOverrides()).join();
+                processedRequest.weightOverrides()).join();
     }
 
     private RestRequest applyPreProcessors(RestRequest request) {
@@ -62,6 +66,11 @@ public class RestAssistantImpl implements RestAssistant {
             return authenticator.restAuthenticate(request);
         }
         return request;
+    }
+
+    private RestResponse executeReadyRequest(RestRequest request) {
+        RestRequest authenticatedRequest = applyAuthentication(request);
+        return applyPostProcessors(call(authenticatedRequest));
     }
 
     private RestResponse call(RestRequest request) {

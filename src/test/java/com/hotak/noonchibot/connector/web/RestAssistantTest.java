@@ -19,6 +19,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.http.HttpClient;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -178,6 +179,34 @@ public class RestAssistantTest {
         );
         Assertions.assertThat(throttler.weightOverrides).containsEntry("test-weight", 1);
 
+    }
+
+    @Test
+    @DisplayName("인증은 throttler 대기 이후 실제 호출 직전에 수행한다")
+    void auth_runsAfterThrottlerSlotIsAcquired() {
+        stubFor(get("/api/account")
+                .withHeader("X-API-KEY", equalTo("test-key"))
+                .willReturn(okJson("{\"balance\":\"1000\"}")));
+
+        List<String> events = new ArrayList<>();
+        restAssistant = new RestAssistantImpl(
+                restClient,
+                List.of(),
+                List.of(),
+                new RecordingAuthenticator(events),
+                new RecordingAsyncThrottler(events),
+                objectMapper
+        );
+
+        restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .pathUrl("/api/account")
+                        .method(HttpMethod.GET)
+                        .authRequired(true)
+                        .build()
+        );
+
+        assertThat(events).containsExactly("throttled", "authenticated");
     }
 
     @Test
@@ -361,6 +390,47 @@ public class RestAssistantTest {
         @Override
         public WsRequest wsAuthenticate(WsRequest wsRequest) {
             throw new UnsupportedOperationException("Not supported yet.");
+        }
+    }
+
+    static class RecordingAuthenticator implements Authenticator {
+        private final List<String> events;
+
+        RecordingAuthenticator(List<String> events) {
+            this.events = events;
+        }
+
+        @Override
+        public RestRequest restAuthenticate(RestRequest restRequest) {
+            events.add("authenticated");
+            HttpHeaders headers = new HttpHeaders(restRequest.headers());
+            headers.add("X-API-KEY", "test-key");
+            return restRequest.toBuilder().headers(headers).build();
+        }
+
+        @Override
+        public WsRequest wsAuthenticate(WsRequest wsRequest) {
+            throw new UnsupportedOperationException("Not supported yet.");
+        }
+    }
+
+    static class RecordingAsyncThrottler implements AsyncThrottler {
+        private final List<String> events;
+
+        RecordingAsyncThrottler(List<String> events) {
+            this.events = events;
+        }
+
+        @Override
+        public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task, Map<String, Integer> weightOverrides) {
+            events.add("throttled");
+            return CompletableFuture.completedFuture(task.get());
+        }
+
+        @Override
+        public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task) {
+            events.add("throttled");
+            return CompletableFuture.completedFuture(task.get());
         }
     }
 

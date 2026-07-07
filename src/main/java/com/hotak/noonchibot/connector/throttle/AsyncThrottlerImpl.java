@@ -14,6 +14,7 @@ import static java.util.stream.Collectors.toMap;
 @Slf4j
 public class AsyncThrottlerImpl implements AsyncThrottler {
     private static final Duration DEFAULT_RETRY_INTERVAL = Duration.ofMillis(100);
+    private static final Duration SLOW_WAIT_WARNING_THRESHOLD = Duration.ofSeconds(1);
     private static final double DEFAULT_SAFETY_MARGIN_PCT = 0.05;
 
     private final Map<String, RateLimitPool> pools;
@@ -53,13 +54,15 @@ public class AsyncThrottlerImpl implements AsyncThrottler {
                 if (matched != null) consumes.add(new PoolConsume(matched, weight));
             }
             consumes.add(new PoolConsume(rateLimitPool, weightOverrides.getOrDefault(limitId, rateLimitPool.rateLimit.weight())));
-            waitForCapacity(consumes);
+            waitForCapacity(limitId, consumes);
             recordAll(consumes);
             return task.get();
         }, executor);
     }
 
-    private void waitForCapacity(List<PoolConsume> consumes) {
+    private void waitForCapacity(String limitId, List<PoolConsume> consumes) {
+        long waitStartedAt = System.nanoTime();
+        boolean warned = false;
         while (!consumes.stream().allMatch(c -> c.pool().hasCapacity(c.weight(), safetyMarginPct))) {
             try {
                 Thread.sleep(retryInterval);
@@ -67,11 +70,28 @@ public class AsyncThrottlerImpl implements AsyncThrottler {
                 Thread.currentThread().interrupt();
                 break;
             }
+            Duration waited = Duration.ofNanos(System.nanoTime() - waitStartedAt);
+            if (!warned && waited.compareTo(SLOW_WAIT_WARNING_THRESHOLD) >= 0) {
+                warned = true;
+                log.warn(
+                        "Throttler wait exceeded threshold: limitId={}, waitedMs={}, consumes={}",
+                        limitId,
+                        waited.toMillis(),
+                        describeConsumes(consumes)
+                );
+            }
         }
     }
 
     private void recordAll(List<PoolConsume> consumes) {
         consumes.forEach(c -> c.pool().record(c.weight()));
+    }
+
+    private String describeConsumes(List<PoolConsume> consumes) {
+        return consumes.stream()
+                .map(consume -> consume.pool().rateLimit.limitId() + ":" + consume.weight())
+                .toList()
+                .toString();
     }
 
     private record PoolConsume(RateLimitPool pool, int weight) {
