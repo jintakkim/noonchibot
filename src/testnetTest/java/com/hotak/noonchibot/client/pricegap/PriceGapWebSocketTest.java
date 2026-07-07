@@ -130,6 +130,7 @@ class PriceGapWebSocketTest {
                         Exchange.BINANCE_DERIVATIVE, binanceDerivative,
                         Exchange.HYPERLIQUID_DERIVATIVE, hyperliquid
                 ),
+                Map.of(),
                 new StableQuotePriceConverter()
         );
     }

@@ -29,12 +29,14 @@ public class PriceGapSnapshotProducer extends TimeIterator {
     private static final BigDecimal BPS_MULTIPLIER = new BigDecimal("10000");
     private static final Duration PUBLISH_INTERVAL = Duration.ofSeconds(1);
     private static final Duration MAXIMUM_PRICE_AGE = Duration.ofSeconds(5);
+    private static final Duration MAXIMUM_STABLE_RATE_AGE = Duration.ofMinutes(1);
 
     private final PriceGapSubscriptionRegistry subscriptionRegistry;
     private final PriceGapSnapshotStore snapshotStore;
     private final PriceGapSnapshotPublisher snapshotPublisher;
     private final Map<PriceGapSubscriptionKey, PriceGapFeedDefinition> definitions;
     private final Map<Exchange, OrderBookTracker> orderBookTrackers;
+    private final Map<Exchange, Duration> maximumPriceAges;
     private final StableQuotePriceConverter priceConverter;
     private Instant lastPublishedAt;
     private long sequence;
@@ -46,6 +48,7 @@ public class PriceGapSnapshotProducer extends TimeIterator {
             PriceGapSnapshotPublisher snapshotPublisher,
             List<PriceGapFeedDefinition> definitions,
             Map<Exchange, OrderBookTracker> orderBookTrackers,
+            Map<Exchange, Duration> maximumPriceAges,
             StableQuotePriceConverter priceConverter
     ) {
         this.subscriptionRegistry = Objects.requireNonNull(subscriptionRegistry, "subscriptionRegistry");
@@ -54,6 +57,7 @@ public class PriceGapSnapshotProducer extends TimeIterator {
         this.definitions = List.copyOf(definitions).stream()
                 .collect(Collectors.toUnmodifiableMap(PriceGapFeedDefinition::key, Function.identity()));
         this.orderBookTrackers = Map.copyOf(orderBookTrackers);
+        this.maximumPriceAges = Map.copyOf(maximumPriceAges);
         this.priceConverter = Objects.requireNonNull(priceConverter, "priceConverter");
     }
 
@@ -89,18 +93,22 @@ public class PriceGapSnapshotProducer extends TimeIterator {
         StablePairPrice stablePairPrice = stablePairPrice(definition, timestamp).orElse(null);
         List<NormalizedExchangePrice> prices = new ArrayList<>();
 
-        definition.sourceTradingPairs().forEach((exchange, sourcePair) ->
-                lastTradePrice(exchange, sourcePair)
-                        .filter(lastTrade -> !lastTrade.timestamp().isBefore(timestamp.minus(MAXIMUM_PRICE_AGE)))
-                        .flatMap(lastTrade -> normalize(
-                                exchange,
-                                sourcePair,
-                                lastTrade,
-                                targetQuote,
-                                stablePairPrice
-                        ))
-                        .ifPresent(prices::add)
-        );
+        definition.sourceTradingPairs().forEach((exchange, sourcePair) -> {
+            Duration maximumPriceAge = maximumPriceAges.getOrDefault(exchange, MAXIMUM_PRICE_AGE);
+            Optional<LastTradePrice> lastTrade = lastTradePrice(exchange, sourcePair);
+            logLastTrade(definition.key(), "source", exchange, sourcePair,
+                    lastTrade, timestamp, maximumPriceAge);
+            lastTrade
+                    .filter(trade -> !trade.timestamp().isBefore(timestamp.minus(maximumPriceAge)))
+                    .flatMap(trade -> normalize(
+                            exchange,
+                            sourcePair,
+                            trade,
+                            targetQuote,
+                            stablePairPrice
+                    ))
+                    .ifPresent(prices::add);
+        });
         if (prices.isEmpty()) {
             return Optional.empty();
         }
@@ -129,13 +137,42 @@ public class PriceGapSnapshotProducer extends TimeIterator {
         if (definition.stableRateExchange() == null) {
             return Optional.empty();
         }
-        return lastTradePrice(definition.stableRateExchange(), definition.stableRateTradingPair())
-                .filter(lastTrade -> !lastTrade.timestamp().isBefore(timestamp.minus(MAXIMUM_PRICE_AGE)))
-                .map(lastTrade -> StablePairPrice.fromTradingPair(
+        Optional<LastTradePrice> lastTrade = lastTradePrice(
+                definition.stableRateExchange(),
+                definition.stableRateTradingPair()
+        );
+        logLastTrade(definition.key(), "stable-rate", definition.stableRateExchange(),
+                definition.stableRateTradingPair(), lastTrade, timestamp, MAXIMUM_STABLE_RATE_AGE);
+        return lastTrade
+                .filter(trade -> !trade.timestamp().isBefore(timestamp.minus(MAXIMUM_STABLE_RATE_AGE)))
+                .map(trade -> StablePairPrice.fromTradingPair(
                         definition.stableRateTradingPair(),
-                        lastTrade.price(),
-                        lastTrade.timestamp()
+                        trade.price(),
+                        trade.timestamp()
                 ));
+    }
+
+    private void logLastTrade(
+            PriceGapSubscriptionKey key,
+            String role,
+            Exchange exchange,
+            String tradingPair,
+            Optional<LastTradePrice> lastTrade,
+            Instant timestamp,
+            Duration maximumAge
+    ) {
+        if (!log.isDebugEnabled()) return;
+        if (lastTrade.isEmpty()) {
+            log.debug("Price gap recent trade missing: key={}, role={}, exchange={}, pair={}",
+                    key.tradingPair(), role, exchange, tradingPair);
+            return;
+        }
+        LastTradePrice trade = lastTrade.get();
+        long ageMillis = Duration.between(trade.timestamp(), timestamp).toMillis();
+        boolean valid = !trade.timestamp().isBefore(timestamp.minus(maximumAge));
+        log.debug("Price gap recent trade: key={}, role={}, exchange={}, pair={}, price={}, tradeTime={}, ageMs={}, valid={}",
+                key.tradingPair(), role, exchange, tradingPair,
+                trade.price(), trade.timestamp(), ageMillis, valid);
     }
 
     private Optional<LastTradePrice> lastTradePrice(Exchange exchange, String tradingPair) {

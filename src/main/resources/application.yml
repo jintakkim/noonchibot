@@ -17,6 +17,15 @@ spring:
                 format_sql: true
         show-sql: false
 
+market-analytics:
+    funding:
+        # 조회 기간
+        history-window: 7d
+        # 가중 이동 평균에서 영향력이 절반으로 줄어드는 시
+        weighted-average-half-life: 1d
+        # 정산 시각 기준 확정 펀딩비 조회 시점(실패시 fundingTime + 1, fundingTime + 2, ... 재시도 한다.)
+        settlement-fetch-delays: [1s, 2s, 5s, 10s, 30s]
+
 binance:
     network: ${BINANCE_NETWORK}
     api_key: ${BINANCE_API_KEY}

@@ -6,7 +6,7 @@ import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsConnection;
 import com.hotak.noonchibot.connector.web.WsRequest;
-import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSource;
+import com.hotak.noonchibot.core.derivative.funding.AbstractWsFundingInfoDataSource;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.RequiredArgsConstructor;

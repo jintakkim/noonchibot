@@ -1,6 +1,7 @@
-package com.hotak.noonchibot.core.derivative;
+package com.hotak.noonchibot.core.derivative.funding;
 
 import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.derivative.PositionSide;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;

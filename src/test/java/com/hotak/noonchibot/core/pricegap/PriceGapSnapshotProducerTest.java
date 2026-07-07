@@ -53,6 +53,7 @@ class PriceGapSnapshotProducerTest {
                         Exchange.HYPERLIQUID_DERIVATIVE, hyperliquid,
                         Exchange.BINANCE_SPOT, stableRate
                 ),
+                Map.of(),
                 new StableQuotePriceConverter()
         );
 
@@ -85,6 +86,7 @@ class PriceGapSnapshotProducerTest {
                         null
                 )),
                 Map.of(Exchange.BINANCE_DERIVATIVE, tracker),
+                Map.of(),
                 new StableQuotePriceConverter()
         );
 

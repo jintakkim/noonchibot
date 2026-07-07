@@ -2,7 +2,7 @@ package com.hotak.noonchibot.core.strategy.view;
 
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.balance.AccountBalanceTracker;
-import com.hotak.noonchibot.core.derivative.FundingInfoTracker;
+import com.hotak.noonchibot.core.derivative.funding.FundingInfoTracker;
 import com.hotak.noonchibot.core.derivative.Position;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.derivative.PositionTracker;

@@ -5,7 +5,8 @@ import com.hotak.noonchibot.connector.binance.derivative.DerivativeExchangeAdapt
 import com.hotak.noonchibot.connector.binance.spot.SpotExchangeAdapterFactory;
 import com.hotak.noonchibot.core.BootStrap;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.derivative.FundingPaymentRepository;
+import com.hotak.noonchibot.core.derivative.funding.FundingPaymentRepository;
+import com.hotak.noonchibot.core.derivative.funding.FundingHistoryProperties;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
@@ -81,7 +82,8 @@ public class BinanceConfig {
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
             OrderSnapshotRepository orderSnapshotRepository,
-            TradingSafetyController tradingSafetyController
+            TradingSafetyController tradingSafetyController,
+            FundingHistoryProperties fundingHistoryProperties
     ) {
         return DerivativeExchangeAdapterFactory.create(
                 bootStrap,
@@ -94,7 +96,8 @@ public class BinanceConfig {
                 webSocketClient,
                 tradeRepository,
                 fundingPaymentRepository,
-                tradingSafetyController
+                tradingSafetyController,
+                fundingHistoryProperties
         );
 
     }

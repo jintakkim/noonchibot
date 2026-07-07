@@ -1,6 +1,9 @@
-package com.hotak.noonchibot.core.derivative;
+package com.hotak.noonchibot.core.derivative.funding;
 
 import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.derivative.Position;
+import com.hotak.noonchibot.core.derivative.PositionSide;
+import com.hotak.noonchibot.core.derivative.PositionTracker;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
 import com.hotak.noonchibot.core.event.TestEventSubscriber;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingPaymentEvent;
@@ -23,12 +26,14 @@ class FundingPaymentTrackerTest {
     private PositionTracker positionTracker;
     private FundingPaymentTracker tracker;
     private TestEventSubscriber eventSubscriber;
+    private TestEventSubscriber positionEventSubscriber;
 
     @BeforeEach
     void setUp() {
         eventPublisher = new TestEventPublisher();
         repository = mock(FundingPaymentRepository.class);
-        positionTracker = new PositionTracker(new TestEventSubscriber());
+        positionEventSubscriber = new TestEventSubscriber();
+        positionTracker = new PositionTracker(positionEventSubscriber);
         eventSubscriber = new TestEventSubscriber();
         tracker = new FundingPaymentTracker(positionTracker, eventPublisher, eventSubscriber);
     }
@@ -44,7 +49,8 @@ class FundingPaymentTrackerTest {
     @Test
     @DisplayName("funding payment를 열린 포지션에 누적하고 snapshot update 요청을 발행한다")
     void processFundingPayment_appliesToOpenPositionAndPublishesSnapshotUpdateRequested() {
-        positionTracker.onPositionUpdated(new PositionEvent.UpdateReceived(
+        positionTracker.onStart();
+        positionTrackerUpdate(new PositionEvent.UpdateReceived(
                 "BTC-USDT",
                 PositionSide.LONG,
                 new BigDecimal("0.5"),
@@ -86,5 +92,13 @@ class FundingPaymentTrackerTest {
         updater.onEvent(new FundingPaymentEvent.SnapshotUpdateRequested(payment));
 
         verify(repository).save(any(FundingPaymentHistory.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void positionTrackerUpdate(PositionEvent.UpdateReceived event) {
+        TestEventSubscriber.Subscribed<PositionEvent.UpdateReceived> subscription =
+                (TestEventSubscriber.Subscribed<PositionEvent.UpdateReceived>)
+                        positionEventSubscriber.exactlyOne(PositionEvent.UpdateReceived.class);
+        subscription.handler().onEvent(event);
     }
 }

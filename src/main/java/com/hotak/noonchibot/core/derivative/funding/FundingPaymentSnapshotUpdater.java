@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.core.derivative;
+package com.hotak.noonchibot.core.derivative.funding;
 
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;

@@ -13,13 +13,15 @@ import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.balance.AccountBalanceTracker;
 import com.hotak.noonchibot.core.config.BotConstants;
 import com.hotak.noonchibot.core.derivative.DerivativeInfoTracker;
-import com.hotak.noonchibot.core.derivative.FundingInfoTracker;
-import com.hotak.noonchibot.core.derivative.FundingPaymentRepository;
-import com.hotak.noonchibot.core.derivative.FundingPaymentSnapshotUpdater;
-import com.hotak.noonchibot.core.derivative.FundingPaymentTracker;
+import com.hotak.noonchibot.core.derivative.funding.FundingInfoTracker;
+import com.hotak.noonchibot.core.derivative.funding.FundingHistoryProperties;
+import com.hotak.noonchibot.core.derivative.funding.FundingPaymentRepository;
+import com.hotak.noonchibot.core.derivative.funding.FundingPaymentSnapshotUpdater;
+import com.hotak.noonchibot.core.derivative.funding.FundingPaymentTracker;
 import com.hotak.noonchibot.core.derivative.PositionTracker;
 import com.hotak.noonchibot.core.event.EventBus;
 import com.hotak.noonchibot.core.event.ExecutionPolicy;
+import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
@@ -54,7 +56,8 @@ public class DerivativeExchangeAdapterFactory {
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
-            TradingSafetyController tradingSafetyController
+            TradingSafetyController tradingSafetyController,
+            FundingHistoryProperties fundingHistoryProperties
     ) {
         EventBus eventBus = new EventBus();
         tradingSafetyController.connect(eventBus);
@@ -83,6 +86,13 @@ public class DerivativeExchangeAdapterFactory {
                 authenticator,
                 throttler,
                 objectMapper
+        );
+        FundingRateHistoryDataSourceImpl fundingRateHistoryDataSource =
+                new FundingRateHistoryDataSourceImpl(restAssistant, tradingPairSymbolRegistry);
+        eventBus.subscribe(
+                FundingInfoEvent.HistoryFetchRequested.class,
+                new FundingRateHistoryEventHandler(fundingRateHistoryDataSource, eventBus),
+                ExecutionPolicy.concurrent()
         );
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
 
@@ -212,10 +222,16 @@ public class DerivativeExchangeAdapterFactory {
         bootStrap.register(fundingInfoDataSource);
 
         FundingInfoTracker fundingInfoTracker = new FundingInfoTracker(
+                Exchange.HYPERLIQUID_DERIVATIVE,
                 Duration.ofHours(1),
                 "USDC",
                 tradingPairSymbolRegistry,
-                eventBus
+                eventBus,
+                eventBus,
+                applicationEventPublisher,
+                fundingRateHistoryDataSource,
+                taskScheduler,
+                fundingHistoryProperties
         );
         bootStrap.register(fundingInfoTracker);
 
@@ -243,6 +259,8 @@ public class DerivativeExchangeAdapterFactory {
                 tradingRuleRegistry,
                 exchangeOrderExecutor,
                 eventBus,
+                eventBus,
+                new HyperliquidPriceCandleDataSource(restAssistant, tradingPairSymbolRegistry),
                 fundingInfoTracker,
                 positionTracker
         );

@@ -22,4 +22,5 @@ public class ExchangeConnector {
     private final TradingRuleRegistry tradingRuleRegistry;
     private final ExchangeOrderExecutor orderExecutor;
     private final SequentialDispatcher sequentialDispatcher;
+    private final PriceCandleDataSource priceCandleDataSource;
 }

@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.core.strategy.view;
 
 import com.hotak.noonchibot.core.Exchange;
-import com.hotak.noonchibot.core.derivative.FundingInfoTracker;
+import com.hotak.noonchibot.core.derivative.funding.FundingInfoTracker;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.strategy.api.StrategyMarketView;
 import com.hotak.noonchibot.core.trade.TradeType;

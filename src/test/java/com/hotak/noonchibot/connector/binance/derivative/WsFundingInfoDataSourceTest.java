@@ -4,7 +4,7 @@ import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
 import com.hotak.noonchibot.core.TestTaskScheduler;
-import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSourceTest;
+import com.hotak.noonchibot.core.derivative.funding.AbstractWsFundingInfoDataSourceTest;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
 import tools.jackson.databind.ObjectMapper;

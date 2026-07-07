@@ -6,7 +6,7 @@ import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
-import com.hotak.noonchibot.core.derivative.FundingPayment;
+import com.hotak.noonchibot.core.derivative.funding.FundingPayment;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingPaymentEvent;

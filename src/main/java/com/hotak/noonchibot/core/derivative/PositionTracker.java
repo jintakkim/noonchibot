@@ -3,6 +3,7 @@ package com.hotak.noonchibot.core.derivative;
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.derivative.funding.FundingPayment;
 import com.hotak.noonchibot.core.event.EventSubscriber;
 import com.hotak.noonchibot.core.event.ExecutionPolicy;
 import com.hotak.noonchibot.core.event.Subscription;

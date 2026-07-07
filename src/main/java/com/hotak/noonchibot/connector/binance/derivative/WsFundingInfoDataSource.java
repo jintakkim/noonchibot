@@ -3,7 +3,7 @@ package com.hotak.noonchibot.connector.binance.derivative;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsRequest;
-import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSource;
+import com.hotak.noonchibot.core.derivative.funding.AbstractWsFundingInfoDataSource;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.RequiredArgsConstructor;

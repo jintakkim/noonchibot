@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.core.derivative;
+package com.hotak.noonchibot.core.derivative.funding;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

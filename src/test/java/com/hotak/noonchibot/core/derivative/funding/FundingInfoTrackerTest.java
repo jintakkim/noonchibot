@@ -1,6 +1,9 @@
-package com.hotak.noonchibot.core.derivative;
+package com.hotak.noonchibot.core.derivative.funding;
 
 import com.hotak.noonchibot.connector.SimpleTradingPairSymbolRegistry;
+import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.TestTaskScheduler;
+import com.hotak.noonchibot.core.event.TestEventPublisher;
 import com.hotak.noonchibot.core.event.TestEventSubscriber;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,7 +15,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.time.temporal.TemporalUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -181,6 +184,58 @@ class FundingInfoTrackerTest {
             tracker.processMessage(received(BTC_PAIR, "50000", "0.0001", NEXT_FUNDING_TIME, null));
 
             assertThat(tracker.getFundingInfo(BTC_PAIR)).isNotNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("확정 펀딩 히스토리")
+    class ConfirmedHistoryTest {
+        @Test
+        @DisplayName("확정 펀딩 시각에 밀리초 오차가 있어도 같은 정산 시각으로 인정한다")
+        void acceptsSmallTimestampOffsetForConfirmedFunding() {
+            TestEventPublisher eventPublisher = new TestEventPublisher();
+            TestTaskScheduler taskScheduler = new TestTaskScheduler();
+            FundingInfoTracker tracker = new FundingInfoTracker(
+                    Exchange.HYPERLIQUID_DERIVATIVE,
+                    Duration.ofHours(1),
+                    "USDC",
+                    new SimpleTradingPairSymbolRegistry(Map.of(BTC_PAIR, "BTC")),
+                    new TestEventSubscriber(),
+                    eventPublisher,
+                    event -> {},
+                    (tradingPair, from, to) -> List.of(new FundingRatePoint(
+                            Exchange.HYPERLIQUID_DERIVATIVE,
+                            tradingPair,
+                            from,
+                            BigDecimal.ZERO,
+                            Duration.ofHours(1)
+                    )),
+                    taskScheduler,
+                    new FundingHistoryProperties(
+                            Duration.ofDays(7),
+                            Duration.ofDays(1),
+                            List.of(Duration.ofSeconds(1), Duration.ofSeconds(2))
+                    )
+            );
+            Instant fundingTime = Instant.now().plus(Duration.ofMinutes(5)).truncatedTo(ChronoUnit.SECONDS);
+            tracker.registerTradingPairs(Set.of(BTC_PAIR));
+            tracker.processMessage(received(BTC_PAIR, "50000", "0.0001", fundingTime, Duration.ofHours(1)));
+
+            tracker.processHistory(new FundingInfoEvent.HistoryReceived(
+                    BTC_PAIR,
+                    fundingTime,
+                    Duration.ofHours(1),
+                    0,
+                    List.of(new FundingRatePoint(
+                            Exchange.HYPERLIQUID_DERIVATIVE,
+                            BTC_PAIR,
+                            fundingTime.plusMillis(34),
+                            new BigDecimal("0.0010908152"),
+                            Duration.ofHours(1)
+                    ))
+            ));
+
+            assertThat(eventPublisher.countEventsOfType(FundingInfoEvent.HistoryUpdated.class)).isOne();
         }
     }
 

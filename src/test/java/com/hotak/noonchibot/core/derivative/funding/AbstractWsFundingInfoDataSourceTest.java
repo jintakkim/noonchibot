@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.core.derivative;
+package com.hotak.noonchibot.core.derivative.funding;
 
 import com.hotak.noonchibot.connector.web.WebsocketMessageResult;
 import com.hotak.noonchibot.connector.web.WsRequest;

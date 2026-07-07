@@ -67,12 +67,17 @@ public class SpotExchangeAdapterFactory {
         bootStrap.register(timeSynchronizer);
 
         BinanceAuthenticator authenticator = new BinanceAuthenticator(props.apiKey(), props.secretKey(), timeSynchronizer, objectMapper);
-        RestAssistant restAssistant = new RestAssistantImpl(
+        RestAssistant rawRestAssistant = new RestAssistantImpl(
                 restClient,
                 List.of(new ThrottlerLimitIdPreProcessor()),
                 List.of(),
                 authenticator,
                 throttler,
+                objectMapper
+        );
+        RestAssistant restAssistant = new BinanceTimestampRecoveringRestAssistant(
+                rawRestAssistant,
+                timeSynchronizer,
                 objectMapper
         );
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
@@ -181,6 +186,12 @@ public class SpotExchangeAdapterFactory {
         bootStrap.register(new OrderStatusPoller(eventBus, eventBus, orderTracker, taskScheduler));
         bootStrap.register(new TradePoller(eventBus, eventBus, taskScheduler, orderTracker));
 
+        PriceCandleDataSource priceCandleDataSource = new BinancePriceCandleDataSource(
+                Exchange.BINANCE_SPOT,
+                restAssistant,
+                tradingPairSymbolRegistry,
+                ApiSpec.KLINE_PATH_URL
+        );
         return new ExchangeConnector(
                 Exchange.BINANCE_SPOT,
                 ApiSpec.PLATFORM_NAME,
@@ -190,7 +201,8 @@ public class SpotExchangeAdapterFactory {
                 feeSchemaLoader,
                 tradingRuleRegistry,
                 exchangeOrderExecutor,
-                eventBus
+                eventBus,
+                priceCandleDataSource
         );
     }
 }

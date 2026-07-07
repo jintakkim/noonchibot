@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.core.derivative;
 
 import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.derivative.funding.FundingPayment;
 import com.hotak.noonchibot.core.event.TestEventSubscriber;
 import com.hotak.noonchibot.core.event.internal.derivative.PositionEvent;
 import org.junit.jupiter.api.BeforeEach;

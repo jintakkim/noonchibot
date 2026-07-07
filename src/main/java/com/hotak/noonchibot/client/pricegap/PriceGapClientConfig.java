@@ -1,9 +1,12 @@
 package com.hotak.noonchibot.client.pricegap;
 
 import com.hotak.noonchibot.connector.ExchangeConnector;
+import com.hotak.noonchibot.connector.PriceCandleDataSource;
 import com.hotak.noonchibot.connector.binance.BinanceConfig;
 import com.hotak.noonchibot.connector.hyperliquid.HyperliquidConfig;
 import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.BootStrap;
+import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.RealtimeClock;
 import com.hotak.noonchibot.core.price.StableQuotePriceConverter;
 import com.hotak.noonchibot.core.pricegap.PriceGapFeedDefinition;
@@ -12,11 +15,15 @@ import com.hotak.noonchibot.core.pricegap.PriceGapSnapshotStore;
 import com.hotak.noonchibot.core.pricegap.PriceGapSnapshotPublisher;
 import com.hotak.noonchibot.core.pricegap.PriceGapSubscriptionKey;
 import com.hotak.noonchibot.core.pricegap.PriceGapSubscriptionRegistry;
+import com.hotak.noonchibot.core.pricegap.history.PriceGapHistoryTracker;
 import com.hotak.noonchibot.client.websocket.WebSocketSessions;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.TaskScheduler;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -24,6 +31,8 @@ import java.util.stream.Collectors;
 
 @Configuration
 public class PriceGapClientConfig {
+    private static final String FEED_DEFINITIONS = "priceGapFeedDefinitions";
+
     @Bean
     public PriceGapSubscriptionRegistry priceGapSubscriptionRegistry() {
         return new PriceGapSubscriptionRegistry();
@@ -49,19 +58,15 @@ public class PriceGapClientConfig {
             PriceGapSnapshotStore snapshotStore,
             PriceGapSnapshotPublisher snapshotPublisher,
             RealtimeClock realtimeClock,
-            BinanceConfig.Properties binanceProperties,
             HyperliquidConfig.Properties hyperliquidProperties,
-            List<ExchangeConnector> exchangeConnectors
+            List<ExchangeConnector> exchangeConnectors,
+            @Qualifier(FEED_DEFINITIONS) List<PriceGapFeedDefinition> definitions
     ) {
         Map<Exchange, ExchangeConnector> connectors = exchangeConnectors.stream()
                 .collect(Collectors.toUnmodifiableMap(
                         ExchangeConnector::getExchange,
                         Function.identity()
                 ));
-        List<PriceGapFeedDefinition> definitions = feedDefinitions(
-                binanceProperties,
-                hyperliquidProperties
-        );
         PriceGapSnapshotProducer producer = new PriceGapSnapshotProducer(
                 subscriptionRegistry,
                 snapshotStore,
@@ -71,6 +76,9 @@ public class PriceGapClientConfig {
                         Map.Entry::getKey,
                         entry -> entry.getValue().getOrderBookTracker()
                 )),
+                hyperliquidProperties.network().isTestnet()
+                        ? Map.of(Exchange.HYPERLIQUID_DERIVATIVE, Duration.ofMinutes(1))
+                        : Map.of(),
                 new StableQuotePriceConverter()
         );
         realtimeClock.addIterator(
@@ -78,6 +86,40 @@ public class PriceGapClientConfig {
                 requiredConnector(connectors, Exchange.BINANCE_DERIVATIVE).getSequentialDispatcher()
         );
         return producer;
+    }
+
+    @Bean(FEED_DEFINITIONS)
+    @Profile("!test")
+    public List<PriceGapFeedDefinition> priceGapFeedDefinitions(
+            BinanceConfig.Properties binanceProperties,
+            HyperliquidConfig.Properties hyperliquidProperties
+    ) {
+        return feedDefinitions(binanceProperties, hyperliquidProperties);
+    }
+
+    @Bean
+    @Profile("!test")
+    public PriceGapHistoryTracker priceGapHistoryTracker(
+            @Qualifier(FEED_DEFINITIONS) List<PriceGapFeedDefinition> definitions,
+            List<ExchangeConnector> exchangeConnectors,
+            TaskScheduler taskScheduler,
+            IoExecutor ioExecutor,
+            BootStrap bootStrap
+    ) {
+        Map<Exchange, PriceCandleDataSource> dataSources = exchangeConnectors.stream()
+                .filter(connector -> connector.getPriceCandleDataSource() != null)
+                .collect(Collectors.toUnmodifiableMap(
+                        ExchangeConnector::getExchange,
+                        ExchangeConnector::getPriceCandleDataSource
+                ));
+        PriceGapHistoryTracker tracker = new PriceGapHistoryTracker(
+                definitions,
+                dataSources,
+                taskScheduler,
+                ioExecutor
+        );
+        bootStrap.register(tracker);
+        return tracker;
     }
 
     private ExchangeConnector requiredConnector(
