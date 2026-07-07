@@ -83,9 +83,13 @@ public class WsConnectionImpl extends TextWebSocketHandler implements WsConnecti
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        WebSocketSession currentSession = this.session;
+        String sessionId = session != null
+                ? session.getId()
+                : currentSession == null ? "unknown" : currentSession.getId();
         log.info(
                 "WebSocket connection closed: source={}, endpoint={}, sessionId={}, status={}",
-                listener.getClass().getName(), endpoint(), session.getId(), status
+                listener.getClass().getName(), endpoint(), sessionId, status
         );
         this.session = null;
         listener.onClosed(status);
