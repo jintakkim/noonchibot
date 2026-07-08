@@ -10,6 +10,8 @@ import org.springframework.http.HttpStatus;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.concurrent.CompletionException;
+
 /**
  * throwError=true로 ExchangeApiException이 나온 경우와 throwError=false로 RestResponse가 나온 경우 둘 다 처리
  */
@@ -41,6 +43,13 @@ public class BinanceTimestampRecoveringRestAssistant implements RestAssistant {
             }
             timeSynchronizer.updateServerTimeOffset();
             return delegate.executeRequestAndGetResponse(request);
+        } catch (CompletionException e) {
+            ExchangeApiException exchangeApiException = unwrapExchangeApiException(e);
+            if (exchangeApiException == null || !isRecoverableTimestampError(request, exchangeApiException)) {
+                throw e;
+            }
+            timeSynchronizer.updateServerTimeOffset();
+            return delegate.executeRequestAndGetResponse(request);
         }
     }
 
@@ -62,5 +71,10 @@ public class BinanceTimestampRecoveringRestAssistant implements RestAssistant {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private ExchangeApiException unwrapExchangeApiException(CompletionException e) {
+        Throwable cause = e.getCause();
+        return cause instanceof ExchangeApiException exchangeApiException ? exchangeApiException : null;
     }
 }

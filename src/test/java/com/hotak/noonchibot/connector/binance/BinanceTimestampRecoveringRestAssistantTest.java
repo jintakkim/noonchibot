@@ -13,6 +13,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.concurrent.CompletionException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -44,6 +46,22 @@ class BinanceTimestampRecoveringRestAssistantTest {
         RestResponse success = okResponse();
         when(delegate.executeRequestAndGetResponse(request))
                 .thenThrow(timestampException())
+                .thenReturn(success);
+
+        RestResponse response = restAssistant.executeRequestAndGetResponse(request);
+
+        assertThat(response).isSameAs(success);
+        verify(timeSynchronizer).updateServerTimeOffset();
+        verify(delegate, times(2)).executeRequestAndGetResponse(request);
+    }
+
+    @Test
+    @DisplayName("비동기 실행 중 timestamp 오류 예외가 CompletionException으로 감싸져도 서버 시간을 갱신하고 한 번 재시도한다")
+    void executeRequestAndGetResponse_whenTimestampExceptionWrappedInCompletionException_refreshesServerTimeAndRetries() {
+        RestRequest request = signedRequest(true);
+        RestResponse success = okResponse();
+        when(delegate.executeRequestAndGetResponse(request))
+                .thenThrow(new CompletionException(timestampException()))
                 .thenReturn(success);
 
         RestResponse response = restAssistant.executeRequestAndGetResponse(request);
