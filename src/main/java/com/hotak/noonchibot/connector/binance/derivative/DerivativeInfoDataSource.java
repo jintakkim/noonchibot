@@ -1,15 +1,20 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
+import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.binance.BinanceResponseCodeParser;
 import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.derivative.MarginMode;
 import com.hotak.noonchibot.core.derivative.PositionMode;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.derivative.*;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
@@ -36,6 +41,25 @@ class DerivativeInfoDataSource implements LifecycleAware {
         this.leverageChangeHandler = new LeverageChangeHandler(tradingPairSymbolRegistry, restAssistant, eventPublisher);
         this.marginModeChangeHandler = new MarginModeChangeHandler(tradingPairSymbolRegistry, restAssistant, eventPublisher);
         this.eventSubscriber = eventSubscriber;
+    }
+
+    public DerivativeInfoDataSource(
+            RestAssistant restAssistant,
+            TradingPairSymbolRegistry tradingPairSymbolRegistry,
+            EventPublisher eventPublisher,
+            EventSubscriber eventSubscriber,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        this(
+                new RestAssistantConfigurer(restAssistant)
+                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.derivativeInfo(Exchange.BINANCE_DERIVATIVE))
+                        .errorClassifier(new BinanceExchangeErrorClassifier())
+                        .maxRetry(1)
+                        .build(),
+                tradingPairSymbolRegistry,
+                eventPublisher,
+                eventSubscriber
+        );
     }
 
     @Override

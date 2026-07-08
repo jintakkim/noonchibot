@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
+import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
 import com.hotak.noonchibot.core.Exchange;
@@ -14,7 +15,9 @@ import com.hotak.noonchibot.core.event.internal.derivative.FundingPaymentEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.PositionEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.trade.TokenAmount;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
@@ -54,6 +57,31 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
         this.taskScheduler = taskScheduler;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.eventPublisher = eventPublisher;
+    }
+
+    public UserStreamDataSource(
+            RestAssistant restAssistant,
+            WsAssistant wsAssistant,
+            TaskScheduler taskScheduler,
+            ObjectMapper objectMapper,
+            TradingPairSymbolRegistry tradingPairSymbolRegistry,
+            EventPublisher eventPublisher,
+            IoExecutor ioExecutor,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        this(
+                new RestAssistantConfigurer(restAssistant)
+                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.userStream(Exchange.BINANCE_DERIVATIVE))
+                        .errorClassifier(new BinanceExchangeErrorClassifier())
+                        .maxRetry(2)
+                        .build(),
+                wsAssistant,
+                taskScheduler,
+                objectMapper,
+                tradingPairSymbolRegistry,
+                eventPublisher,
+                ioExecutor
+        );
     }
 
 

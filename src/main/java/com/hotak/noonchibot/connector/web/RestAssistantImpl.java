@@ -11,6 +11,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -28,25 +30,36 @@ public class RestAssistantImpl implements RestAssistant {
 
     public RestResponse executeRequestAndGetResponse(RestRequest request) {
         RestRequest finalRequest = applyAuthentication(applyPreProcessors(request));
-        if(finalRequest.weightOverrides() == null) {
-            return asyncThrottler.execute(
+        if (finalRequest.weightOverrides() == null) {
+            return join(asyncThrottler.execute(
                     finalRequest.throttlerLimitId(),
                     () -> {
                         RestResponse response = call(finalRequest);
                         return applyPostProcessors(response);
-                    }).join();
+                    }));
         }
-        return asyncThrottler.execute(
+        return join(asyncThrottler.execute(
                 finalRequest.throttlerLimitId(),
                 () -> {
                     RestResponse response = applyPostProcessors(call(finalRequest));
                     if (response.statusCode().isError() && request.throwError()) {
-                        log.error("네트워크 문제 발생, response: {}", response);
+                        log.error("rest request failed. response={}", response);
                         throw new ExchangeApiException(response.statusCode(), response.body());
                     }
                     return response;
                 },
-                finalRequest.weightOverrides()).join();
+                finalRequest.weightOverrides()));
+    }
+
+    private <T> T join(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw e;
+        }
     }
 
     private RestRequest applyPreProcessors(RestRequest request) {
@@ -73,12 +86,17 @@ public class RestAssistantImpl implements RestAssistant {
                     }
                     return uriBuilder.build();
                 })
-                .headers(h-> {
-                    if (request.headers() != null) h.addAll(request.headers());
+                .headers(headers -> {
+                    if (request.headers() != null) {
+                        headers.addAll(request.headers());
+                    }
                 });
-        if(request.body() != null) spec.body(request.body());
+        if (request.body() != null) {
+            spec.body(request.body());
+        }
         ResponseEntity<String> entity = spec.retrieve()
-                .onStatus(HttpStatusCode::isError, (req, res) -> {}) // do noting.
+                .onStatus(HttpStatusCode::isError, (req, res) -> {
+                })
                 .toEntity(String.class);
         return new RestResponse(entity.getStatusCode(), entity.getHeaders(), entity.getBody());
     }

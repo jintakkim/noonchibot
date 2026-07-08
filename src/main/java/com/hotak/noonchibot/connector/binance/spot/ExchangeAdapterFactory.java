@@ -5,10 +5,7 @@ import com.hotak.noonchibot.connector.binance.*;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottlerImpl;
 import com.hotak.noonchibot.connector.throttle.ThrottlerLimitIdPreProcessor;
-import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantImpl;
-import com.hotak.noonchibot.connector.web.TimeSynchronizer;
-import com.hotak.noonchibot.connector.web.WsAssistantImpl;
+import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.BootStrap;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.IoExecutor;
@@ -21,7 +18,7 @@ import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
-import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
@@ -41,7 +38,8 @@ public class ExchangeAdapterFactory {
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
-            OrderSnapshotRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository,
+            CircuitBreakerRegistry circuitBreakerRegistry
     ) {
         EventBus eventBus = new EventBus();
         RestClient restClient = RestClient.builder().baseUrl(ApiSpec.REST_BASE_URL).build();
@@ -50,13 +48,17 @@ public class ExchangeAdapterFactory {
         TimeSynchronizer timeSynchronizer = new TimeSynchronizer(
                 new BinanceServerTimeProvider(
                         new RestAssistantImpl(restClient, List.of(new ThrottlerLimitIdPreProcessor()), List.of(), null, throttler, objectMapper),
-                        ApiSpec.SERVER_TIME_PATH_URL),
+                        ApiSpec.SERVER_TIME_PATH_URL,
+                        Exchange.BINANCE_SPOT,
+                        circuitBreakerRegistry),
                 taskScheduler
         );
         bootStrap.register(timeSynchronizer);
 
         BinanceAuthenticator authenticator = new BinanceAuthenticator(props.apiKey(), props.secretKey(), timeSynchronizer, objectMapper);
-        RestAssistant restAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
+
+        RestAssistant rawRestAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
+
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
 
         OrderBookDataSource orderBookDataSource = new OrderBookDataSource(
@@ -65,10 +67,11 @@ public class ExchangeAdapterFactory {
                 ioExecutor,
                 taskScheduler,
                 tradingPairSymbolRegistry,
-                restAssistant,
+                rawRestAssistant,
                 timeSynchronizer,
                 eventBus,
-                eventBus
+                eventBus,
+                circuitBreakerRegistry
         );
         bootStrap.register(orderBookDataSource);
 
@@ -86,7 +89,12 @@ public class ExchangeAdapterFactory {
         AccountBalanceTracker accountBalanceTracker = new AccountBalanceTracker(eventBus);
         bootStrap.register(accountBalanceTracker);
 
-        TradeFeeSchemaLoader feeSchemaLoader = new TradeFeeSchemaLoader(ioExecutor, tradingPairSymbolRegistry, restAssistant);
+        TradeFeeSchemaLoader feeSchemaLoader = new TradeFeeSchemaLoader(
+                ioExecutor,
+                tradingPairSymbolRegistry,
+                rawRestAssistant,
+                circuitBreakerRegistry
+        );
         bootStrap.register(feeSchemaLoader);
 
         UserStreamDataSource userStreamDataSource = new UserStreamDataSource(
@@ -99,21 +107,33 @@ public class ExchangeAdapterFactory {
         );
         bootStrap.register(userStreamDataSource);
 
-        RestBalanceDataSource balanceDataSource = new RestBalanceDataSource(restAssistant, eventBus, taskScheduler);
+        RestBalanceDataSource balanceDataSource = new RestBalanceDataSource(
+                rawRestAssistant,
+                eventBus,
+                taskScheduler,
+                circuitBreakerRegistry
+        );
         bootStrap.register(balanceDataSource);
 
         BinanceTradingRuleRegistry tradingRuleRegistry = new BinanceTradingRuleRegistry(
-                restAssistant,
+                rawRestAssistant,
                 new TradingRuleParser(tradingPairSymbolRegistry),
                 taskScheduler,
                 ApiSpec.TRADING_RULE_UPDATE_INTERVAL,
                 tradingPairSymbolRegistry,
                 ApiSpec.EXCHANGE_INFO_PATH_URL,
-                objectMapper
+                objectMapper,
+                Exchange.BINANCE_SPOT,
+                circuitBreakerRegistry
         );
         bootStrap.register(tradingRuleRegistry);
 
-        OrderClientImpl orderClient = new OrderClientImpl(timeSynchronizer, restAssistant, tradingPairSymbolRegistry);
+        OrderClientImpl orderClient = new OrderClientImpl(
+                timeSynchronizer,
+                rawRestAssistant,
+                tradingPairSymbolRegistry,
+                circuitBreakerRegistry
+        );
         ExchangeOrderExecutor exchangeOrderExecutor = new ExchangeOrderExecutor(
                 new StructuredOrderIdGenerator(),
                 orderTracker,
@@ -132,13 +152,20 @@ public class ExchangeAdapterFactory {
 
         OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
                 tradingPairSymbolRegistry,
-                restAssistant,
+                rawRestAssistant,
                 eventBus,
-                eventBus
+                eventBus,
+                circuitBreakerRegistry
         );
         bootStrap.register(orderStatusDataSource);
 
-        TradeDataSource tradeDataSource = new TradeDataSource(tradingPairSymbolRegistry, restAssistant, eventBus, eventBus);
+        TradeDataSource tradeDataSource = new TradeDataSource(
+                tradingPairSymbolRegistry,
+                rawRestAssistant,
+                eventBus,
+                eventBus,
+                circuitBreakerRegistry
+        );
         bootStrap.register(tradeDataSource);
 
         bootStrap.register(new OrderStatusPoller(eventBus, orderTracker, taskScheduler));

@@ -5,10 +5,7 @@ import com.hotak.noonchibot.connector.binance.*;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottlerImpl;
 import com.hotak.noonchibot.connector.throttle.ThrottlerLimitIdPreProcessor;
-import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantImpl;
-import com.hotak.noonchibot.connector.web.TimeSynchronizer;
-import com.hotak.noonchibot.connector.web.WsAssistantImpl;
+import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.BootStrap;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.IoExecutor;
@@ -26,6 +23,7 @@ import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
@@ -46,7 +44,8 @@ public class ExchangeAdapterFactory {
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
-            OrderSnapshotRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository,
+            CircuitBreakerRegistry circuitBreakerRegistry
 
     ) {
         EventBus eventBus = new EventBus();
@@ -56,13 +55,15 @@ public class ExchangeAdapterFactory {
         TimeSynchronizer timeSynchronizer = new TimeSynchronizer(
                 new BinanceServerTimeProvider(
                         new RestAssistantImpl(restClient, List.of(new ThrottlerLimitIdPreProcessor()), List.of(), null, throttler, objectMapper),
-                        ApiSpec.SERVER_TIME_PATH_URL),
+                        ApiSpec.SERVER_TIME_PATH_URL,
+                        Exchange.BINANCE_DERIVATIVE,
+                        circuitBreakerRegistry),
                 taskScheduler
         );
         bootStrap.register(timeSynchronizer);
 
         BinanceAuthenticator authenticator = new BinanceAuthenticator(props.apiKey(), props.secretKey(), timeSynchronizer, objectMapper);
-        RestAssistant restAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
+        RestAssistant rawRestAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
         OrderBookDataSource orderBookDataSource = new OrderBookDataSource(
                 wsAssistant,
@@ -70,9 +71,10 @@ public class ExchangeAdapterFactory {
                 ioExecutor,
                 taskScheduler,
                 tradingPairSymbolRegistry,
-                restAssistant,
+                rawRestAssistant,
                 eventBus,
-                eventBus
+                eventBus,
+                circuitBreakerRegistry
         );
         bootStrap.register(orderBookDataSource);
 
@@ -90,39 +92,53 @@ public class ExchangeAdapterFactory {
         AccountBalanceTracker accountBalanceTracker = new AccountBalanceTracker(eventBus);
         bootStrap.register(accountBalanceTracker);
 
-        TradeFeeSchemaLoader feeSchemaLoader = new TradeFeeSchemaLoader(ioExecutor, tradingPairSymbolRegistry, restAssistant);
+        TradeFeeSchemaLoader feeSchemaLoader = new TradeFeeSchemaLoader(
+                ioExecutor,
+                tradingPairSymbolRegistry,
+                rawRestAssistant,
+                circuitBreakerRegistry
+        );
         bootStrap.register(feeSchemaLoader);
 
         UserStreamDataSource userStreamDataSource = new UserStreamDataSource(
-                restAssistant,
+                rawRestAssistant,
                 wsAssistant,
                 taskScheduler,
                 objectMapper,
                 tradingPairSymbolRegistry,
                 eventBus,
-                ioExecutor
+                ioExecutor,
+                circuitBreakerRegistry
         );
         bootStrap.register(userStreamDataSource);
 
         RestBalanceDataSource balancePoller = new RestBalanceDataSource(
-                restAssistant,
+                rawRestAssistant,
                 eventBus,
-                taskScheduler
+                taskScheduler,
+                circuitBreakerRegistry
         );
         bootStrap.register(balancePoller);
 
         BinanceTradingRuleRegistry binanceTradingRuleRegistry = new BinanceTradingRuleRegistry(
-                restAssistant,
+                rawRestAssistant,
                 new DerivativeTradingRuleParser(tradingPairSymbolRegistry),
                 taskScheduler,
                 ApiSpec.TRADING_RULE_UPDATE_INTERVAL,
                 tradingPairSymbolRegistry,
                 ApiSpec.EXCHANGE_INFO_PATH_URL,
-                objectMapper
+                objectMapper,
+                Exchange.BINANCE_DERIVATIVE,
+                circuitBreakerRegistry
         );
         bootStrap.register(binanceTradingRuleRegistry);
 
-        OrderClientImpl orderClient = new OrderClientImpl(timeSynchronizer, restAssistant, tradingPairSymbolRegistry);
+        OrderClientImpl orderClient = new OrderClientImpl(
+                timeSynchronizer,
+                rawRestAssistant,
+                tradingPairSymbolRegistry,
+                circuitBreakerRegistry
+        );
 
         ExchangeOrderExecutor exchangeOrderExecutor = new ExchangeOrderExecutor(
                 new StructuredOrderIdGenerator(),
@@ -135,7 +151,7 @@ public class ExchangeAdapterFactory {
                 eventBus,
                 orderClient,
                 eventBus,
-                Exchange.BINANCE_SPOT,
+                Exchange.BINANCE_DERIVATIVE,
                 orderSnapshotRepository
         );
         bootStrap.register(exchangeOrderExecutor);
@@ -187,23 +203,31 @@ public class ExchangeAdapterFactory {
         bootStrap.register(new FundingPaymentSnapshotUpdater(fundingPaymentRepository, eventBus));
 
         DerivativeInfoDataSource derivativeInfoDataSource = new DerivativeInfoDataSource(
-                restAssistant,
+                rawRestAssistant,
                 tradingPairSymbolRegistry,
                 eventBus,
-                eventBus
+                eventBus,
+                circuitBreakerRegistry
         );
         bootStrap.register(derivativeInfoDataSource);
 
 
        OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
                 tradingPairSymbolRegistry,
-                restAssistant,
+                rawRestAssistant,
                 eventBus,
-                eventBus
+                eventBus,
+                circuitBreakerRegistry
         );
         bootStrap.register(orderStatusDataSource);
 
-        TradeDataSource tradeDataSource = new TradeDataSource(tradingPairSymbolRegistry, restAssistant, eventBus, eventBus);
+        TradeDataSource tradeDataSource = new TradeDataSource(
+                tradingPairSymbolRegistry,
+                rawRestAssistant,
+                eventBus,
+                eventBus,
+                circuitBreakerRegistry
+        );
         bootStrap.register(tradeDataSource);
 
         bootStrap.register(new OrderStatusPoller(eventBus, orderTracker, tradingPairSymbolRegistry, taskScheduler));
@@ -223,4 +247,5 @@ public class ExchangeAdapterFactory {
                 positionTracker
         );
     }
+
 }

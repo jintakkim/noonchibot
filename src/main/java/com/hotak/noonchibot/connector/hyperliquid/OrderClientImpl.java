@@ -1,9 +1,14 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
+import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.order.*;
 import com.hotak.noonchibot.core.trade.TradeType;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
 
@@ -14,11 +19,33 @@ import java.util.Map;
 import java.util.Set;
 
 class OrderClientImpl implements OrderClient {
-    private final RestAssistant restAssistant;
+    private final RestAssistant orderEntryRestAssistant;
+    private final RestAssistant orderCancelRestAssistant;
     private final HLTradingRuleRegistry tradingRuleRegistry;
 
     OrderClientImpl(RestAssistant restAssistant, HLTradingRuleRegistry tradingRuleRegistry) {
-        this.restAssistant = restAssistant;
+        this(restAssistant, restAssistant, tradingRuleRegistry);
+    }
+
+    OrderClientImpl(
+            RestAssistant restAssistant,
+            HLTradingRuleRegistry tradingRuleRegistry,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        this(
+                orderEntryRest(restAssistant, circuitBreakerRegistry),
+                orderCancelRest(restAssistant, circuitBreakerRegistry),
+                tradingRuleRegistry
+        );
+    }
+
+    OrderClientImpl(
+            RestAssistant orderEntryRestAssistant,
+            RestAssistant orderCancelRestAssistant,
+            HLTradingRuleRegistry tradingRuleRegistry
+    ) {
+        this.orderEntryRestAssistant = orderEntryRestAssistant;
+        this.orderCancelRestAssistant = orderCancelRestAssistant;
         this.tradingRuleRegistry = tradingRuleRegistry;
     }
 
@@ -34,7 +61,7 @@ class OrderClientImpl implements OrderClient {
         orderPayload.put("t", Map.of("limit", Map.of("tif", timeInForceApiValue(order))));
         orderPayload.put("c", order.getClientOrderId());
 
-        JsonNode response = restAssistant.executeRequestAndGetJsonBody(RestRequest.builder()
+        JsonNode response = orderEntryRestAssistant.executeRequestAndGetJsonBody(RestRequest.builder()
                 .method(HttpMethod.POST)
                 .pathUrl(DerivativeApiSpec.EXCHANGE_PATH_URL)
                 .body(Map.of(
@@ -63,7 +90,7 @@ class OrderClientImpl implements OrderClient {
     @Override
     public OrderCancelResult cancelOrder(String tradingPair, String clientOrderId) {
         HLTradingRuleRegistry.AssetMeta meta = tradingRuleRegistry.getAssetMeta(tradingPair);
-        JsonNode response = restAssistant.executeRequestAndGetJsonBody(RestRequest.builder()
+        JsonNode response = orderCancelRestAssistant.executeRequestAndGetJsonBody(RestRequest.builder()
                 .method(HttpMethod.POST)
                 .pathUrl(DerivativeApiSpec.EXCHANGE_PATH_URL)
                 .body(Map.of(
@@ -96,5 +123,26 @@ class OrderClientImpl implements OrderClient {
     private String timeInForceApiValue(InFlightOrder order) {
         if (order.isPostOnly()) return DerivativeApiSpec.TIME_IN_FORCE_API_VALUE.get(TimeInForce.POST_ONLY);
         return DerivativeApiSpec.TIME_IN_FORCE_API_VALUE.get(order.getTimeInForce());
+    }
+
+    private static RestAssistant orderEntryRest(
+            RestAssistant restAssistant,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        return new RestAssistantConfigurer(restAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.HYPERLIQUID_DERIVATIVE))
+                .errorClassifier(new DefaultExchangeErrorClassifier())
+                .build();
+    }
+
+    private static RestAssistant orderCancelRest(
+            RestAssistant restAssistant,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        return new RestAssistantConfigurer(restAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.HYPERLIQUID_DERIVATIVE))
+                .errorClassifier(new DefaultExchangeErrorClassifier())
+                .maxRetry(1)
+                .build();
     }
 }

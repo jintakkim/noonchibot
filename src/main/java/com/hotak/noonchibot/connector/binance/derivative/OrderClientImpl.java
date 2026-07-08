@@ -1,11 +1,17 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.*;
+import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
+import com.hotak.noonchibot.connector.web.RestErrorAction;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.order.*;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.trade.TradeType;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
@@ -17,7 +23,8 @@ import java.util.Set;
 
 class OrderClientImpl implements OrderClient {
     private final TimeSynchronizer timeSynchronizer;
-    private final RestAssistant restAssistant;
+    private final RestAssistant orderEntryRestAssistant;
+    private final RestAssistant orderCancelRestAssistant;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
 
     public OrderClientImpl(
@@ -25,8 +32,32 @@ class OrderClientImpl implements OrderClient {
             RestAssistant restAssistant,
             TradingPairSymbolRegistry tradingPairSymbolRegistry
     ) {
+        this(timeSynchronizer, restAssistant, restAssistant, tradingPairSymbolRegistry);
+    }
+
+    public OrderClientImpl(
+            TimeSynchronizer timeSynchronizer,
+            RestAssistant restAssistant,
+            TradingPairSymbolRegistry tradingPairSymbolRegistry,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        this(
+                timeSynchronizer,
+                orderEntryRest(restAssistant, circuitBreakerRegistry),
+                orderCancelRest(restAssistant, circuitBreakerRegistry),
+                tradingPairSymbolRegistry
+        );
+    }
+
+    public OrderClientImpl(
+            TimeSynchronizer timeSynchronizer,
+            RestAssistant orderEntryRestAssistant,
+            RestAssistant orderCancelRestAssistant,
+            TradingPairSymbolRegistry tradingPairSymbolRegistry
+    ) {
         this.timeSynchronizer = timeSynchronizer;
-        this.restAssistant = restAssistant;
+        this.orderEntryRestAssistant = orderEntryRestAssistant;
+        this.orderCancelRestAssistant = orderCancelRestAssistant;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
     }
 
@@ -69,7 +100,7 @@ class OrderClientImpl implements OrderClient {
                 .params(apiParams)
                 .build();
         try {
-            JsonNode orderResult = restAssistant.executeRequestAndGetJsonBody(request);
+            JsonNode orderResult = orderEntryRestAssistant.executeRequestAndGetJsonBody(request);
             String exchangeOrderId = orderResult.get("orderId").asString();
             Instant timestamp = parseOrderTimestamp(orderResult);
             String orderStatus = orderResult.path("status").asString();
@@ -99,7 +130,7 @@ class OrderClientImpl implements OrderClient {
                 .authRequired(true)
                 .build();
 
-        restAssistant.executeRequestAndGetResponse(request);
+        orderCancelRestAssistant.executeRequestAndGetResponse(request);
         return new OrderCancelResult(true, Instant.ofEpochMilli(timeSynchronizer.serverTime()));
     }
 
@@ -116,5 +147,34 @@ class OrderClientImpl implements OrderClient {
             throw new IllegalArgumentException("Order response does not contain updateTime or transactTime: " + orderResult);
         }
         return Instant.ofEpochMilli(timestamp.asLong());
+    }
+
+    private static RestAssistant orderEntryRest(
+            RestAssistant restAssistant,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        return new RestAssistantConfigurer(restAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.BINANCE_DERIVATIVE))
+                .errorClassifier(new BinanceExchangeErrorClassifier())
+                .on4xxError(error -> switch (error.code() == null ? 0 : error.code()) {
+                    case -2010, -2019, -1013, -4164 -> RestErrorAction.IGNORE_AS_REJECTED;
+                    default -> RestErrorAction.DEFAULT;
+                })
+                .build();
+    }
+
+    private static RestAssistant orderCancelRest(
+            RestAssistant restAssistant,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        return new RestAssistantConfigurer(restAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.BINANCE_DERIVATIVE))
+                .errorClassifier(new BinanceExchangeErrorClassifier())
+                .on4xxError(error -> error.code() != null
+                        && error.code() == ApiSpec.Code.UNKNOWN_ORDER_DURING_CANCELLATION_ERROR
+                        ? RestErrorAction.IGNORE_AS_REJECTED
+                        : RestErrorAction.DEFAULT)
+                .maxRetry(1)
+                .build();
     }
 }

@@ -1,12 +1,17 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
+import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.OrderState;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -23,6 +28,25 @@ class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateReque
     private final EventSubscriber eventSubscriber;
     private final String userAddress;
     private Subscription subscription;
+
+    public OrderStatusDataSource(
+            RestAssistant restAssistant,
+            EventPublisher eventPublisher,
+            EventSubscriber eventSubscriber,
+            String userAddress,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        this(
+                new RestAssistantConfigurer(restAssistant)
+                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderStatus(Exchange.HYPERLIQUID_DERIVATIVE))
+                        .errorClassifier(new DefaultExchangeErrorClassifier())
+                        .maxRetry(2)
+                        .build(),
+                eventPublisher,
+                eventSubscriber,
+                userAddress
+        );
+    }
 
     @Override
     public void onEvent(OrderEvent.StatusUpdateRequested event) {

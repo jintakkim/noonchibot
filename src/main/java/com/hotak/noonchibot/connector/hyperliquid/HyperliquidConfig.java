@@ -6,6 +6,7 @@ import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.derivative.FundingPaymentRepository;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.msgpack.jackson.dataformat.MessagePackMapper;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -44,7 +45,8 @@ public class HyperliquidConfig {
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
-            OrderSnapshotRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository,
+            CircuitBreakerRegistry circuitBreakerRegistry
     ) {
         return DerivativeExchangeAdapterFactory.create(
                 bootStrap,
@@ -57,7 +59,8 @@ public class HyperliquidConfig {
                 webSocketClient,
                 tradeRepository,
                 fundingPaymentRepository,
-                orderHistoryRepository
+                orderHistoryRepository,
+                circuitBreakerRegistry
         );
     }
 }

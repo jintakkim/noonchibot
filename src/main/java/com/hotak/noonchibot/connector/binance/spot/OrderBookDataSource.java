@@ -1,7 +1,9 @@
 package com.hotak.noonchibot.connector.binance.spot;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
+import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.*;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.event.EventSubscriber;
@@ -9,7 +11,9 @@ import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.trade.TradeType;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -43,6 +47,35 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
         this.timeSynchronizer = timeSynchronizer;
+    }
+
+    public OrderBookDataSource(
+            WsAssistant wsAssistant,
+            ObjectMapper objectMapper,
+            IoExecutor ioExecutor,
+            TaskScheduler taskScheduler,
+            TradingPairSymbolRegistry tradingPairSymbolRegistry,
+            RestAssistant restAssistant,
+            TimeSynchronizer timeSynchronizer,
+            EventPublisher eventPublisher,
+            EventSubscriber eventSubscriber,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        this(
+                wsAssistant,
+                objectMapper,
+                ioExecutor,
+                taskScheduler,
+                tradingPairSymbolRegistry,
+                new RestAssistantConfigurer(restAssistant)
+                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.BINANCE_SPOT))
+                        .errorClassifier(new BinanceExchangeErrorClassifier())
+                        .maxRetry(2)
+                        .build(),
+                timeSynchronizer,
+                eventPublisher,
+                eventSubscriber
+        );
     }
 
     @Override

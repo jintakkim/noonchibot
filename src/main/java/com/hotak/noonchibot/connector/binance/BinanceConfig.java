@@ -6,6 +6,7 @@ import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.derivative.FundingPaymentRepository;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -47,7 +48,8 @@ public class BinanceConfig {
             ObjectMapper objectMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
-            OrderSnapshotRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository,
+            CircuitBreakerRegistry circuitBreakerRegistry
     ) {
         return com.hotak.noonchibot.connector.binance.spot.ExchangeAdapterFactory.create(
                 bootStrap,
@@ -58,7 +60,8 @@ public class BinanceConfig {
                 objectMapper,
                 webSocketClient,
                 tradeRepository,
-                orderHistoryRepository
+                orderHistoryRepository,
+                circuitBreakerRegistry
         );
     }
 
@@ -72,7 +75,8 @@ public class BinanceConfig {
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
-            OrderSnapshotRepository orderHistoryRepository
+            OrderSnapshotRepository orderHistoryRepository,
+            CircuitBreakerRegistry circuitBreakerRegistry
     ) {
         return com.hotak.noonchibot.connector.binance.derivative.ExchangeAdapterFactory.create(
                 bootStrap,
@@ -84,7 +88,8 @@ public class BinanceConfig {
                 webSocketClient,
                 tradeRepository,
                 fundingPaymentRepository,
-                orderHistoryRepository
+                orderHistoryRepository,
+                circuitBreakerRegistry
         );
 
     }
