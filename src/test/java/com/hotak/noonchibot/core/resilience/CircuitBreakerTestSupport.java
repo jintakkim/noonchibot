@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.core.resilience;
 
-import com.hotak.noonchibot.connector.ExchangeRejectedException;
 import com.hotak.noonchibot.connector.ExchangeTransientException;
+import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 

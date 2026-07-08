@@ -2,8 +2,8 @@ package com.hotak.noonchibot.connector.web;
 
 import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
-import com.hotak.noonchibot.connector.ExchangeRejectedException;
 import com.hotak.noonchibot.connector.ExchangeTransientException;
+import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import tools.jackson.databind.JsonNode;

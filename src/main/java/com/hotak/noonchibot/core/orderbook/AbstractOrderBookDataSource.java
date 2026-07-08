@@ -94,7 +94,7 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
         JsonNode msg = objectMapper.readTree(response.data());
 
         if (isErrorMessage(msg)) {
-            throw new WebsocketErrorMessageReceivedException(msg.toString());
+            throw new WebSocketErrorMessageReceivedException(msg.toString());
         }
         if (isAckMessage(msg)) return;
 

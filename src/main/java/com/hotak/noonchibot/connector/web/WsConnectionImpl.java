@@ -64,7 +64,7 @@ public class WsConnectionImpl extends TextWebSocketHandler implements WsConnecti
     public WsResponse take() throws InterruptedException {
         WsResponse wsResponse = messageQueue.take();
         if(wsResponse == CLOSED) {
-            throw new WebsocketDisconnectedException("websocket disconnect");
+            throw new WebSocketDisconnectedException("websocket disconnect");
         }
         return wsResponse;
     }

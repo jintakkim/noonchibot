@@ -1,11 +1,11 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
-import com.hotak.noonchibot.connector.ExchangeRejectedException;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.binance.OrderFixture;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
 import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import com.hotak.noonchibot.core.order.OrderCancelResult;
 import com.hotak.noonchibot.core.order.OrderClient;
 import com.hotak.noonchibot.core.order.OrderPlaceResult;

@@ -4,6 +4,7 @@ import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.transfer.TransferEvent;
+import com.hotak.noonchibot.core.transfer.FundTransferException;
 import lombok.RequiredArgsConstructor;
 
 import java.util.List;

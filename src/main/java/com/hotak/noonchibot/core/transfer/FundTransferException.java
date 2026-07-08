@@ -1,4 +1,4 @@
-package com.hotak.noonchibot.connector.transfer;
+package com.hotak.noonchibot.core.transfer;
 
 public class FundTransferException extends RuntimeException {
     public FundTransferException(String message, Exception e) {

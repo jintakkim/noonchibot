@@ -44,7 +44,7 @@ public abstract class AbstractWsFundingInfoDataSource extends AbstractWebsocketD
         JsonNode msg = objectMapper.readTree(response.data());
 
         if (isErrorMessage(msg)) {
-            throw new WebsocketErrorMessageReceivedException(msg.toString());
+            throw new WebSocketErrorMessageReceivedException(msg.toString());
         }
         if (isAckMessage(msg)) return;
 

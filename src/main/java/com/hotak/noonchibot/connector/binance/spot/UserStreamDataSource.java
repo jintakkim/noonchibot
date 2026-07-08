@@ -66,7 +66,7 @@ class UserStreamDataSource extends AbstractWebsocketDataSource {
             eventMessage = eventMessage.get("event");
         }
         if ("eventStreamTerminated".equals(eventMessage.path("e").asString())) {
-            throw new WebsocketDisconnectedException("Stream terminated by server");
+            throw new WebSocketDisconnectedException("Stream terminated by server");
         }
 
         String eventType = eventMessage.path("e").asString();
@@ -91,11 +91,11 @@ class UserStreamDataSource extends AbstractWebsocketDataSource {
             WsResponse response = wsConnection.take();
             JsonNode data = objectMapper.readTree(response.data());
             if (data.path("status").asInt() != 200) {
-                throw new WebsocketSubscriptionFailedException("Error subscribing to user stream: " + data);
+                throw new WebSocketSubscriptionFailedException("Error subscribing to user stream: " + data);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new WebsocketDisconnectedException("Interrupted while subscribing user stream");
+            throw new WebSocketDisconnectedException("Interrupted while subscribing user stream");
         }
     }
 

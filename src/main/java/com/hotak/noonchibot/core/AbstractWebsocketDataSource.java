@@ -31,15 +31,15 @@ public abstract class AbstractWebsocketDataSource implements LifecycleAware, Web
                     lastRecvTime = Instant.now();
                     try {
                         processMessage(res);
-                    } catch (WebsocketErrorMessageReceivedException e) {
-                        if(e instanceof WebsocketSubscriptionFailedException) {
+                    } catch (WebSocketErrorMessageReceivedException e) {
+                        if(e instanceof WebSocketSubscriptionFailedException) {
                             log.error("subscription failed", e);
                             return;
                         }
                         log.error("server-side error message received: {}", e.getMessage());
                     }
                 }
-            } catch (WebsocketDisconnectedException e) {
+            } catch (WebSocketDisconnectedException e) {
                 log.warn("disconnected, reconnecting in 1s");
                 try {
                     Thread.sleep(Duration.ofSeconds(1));

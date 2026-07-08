@@ -25,7 +25,7 @@ public class SimpleTradingPairSymbolRegistry implements TradingPairSymbolRegistr
     public String convertTradingPairToExchangeSymbol(String tradingPair) {
         String symbol = tradingPairSymbolMap.get(tradingPair);
         if (symbol == null) {
-            throw new NotRegisteredException("No exchange symbol registered for trading pair: " + tradingPair);
+            throw new TradingPairSymbolNotRegisteredException("No exchange symbol registered for trading pair: " + tradingPair);
         }
         return symbol;
     }
@@ -34,7 +34,7 @@ public class SimpleTradingPairSymbolRegistry implements TradingPairSymbolRegistr
     public String convertExchangeSymbolToTradingPair(String exchangeSymbol, boolean throwIfNotFound) {
         String tradingPair = symbolTradingPairMap.get(exchangeSymbol);
         if (tradingPair == null && throwIfNotFound) {
-            throw new NotRegisteredException("No trading pair registered for exchange symbol: " + exchangeSymbol);
+            throw new TradingPairSymbolNotRegisteredException("No trading pair registered for exchange symbol: " + exchangeSymbol);
         }
         return tradingPair;
     }

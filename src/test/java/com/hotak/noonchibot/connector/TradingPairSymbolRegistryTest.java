@@ -46,14 +46,14 @@ public class TradingPairSymbolRegistryTest {
     @Test
     void throwExceptionForUnknownTradingPair() {
         assertThatThrownBy(() -> registry.convertTradingPairToExchangeSymbol("DOGE/USDT"))
-                .isInstanceOf(NotRegisteredException.class);
+                .isInstanceOf(TradingPairSymbolNotRegisteredException.class);
     }
 
     @DisplayName("존재하지 않는 거래소 심볼을 조회하면 예외를 던진다")
     @Test
     void throwExceptionForUnknownExchangeSymbol() {
         assertThatThrownBy(() -> registry.convertExchangeSymbolToTradingPair("DOGEUSDT"))
-                .isInstanceOf(NotRegisteredException.class);
+                .isInstanceOf(TradingPairSymbolNotRegisteredException.class);
     }
 
     @DisplayName("데이터가 있으면 비어있지 않다")

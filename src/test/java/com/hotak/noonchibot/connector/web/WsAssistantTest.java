@@ -71,7 +71,7 @@ class WsAssistantTest {
         WsConnectionImpl conn = connectWithMockSession();
         conn.disconnect();
         conn.afterConnectionClosed(null, CloseStatus.NORMAL);
-        assertThatThrownBy(conn::take).isInstanceOf(WebsocketDisconnectedException.class);
+        assertThatThrownBy(conn::take).isInstanceOf(WebSocketDisconnectedException.class);
     }
 
     @Test
@@ -79,7 +79,7 @@ class WsAssistantTest {
     void throwsOnUnintentionalDisconnect() {
         WsConnectionImpl conn = connectWithMockSession();
         conn.afterConnectionClosed(null, CloseStatus.GOING_AWAY);
-        assertThatThrownBy(conn::take).isInstanceOf(WebsocketDisconnectedException.class);
+        assertThatThrownBy(conn::take).isInstanceOf(WebSocketDisconnectedException.class);
     }
 
     @Test

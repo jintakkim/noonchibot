@@ -1,8 +1,8 @@
 package com.hotak.noonchibot.core.config;
 
 import com.hotak.noonchibot.connector.ExchangeProtocolException;
-import com.hotak.noonchibot.connector.ExchangeRejectedException;
 import com.hotak.noonchibot.connector.ExchangeTransientException;
+import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import com.hotak.noonchibot.core.order.OrderValidationException;
 import com.hotak.noonchibot.core.resilience.CircuitBreakerEventHandler;
 import com.hotak.noonchibot.core.resilience.ExchangeHealthRegistry;

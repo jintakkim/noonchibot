@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
-import com.hotak.noonchibot.connector.transfer.FundTransferException;
+import com.hotak.noonchibot.core.transfer.FundTransferException;
 import com.hotak.noonchibot.connector.transfer.TransferDispatcher;
 import com.hotak.noonchibot.connector.transfer.TransferResult;
 import com.hotak.noonchibot.connector.transfer.TransferRoute;

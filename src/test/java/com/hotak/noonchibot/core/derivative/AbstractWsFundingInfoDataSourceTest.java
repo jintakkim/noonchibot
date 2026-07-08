@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.core.derivative;
 
-import com.hotak.noonchibot.connector.web.WebsocketErrorMessageReceivedException;
+import com.hotak.noonchibot.connector.web.WebSocketErrorMessageReceivedException;
 import com.hotak.noonchibot.connector.web.WsRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
@@ -30,7 +30,7 @@ public abstract class AbstractWsFundingInfoDataSourceTest<T extends AbstractWsFu
     /** 거래소별 ack 메시지 — 처리되어도 이벤트 발행 X -> ack이 없다면 empty리턴 */
     protected abstract Optional<WsResponse> ackMessage();
 
-    /** 거래소별 error 메시지 — 처리되면 WebsocketSubscriptionFailedException 던짐 */
+    /** 거래소별 error 메시지 — 처리되면 WebSocketSubscriptionFailedException 던짐 */
     protected abstract WsResponse errorMessage();
 
     /** 받은 요청들이 위 pair 목록 전체를 구독하는지 검증. */
@@ -77,7 +77,7 @@ public abstract class AbstractWsFundingInfoDataSourceTest<T extends AbstractWsFu
     @DisplayName("error 메시지 수신시 예외를 발생시킨다.")
     void onErrorMessage_doesNotPublishReceivedEvent() {
         assertThatThrownBy(() -> dataSource.processMessage(errorMessage()))
-                .isInstanceOf(WebsocketErrorMessageReceivedException.class);
+                .isInstanceOf(WebSocketErrorMessageReceivedException.class);
         assertThat(eventPublisher.hasEventOfType(FundingInfoEvent.Received.class)).isFalse();
     }
 

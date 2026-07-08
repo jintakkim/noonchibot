@@ -194,6 +194,6 @@ public abstract class AbstractOrderBookDataSourceTest<T extends AbstractOrderBoo
     @DisplayName("error 메시지 수신 시 예외를 던진다")
     void errorMessageThrows() {
         assertThatThrownBy(() -> dataSource.processMessage(errorMessage()))
-                .isInstanceOf(WebsocketErrorMessageReceivedException.class);
+                .isInstanceOf(WebSocketErrorMessageReceivedException.class);
     }
 }

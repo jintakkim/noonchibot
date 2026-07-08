@@ -3,10 +3,10 @@ package com.hotak.noonchibot.connector.binance;
 import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.ExchangeRateLimitedException;
-import com.hotak.noonchibot.connector.ExchangeRejectedException;
 import com.hotak.noonchibot.connector.ExchangeTransientException;
-import com.hotak.noonchibot.connector.InsufficientBalanceException;
-import com.hotak.noonchibot.connector.InvalidOrderRejectedException;
+import com.hotak.noonchibot.core.order.ExchangeRejectedException;
+import com.hotak.noonchibot.core.order.InsufficientBalanceException;
+import com.hotak.noonchibot.core.order.InvalidOrderRejectedException;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -68,8 +68,7 @@ public class BinanceExchangeErrorClassifier implements ExchangeErrorClassifier {
     }
 
     private boolean isAlreadyClassified(ExchangeApiException exception) {
-        return exception instanceof ExchangeRejectedException
-                || exception instanceof ExchangeTransientException;
+        return exception instanceof ExchangeTransientException;
     }
 
     private boolean isRateLimited(HttpStatusCode statusCode) {
