@@ -1,14 +1,19 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
-import com.hotak.noonchibot.connector.ExchangeApiException;
+import com.hotak.noonchibot.connector.ExchangeRejectedException;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.binance.OrderFixture;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.order.OrderCancelResult;
 import com.hotak.noonchibot.core.order.OrderClient;
 import com.hotak.noonchibot.core.order.OrderPlaceResult;
 import com.hotak.noonchibot.core.order.OrderState;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerTestSupport;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,19 +28,22 @@ import static org.mockito.Mockito.when;
 class OrderClientTest extends RestClientTest {
     private TimeSynchronizer timeSynchronizer;
     private TradingPairSymbolRegistry symbolRegistry;
+    private CircuitBreakerRegistry circuitBreakerRegistry;
     private OrderClient orderClient;
 
     @BeforeEach
     void setUp() {
         timeSynchronizer = mock(TimeSynchronizer.class);
         symbolRegistry = mock(TradingPairSymbolRegistry.class);
+        circuitBreakerRegistry = CircuitBreakerTestSupport.circuitBreakerRegistry();
         when(symbolRegistry.convertTradingPairToExchangeSymbol("BTC-USDT"))
                 .thenReturn("BTCUSDT");
         when(timeSynchronizer.serverTime()).thenReturn(1_717_200_000_000L); //dummy value
         orderClient = new OrderClientImpl(
                 timeSynchronizer,
                 restAssistant,
-                symbolRegistry
+                symbolRegistry,
+                circuitBreakerRegistry
         );
     }
 
@@ -83,11 +91,13 @@ class OrderClientTest extends RestClientTest {
 
     @Test
     @DisplayName("바이낸스 503 Unknown error가 아니면 예외를 그대로 전파한다")
-    void placeOrder_whenOtherExchangeApiException_throws() {
+    void placeOrder_whenRejectedByExchange_throwsRejectedWithoutOpeningCircuit() {
         runWith(OrderFixture.btcUsdtLimitBuyMarginInsufficientBadRequest(), () -> {
             assertThatThrownBy(() -> orderClient.placeOrder(OrderFixture.btcUsdtLimitBuyOrder()))
-                    .isInstanceOf(ExchangeApiException.class)
+                    .isInstanceOf(ExchangeRejectedException.class)
                     .hasMessageContaining("Margin is insufficient.");
+            assertThat(orderEntryCircuit().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+            assertThat(orderEntryCircuit().getMetrics().getNumberOfFailedCalls()).isZero();
         });
     }
 
@@ -102,5 +112,9 @@ class OrderClientTest extends RestClientTest {
             assertThat(result.cancelFinalized()).isTrue();
             assertThat(result.timestamp()).isNotNull();
         });
+    }
+
+    private CircuitBreaker orderEntryCircuit() {
+        return circuitBreakerRegistry.circuitBreaker(CircuitBreakerNames.orderEntry(Exchange.BINANCE_DERIVATIVE));
     }
 }

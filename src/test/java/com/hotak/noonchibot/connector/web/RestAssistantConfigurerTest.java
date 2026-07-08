@@ -4,6 +4,7 @@ import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.ExchangeRejectedException;
 import com.hotak.noonchibot.connector.ExchangeTransientException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.Test;
@@ -80,6 +81,28 @@ class RestAssistantConfigurerTest {
 
         assertThat(registry.circuitBreaker("BINANCE_SPOT.server-time").getState())
                 .isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @Test
+    void openCircuit_blocksNextCallBeforeDelegate() {
+        CircuitBreakerRegistry registry = registry();
+        SequencedRestAssistant delegate = new SequencedRestAssistant(
+                new ExchangeApiException(HttpStatusCode.valueOf(500), "{\"code\":-1000}"),
+                new ObjectMapper().readTree("{\"ok\":true}")
+        );
+        RestAssistant assistant = new RestAssistantConfigurer(delegate)
+                .circuit(registry, "BINANCE_SPOT.balance")
+                .errorClassifier(exception -> new ExchangeTransientException(exception))
+                .build();
+
+        assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
+                .isInstanceOf(ExchangeTransientException.class);
+        assertThat(registry.circuitBreaker("BINANCE_SPOT.balance").getState())
+                .isEqualTo(CircuitBreaker.State.OPEN);
+
+        assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
+                .isInstanceOf(CallNotPermittedException.class);
+        assertThat(delegate.calls).isEqualTo(1);
     }
 
     private CircuitBreakerRegistry registry() {
