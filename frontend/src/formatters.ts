@@ -40,6 +40,6 @@ export const formatDateTime = (value?: string) => {
 
 export const formatPercent = (value: number) => `${(value * 100).toFixed(4)}%`
 
-export const formatSimpleApr = (dailyRate: number) => `${(dailyRate * 365 * 100).toFixed(2)}%`
+export const formatDailyPercent = (value: number) => `${formatPercent(value)}/일`
 
-export const formatExchangeRoute = (low?: string, high?: string) => `${exchangeName(low)} -> ${exchangeName(high)}`
+export const formatSimpleApr = (dailyRate: number) => `${(dailyRate * 365 * 100).toFixed(2)}%`

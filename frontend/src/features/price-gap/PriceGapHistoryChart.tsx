@@ -1,5 +1,6 @@
 import { useState, type MouseEvent } from 'react'
-import { formatDateTime, formatExchangeRoute, formatPercent } from '../../formatters'
+import { ExchangeRoute } from '../../components/ExchangeRoute'
+import { formatDateTime, formatPercent } from '../../formatters'
 import type { PriceGapHistory } from '../../types'
 
 type PriceGapHistoryChartProps = {
@@ -41,7 +42,7 @@ export function PriceGapHistoryChart({ history, error }: PriceGapHistoryChartPro
         <div>
           <p className="text-[11px] uppercase tracking-wider text-slate-600">최근 확정 갭</p>
           <p className="mt-2 font-mono text-2xl font-semibold text-cyan-700">{latest.gapBps.toFixed(4)} bps</p>
-          <p className="mt-1 text-xs text-slate-500">{formatExchangeRoute(latest.lowestExchange, latest.highestExchange)}</p>
+          <ExchangeRoute buy={latest.lowestExchange} sell={latest.highestExchange} className="mt-2" />
         </div>
         <p className="text-xs text-slate-600">{formatDateTime(latest.timestamp)} 기준</p>
       </div>
@@ -87,7 +88,7 @@ export function PriceGapHistoryChart({ history, error }: PriceGapHistoryChartPro
               <span className="text-slate-500">가격 갭 비율</span>
               <span className="font-mono text-slate-900">{formatPercent(hovered.gapRate)}</span>
             </p>
-            <p className="mt-1 truncate text-slate-500">{formatExchangeRoute(hovered.lowestExchange, hovered.highestExchange)}</p>
+            <ExchangeRoute buy={hovered.lowestExchange} sell={hovered.highestExchange} className="mt-2" />
           </div>
         )}
       </div>
