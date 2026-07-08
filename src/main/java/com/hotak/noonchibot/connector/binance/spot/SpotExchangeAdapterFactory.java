@@ -156,11 +156,7 @@ public class SpotExchangeAdapterFactory {
                 orderSnapshotRepository
         );
         bootStrap.register(exchangeOrderExecutor);
-        eventBus.subscribe(
-                OrderEvent.SnapshotUpdateRequested.class,
-                new OrderSnapshotUpdater(orderSnapshotRepository),
-                ExecutionPolicy.sequential()
-        );
+        bootStrap.register(new OrderSnapshotUpdater(orderSnapshotRepository, eventBus));
 
         OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
                 tradingPairSymbolRegistry,

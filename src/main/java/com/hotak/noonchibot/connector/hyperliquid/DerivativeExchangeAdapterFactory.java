@@ -89,11 +89,7 @@ public class DerivativeExchangeAdapterFactory {
         );
         FundingRateHistoryDataSourceImpl fundingRateHistoryDataSource =
                 new FundingRateHistoryDataSourceImpl(restAssistant, tradingPairSymbolRegistry);
-        eventBus.subscribe(
-                FundingInfoEvent.HistoryFetchRequested.class,
-                new FundingRateHistoryEventHandler(fundingRateHistoryDataSource, eventBus),
-                ExecutionPolicy.concurrent()
-        );
+        bootStrap.register(new FundingRateHistoryEventHandler(fundingRateHistoryDataSource, eventBus, eventBus));
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
 
         OrderBookDataSource orderBookDataSource = new OrderBookDataSource(
@@ -175,11 +171,7 @@ public class DerivativeExchangeAdapterFactory {
                 orderSnapshotRepository
         );
         bootStrap.register(exchangeOrderExecutor);
-        eventBus.subscribe(
-                OrderEvent.SnapshotUpdateRequested.class,
-                new OrderSnapshotUpdater(orderSnapshotRepository),
-                ExecutionPolicy.sequential()
-        );
+        bootStrap.register(new OrderSnapshotUpdater(orderSnapshotRepository, eventBus));
 
         OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
                 restAssistant,
