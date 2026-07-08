@@ -4,25 +4,22 @@ import { ExchangeCell } from './ExchangeCell'
 
 type PriceGapMonitorProps = {
   rows: PriceGapSnapshot[]
-  sortDescending: boolean
-  onToggleSort: () => void
 }
 
-export function PriceGapMonitor({ rows, sortDescending, onToggleSort }: PriceGapMonitorProps) {
+export function PriceGapMonitor({ rows }: PriceGapMonitorProps) {
+  const strongestPair = rows.reduce<{ pair: string | null; gapBps: number }>((selected, snapshot) => {
+    const gapBps = snapshot.spread?.gapBps
+    if (gapBps == null || gapBps <= selected.gapBps) return selected
+    return { pair: snapshot.key.tradingPair, gapBps }
+  }, { pair: null, gapBps: Number.NEGATIVE_INFINITY }).pair
+
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
-      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+      <div className="border-b border-slate-200 px-5 py-4">
         <div>
           <h2 className="font-semibold text-slate-950">Price Gap Monitor</h2>
           <p className="mt-1 text-xs text-slate-500">정규화 가격 기준 거래소 간 최대 스프레드</p>
         </div>
-        <button
-          type="button"
-          onClick={onToggleSort}
-          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700"
-        >
-          Gap {sortDescending ? '높은 순 ↓' : '낮은 순 ↑'}
-        </button>
       </div>
 
       <div className="overflow-x-auto">
@@ -41,14 +38,22 @@ export function PriceGapMonitor({ rows, sortDescending, onToggleSort }: PriceGap
             {rows.map((snapshot) => {
               const low = snapshot.exchanges.find((item) => item.exchange === snapshot.spread?.lowestExchange)
               const high = snapshot.exchanges.find((item) => item.exchange === snapshot.spread?.highestExchange)
+              const strongest = snapshot.key.tradingPair === strongestPair
               return (
                 <tr key={snapshot.key.tradingPair} className="transition hover:bg-slate-50">
                   <td className="px-5 py-5">
                     <div className="flex items-center gap-3">
                       <span className="grid h-9 w-9 place-items-center rounded-lg bg-cyan-50 text-xs font-bold text-cyan-700">{snapshot.key.tradingPair.slice(0, 3)}</span>
                       <div>
-                        <p className="font-semibold text-slate-950">{snapshot.key.tradingPair}</p>
-                        <p key={snapshot.sequence} className="price-update-flash mt-1 text-xs text-slate-500">#{snapshot.sequence}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-950">{snapshot.key.tradingPair}</p>
+                          {strongest && (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 shadow-sm shadow-amber-100/70" title="현재 가장 스프레드가 큰 마켓">
+                              <span aria-hidden="true">👍</span>
+                              BEST
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </td>
