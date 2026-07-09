@@ -22,6 +22,7 @@ import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
+import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.msgpack.jackson.dataformat.MessagePackMapper;
 import org.springframework.scheduling.TaskScheduler;
@@ -71,11 +72,10 @@ public class DerivativeExchangeAdapterFactory {
                 objectMapper,
                 ioExecutor,
                 taskScheduler,
-                rawRestAssistant,
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 tradingPairSymbolRegistry,
                 eventBus,
-                eventBus,
-                circuitBreakerRegistry
+                eventBus
         );
         bootStrap.register(orderBookDataSource);
 
@@ -96,9 +96,8 @@ public class DerivativeExchangeAdapterFactory {
         DerivativeTradeFeeSchemaLoader feeSchemaLoader = new DerivativeTradeFeeSchemaLoader(
                 ioExecutor,
                 tradingPairSymbolRegistry,
-                rawRestAssistant,
-                props.address(),
-                circuitBreakerRegistry
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradeFee(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                props.address()
         );
         bootStrap.register(feeSchemaLoader);
 
@@ -113,26 +112,24 @@ public class DerivativeExchangeAdapterFactory {
         bootStrap.register(userStreamDataSource);
 
         RestBalanceDataSource balanceDataSource = new RestBalanceDataSource(
-                rawRestAssistant,
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.balance(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 eventBus,
                 taskScheduler,
-                props.address(),
-                circuitBreakerRegistry
+                props.address()
         );
         bootStrap.register(balanceDataSource);
 
         HLTradingRuleRegistry tradingRuleRegistry = new HLTradingRuleRegistry(
-                rawRestAssistant,
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradingRules(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 tradingPairSymbolRegistry,
-                taskScheduler,
-                circuitBreakerRegistry
+                taskScheduler
         );
         bootStrap.register(tradingRuleRegistry);
 
         OrderClientImpl orderClient = new OrderClientImpl(
-                rawRestAssistant,
-                tradingRuleRegistry,
-                circuitBreakerRegistry
+                orderEntryRest(rawRestAssistant, circuitBreakerRegistry),
+                orderCancelRest(rawRestAssistant, circuitBreakerRegistry),
+                tradingRuleRegistry
         );
         ExchangeOrderExecutor exchangeOrderExecutor = new ExchangeOrderExecutor(
                 new HyperliquidCloidGenerator(),
@@ -151,25 +148,22 @@ public class DerivativeExchangeAdapterFactory {
         bootStrap.register(exchangeOrderExecutor);
 
         bootStrap.register(new OrderStatusDataSource(
-                rawRestAssistant,
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderStatus(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 eventBus,
                 eventBus,
-                props.address(),
-                circuitBreakerRegistry
+                props.address()
         ));
         bootStrap.register(new OrderStatusPoller(eventBus, orderTracker, taskScheduler));
         bootStrap.register(new TradeDataSource(
                 tradingPairSymbolRegistry,
-                rawRestAssistant,
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.trades(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 eventBus,
                 eventBus,
-                props.address(),
-                circuitBreakerRegistry
+                props.address()
         ));
         bootStrap.register(new TradePoller(eventBus, taskScheduler, orderTracker));
         DeriviativeInnerTransfer innerTransfer = new DeriviativeInnerTransfer(
-                rawRestAssistant,
-                circuitBreakerRegistry
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.transfer(Exchange.HYPERLIQUID_DERIVATIVE), 1)
         );
         bootStrap.register(new TransferDispatcher(List.of(innerTransfer), eventBus, eventBus));
 
@@ -178,10 +172,9 @@ public class DerivativeExchangeAdapterFactory {
                 objectMapper,
                 ioExecutor,
                 tradingPairSymbolRegistry,
-                rawRestAssistant,
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.funding(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 eventBus,
-                tradingPairSymbolRegistry.getAllTradingPairs(),
-                circuitBreakerRegistry
+                tradingPairSymbolRegistry.getAllTradingPairs()
         );
         bootStrap.register(fundingInfoDataSource);
 
@@ -220,4 +213,37 @@ public class DerivativeExchangeAdapterFactory {
         );
     }
 
+    private static RestAssistant rest(
+            RestAssistant rawRestAssistant,
+            CircuitBreakerRegistry circuitBreakerRegistry,
+            String circuitName,
+            int maxRetry
+    ) {
+        return new RestAssistantBuilder(rawRestAssistant)
+                .circuit(circuitBreakerRegistry, circuitName)
+                .errorClassifier(new DefaultExchangeErrorClassifier())
+                .maxRetry(maxRetry)
+                .build();
+    }
+
+    private static RestAssistant orderEntryRest(
+            RestAssistant rawRestAssistant,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        return new RestAssistantBuilder(rawRestAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.HYPERLIQUID_DERIVATIVE))
+                .errorClassifier(new DefaultExchangeErrorClassifier())
+                .build();
+    }
+
+    private static RestAssistant orderCancelRest(
+            RestAssistant rawRestAssistant,
+            CircuitBreakerRegistry circuitBreakerRegistry
+    ) {
+        return new RestAssistantBuilder(rawRestAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.HYPERLIQUID_DERIVATIVE))
+                .errorClassifier(new DefaultExchangeErrorClassifier())
+                .maxRetry(1)
+                .build();
+    }
 }

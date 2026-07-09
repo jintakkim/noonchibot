@@ -1,18 +1,13 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
-import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.trade.TokenAmount;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
@@ -31,27 +26,6 @@ class TradeDataSource implements EventHandler<TradeEvent.UpdateRequested>, Lifec
     private final EventSubscriber eventSubscriber;
     private final String userAddress;
     private Subscription subscription;
-
-    public TradeDataSource(
-            TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant,
-            EventPublisher eventPublisher,
-            EventSubscriber eventSubscriber,
-            String userAddress,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                tradingPairSymbolRegistry,
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.trades(Exchange.HYPERLIQUID_DERIVATIVE))
-                        .errorClassifier(new DefaultExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                eventPublisher,
-                eventSubscriber,
-                userAddress
-        );
-    }
 
     @Override
     public void onEvent(TradeEvent.UpdateRequested request) {

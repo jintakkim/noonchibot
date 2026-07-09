@@ -1,7 +1,6 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.IoExecutor;
@@ -12,8 +11,6 @@ import com.hotak.noonchibot.core.trade.TradeType;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -44,33 +41,6 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
         super(wsAssistant, objectMapper, ioExecutor, taskScheduler, eventPublisher, eventSubscriber);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
-    }
-
-    public OrderBookDataSource(
-            WsAssistant wsAssistant,
-            ObjectMapper objectMapper,
-            IoExecutor ioExecutor,
-            TaskScheduler taskScheduler,
-            TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant,
-            EventPublisher eventPublisher,
-            EventSubscriber eventSubscriber,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                wsAssistant,
-                objectMapper,
-                ioExecutor,
-                taskScheduler,
-                tradingPairSymbolRegistry,
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.BINANCE_DERIVATIVE))
-                        .errorClassifier(new BinanceExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                eventPublisher,
-                eventSubscriber
-        );
     }
 
     @Override

@@ -20,7 +20,7 @@ import java.util.Queue;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class RestAssistantConfigurerTest {
+class RestAssistantBuilderTest {
     private final RestRequest request = RestRequest.builder()
             .method(HttpMethod.GET)
             .pathUrl("/test")
@@ -29,7 +29,7 @@ class RestAssistantConfigurerTest {
     @Test
     void on4xxError_canIgnoreRejectedErrorWithoutOpeningCircuit() {
         CircuitBreakerRegistry registry = registry();
-        RestAssistant assistant = new RestAssistantConfigurer(new ThrowingRestAssistant(
+        RestAssistant assistant = new RestAssistantBuilder(new ThrowingRestAssistant(
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-2010}")
         ))
                 .circuit(registry, "BINANCE_SPOT.order-entry")
@@ -50,7 +50,7 @@ class RestAssistantConfigurerTest {
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":1202}"),
                 new ObjectMapper().readTree("{\"ok\":true}")
         );
-        RestAssistant assistant = new RestAssistantConfigurer(delegate)
+        RestAssistant assistant = new RestAssistantBuilder(delegate)
                 .circuit(registry, "BINANCE_SPOT.order-status")
                 .on4xxError(error -> error.code() != null && error.code() == 1202
                         ? RestErrorAction.RETRY
@@ -69,7 +69,7 @@ class RestAssistantConfigurerTest {
     @Test
     void on4xxError_canRecordFailureAndOpenCircuit() {
         CircuitBreakerRegistry registry = registry();
-        RestAssistant assistant = new RestAssistantConfigurer(new ThrowingRestAssistant(
+        RestAssistant assistant = new RestAssistantBuilder(new ThrowingRestAssistant(
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-1021}")
         ))
                 .circuit(registry, "BINANCE_SPOT.server-time")
@@ -90,7 +90,7 @@ class RestAssistantConfigurerTest {
                 new ExchangeApiException(HttpStatusCode.valueOf(500), "{\"code\":-1000}"),
                 new ObjectMapper().readTree("{\"ok\":true}")
         );
-        RestAssistant assistant = new RestAssistantConfigurer(delegate)
+        RestAssistant assistant = new RestAssistantBuilder(delegate)
                 .circuit(registry, "BINANCE_SPOT.balance")
                 .errorClassifier(exception -> new ExchangeTransientException(exception))
                 .build();

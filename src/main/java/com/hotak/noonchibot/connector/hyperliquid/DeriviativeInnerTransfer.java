@@ -1,16 +1,12 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
-import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.transfer.TransferHandler;
 import com.hotak.noonchibot.connector.transfer.TransferResult;
 import com.hotak.noonchibot.connector.transfer.TransferRoute;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.Exchange;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.transfer.FundTransferException;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -35,19 +31,6 @@ public class DeriviativeInnerTransfer implements TransferHandler {
 
     private static final BigDecimal USDC_DECIMAL_FACTOR = new BigDecimal("1000000");
     private final RestAssistant restAssistant;
-
-    public DeriviativeInnerTransfer(
-            RestAssistant restAssistant,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.transfer(Exchange.HYPERLIQUID_DERIVATIVE))
-                        .errorClassifier(new DefaultExchangeErrorClassifier())
-                        .maxRetry(1)
-                        .build()
-        );
-    }
 
     @Override
     public boolean canHandle(TransferRoute route) {

@@ -1,7 +1,11 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
+import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.binance.OrderFixture;
+import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantBuilder;
+import com.hotak.noonchibot.connector.web.RestErrorAction;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
 import com.hotak.noonchibot.core.Exchange;
@@ -39,11 +43,28 @@ class OrderClientTest extends RestClientTest {
         when(symbolRegistry.convertTradingPairToExchangeSymbol("BTC-USDT"))
                 .thenReturn("BTCUSDT");
         when(timeSynchronizer.serverTime()).thenReturn(1_717_200_000_000L); //dummy value
+        RestAssistant orderEntryRestAssistant = new RestAssistantBuilder(restAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.BINANCE_DERIVATIVE))
+                .errorClassifier(new BinanceExchangeErrorClassifier())
+                .on4xxError(error -> switch (error.code() == null ? 0 : error.code()) {
+                    case -2010, -2019, -1013, -4164 -> RestErrorAction.IGNORE_AS_REJECTED;
+                    default -> RestErrorAction.DEFAULT;
+                })
+                .build();
+        RestAssistant orderCancelRestAssistant = new RestAssistantBuilder(restAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.BINANCE_DERIVATIVE))
+                .errorClassifier(new BinanceExchangeErrorClassifier())
+                .on4xxError(error -> error.code() != null
+                        && error.code() == ApiSpec.Code.UNKNOWN_ORDER_DURING_CANCELLATION_ERROR
+                        ? RestErrorAction.IGNORE_AS_REJECTED
+                        : RestErrorAction.DEFAULT)
+                .maxRetry(1)
+                .build();
         orderClient = new OrderClientImpl(
                 timeSynchronizer,
-                restAssistant,
-                symbolRegistry,
-                circuitBreakerRegistry
+                orderEntryRestAssistant,
+                orderCancelRestAssistant,
+                symbolRegistry
         );
     }
 

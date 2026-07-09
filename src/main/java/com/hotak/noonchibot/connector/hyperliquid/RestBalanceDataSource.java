@@ -1,18 +1,13 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.balance.AssetState;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.event.internal.balance.BalanceEvent;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -42,25 +37,6 @@ class RestBalanceDataSource implements LifecycleAware {
         this.eventPublisher = eventPublisher;
         this.taskScheduler = taskScheduler;
         this.userAddress = userAddress;
-    }
-
-    public RestBalanceDataSource(
-            RestAssistant restAssistant,
-            EventPublisher eventPublisher,
-            TaskScheduler taskScheduler,
-            String userAddress,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.balance(Exchange.HYPERLIQUID_DERIVATIVE))
-                        .errorClassifier(new DefaultExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                eventPublisher,
-                taskScheduler,
-                userAddress
-        );
     }
 
     @VisibleForTesting

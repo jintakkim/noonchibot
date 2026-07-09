@@ -1,14 +1,10 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
-import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.order.*;
 import com.hotak.noonchibot.core.trade.TradeType;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
 
@@ -25,18 +21,6 @@ class OrderClientImpl implements OrderClient {
 
     OrderClientImpl(RestAssistant restAssistant, HLTradingRuleRegistry tradingRuleRegistry) {
         this(restAssistant, restAssistant, tradingRuleRegistry);
-    }
-
-    OrderClientImpl(
-            RestAssistant restAssistant,
-            HLTradingRuleRegistry tradingRuleRegistry,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                orderEntryRest(restAssistant, circuitBreakerRegistry),
-                orderCancelRest(restAssistant, circuitBreakerRegistry),
-                tradingRuleRegistry
-        );
     }
 
     OrderClientImpl(
@@ -125,24 +109,4 @@ class OrderClientImpl implements OrderClient {
         return DerivativeApiSpec.TIME_IN_FORCE_API_VALUE.get(order.getTimeInForce());
     }
 
-    private static RestAssistant orderEntryRest(
-            RestAssistant restAssistant,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        return new RestAssistantConfigurer(restAssistant)
-                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.HYPERLIQUID_DERIVATIVE))
-                .errorClassifier(new DefaultExchangeErrorClassifier())
-                .build();
-    }
-
-    private static RestAssistant orderCancelRest(
-            RestAssistant restAssistant,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        return new RestAssistantConfigurer(restAssistant)
-                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.HYPERLIQUID_DERIVATIVE))
-                .errorClassifier(new DefaultExchangeErrorClassifier())
-                .maxRetry(1)
-                .build();
-    }
 }

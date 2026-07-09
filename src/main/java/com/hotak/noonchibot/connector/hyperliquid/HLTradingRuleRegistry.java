@@ -1,19 +1,14 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingRuleRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.order.OrderType;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.trade.TradingRule;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
@@ -44,23 +39,6 @@ class HLTradingRuleRegistry implements TradingRuleRegistry, LifecycleAware {
         this.restAssistant = restAssistant;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.taskScheduler = taskScheduler;
-    }
-
-    public HLTradingRuleRegistry(
-            RestAssistant restAssistant,
-            TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            TaskScheduler taskScheduler,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.tradingRules(Exchange.HYPERLIQUID_DERIVATIVE))
-                        .errorClassifier(new DefaultExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                tradingPairSymbolRegistry,
-                taskScheduler
-        );
     }
 
     @Override

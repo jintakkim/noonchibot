@@ -1,9 +1,7 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
-import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsRequest;
@@ -12,8 +10,6 @@ import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSource;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
@@ -52,31 +48,6 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
         super(wsAssistant, objectMapper, ioExecutor, eventPublisher, pairsToSubscribe);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
-    }
-
-    public HyperliquidWsFundingInfoDataSource(
-            WsAssistant wsAssistant,
-            ObjectMapper objectMapper,
-            IoExecutor ioExecutor,
-            TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant,
-            EventPublisher eventPublisher,
-            List<String> pairsToSubscribe,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                wsAssistant,
-                objectMapper,
-                ioExecutor,
-                tradingPairSymbolRegistry,
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.funding(Exchange.HYPERLIQUID_DERIVATIVE))
-                        .errorClassifier(new DefaultExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                eventPublisher,
-                pairsToSubscribe
-        );
     }
 
     @Override

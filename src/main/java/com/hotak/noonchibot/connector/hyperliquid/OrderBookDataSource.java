@@ -1,6 +1,5 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
-import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.Exchange;
@@ -11,9 +10,7 @@ import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import com.hotak.noonchibot.core.orderbook.AbstractOrderBookDataSource;
 import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.trade.TradeType;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
@@ -50,33 +47,6 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
         super(wsAssistant, objectMapper, ioExecutor, taskScheduler, eventPublisher, eventSubscriber);
         this.restAssistant = restAssistant;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
-    }
-
-    public OrderBookDataSource(
-            WsAssistant wsAssistant,
-            ObjectMapper objectMapper,
-            IoExecutor ioExecutor,
-            TaskScheduler taskScheduler,
-            RestAssistant restAssistant,
-            TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            EventPublisher eventPublisher,
-            EventSubscriber eventSubscriber,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                wsAssistant,
-                objectMapper,
-                ioExecutor,
-                taskScheduler,
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.HYPERLIQUID_DERIVATIVE))
-                        .errorClassifier(new DefaultExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                tradingPairSymbolRegistry,
-                eventPublisher,
-                eventSubscriber
-        );
     }
 
     @Override

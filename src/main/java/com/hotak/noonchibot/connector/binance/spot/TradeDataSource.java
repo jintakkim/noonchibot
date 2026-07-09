@@ -1,18 +1,13 @@
 package com.hotak.noonchibot.connector.binance.spot;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.trade.TokenAmount;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
@@ -29,25 +24,6 @@ class TradeDataSource implements EventHandler<TradeEvent.UpdateRequested>, Lifec
     private final EventPublisher eventPublisher;
     private final EventSubscriber eventSubscriber;
     private Subscription subscription;
-
-    public TradeDataSource(
-            TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant,
-            EventPublisher eventPublisher,
-            EventSubscriber eventSubscriber,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                tradingPairSymbolRegistry,
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.trades(Exchange.BINANCE_SPOT))
-                        .errorClassifier(new BinanceExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                eventPublisher,
-                eventSubscriber
-        );
-    }
 
     @Override
     public void onEvent(TradeEvent.UpdateRequested request) {

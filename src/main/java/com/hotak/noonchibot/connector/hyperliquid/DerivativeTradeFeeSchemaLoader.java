@@ -1,16 +1,11 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.hotak.noonchibot.connector.AbstractTradeFeeSchemaLoader;
-import com.hotak.noonchibot.connector.DefaultExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.trade.TradeFeeSchema;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
 
@@ -32,25 +27,6 @@ class DerivativeTradeFeeSchemaLoader extends AbstractTradeFeeSchemaLoader {
         super(ioExecutor, tradingPairSymbolRegistry);
         this.restAssistant = restAssistant;
         this.userAddress = userAddress;
-    }
-
-    public DerivativeTradeFeeSchemaLoader(
-            IoExecutor ioExecutor,
-            TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant,
-            String userAddress,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                ioExecutor,
-                tradingPairSymbolRegistry,
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.tradeFee(Exchange.HYPERLIQUID_DERIVATIVE))
-                        .errorClassifier(new DefaultExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                userAddress
-        );
     }
 
     /**

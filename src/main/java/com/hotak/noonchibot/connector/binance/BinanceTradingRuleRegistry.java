@@ -4,11 +4,7 @@ import com.hotak.noonchibot.connector.AbstractPollingTradingRuleRegistry;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.TradingRuleParser;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.Exchange;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.ObjectMapper;
@@ -34,32 +30,6 @@ public class BinanceTradingRuleRegistry extends AbstractPollingTradingRuleRegist
         this.symbolRegistry = symbolRegistry;
         this.requestPath = requestPath;
         this.objectMapper = objectMapper;
-    }
-
-    public BinanceTradingRuleRegistry(
-            RestAssistant restAssistant,
-            TradingRuleParser parser,
-            TaskScheduler scheduler,
-            Duration pollingInterval,
-            TradingPairSymbolRegistry symbolRegistry,
-            String requestPath,
-            ObjectMapper objectMapper,
-            Exchange exchange,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.tradingRules(exchange))
-                        .errorClassifier(new BinanceExchangeErrorClassifier())
-                        .maxRetry(2)
-                        .build(),
-                parser,
-                scheduler,
-                pollingInterval,
-                symbolRegistry,
-                requestPath,
-                objectMapper
-        );
     }
 
     @Override

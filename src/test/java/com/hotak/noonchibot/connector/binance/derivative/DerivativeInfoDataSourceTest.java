@@ -1,8 +1,10 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
-import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
+import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
+import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestAssistantBuilder;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.derivative.*;
@@ -12,6 +14,7 @@ import com.hotak.noonchibot.core.event.TestEventSubscriber;
 import com.hotak.noonchibot.core.event.internal.derivative.LeverageChangeEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.MarginModeChangeEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.PositionModeChangeEvent;
+import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import com.hotak.noonchibot.core.resilience.CircuitBreakerTestSupport;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -37,12 +40,16 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
         eventPublisher = new TestEventPublisher();
         eventSubscriber = new TestEventSubscriber();
         circuitBreakerRegistry = CircuitBreakerTestSupport.circuitBreakerRegistry();
+        RestAssistant derivativeInfoRestAssistant = new RestAssistantBuilder(restAssistant)
+                .circuit(circuitBreakerRegistry, CircuitBreakerNames.derivativeInfo(Exchange.BINANCE_DERIVATIVE))
+                .errorClassifier(new BinanceExchangeErrorClassifier())
+                .maxRetry(1)
+                .build();
         client = new DerivativeInfoDataSource(
-                restAssistant,
+                derivativeInfoRestAssistant,
                 symbolRegistry,
                 eventPublisher,
-                eventSubscriber,
-                circuitBreakerRegistry
+                eventSubscriber
         );
     }
 
@@ -118,7 +125,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
                     () -> {
                         assertThatThrownBy(() ->
                         client.leverageChangeHandler.onEvent(new LeverageChangeEvent.IORequested("BTC-USDT", 500)))
-                                .isInstanceOf(ExchangeApiException.class);
+                                .isInstanceOf(ExchangeRejectedException.class);
                         assertThat(eventPublisher.hasEventOfType(LeverageChangeEvent.Applied.class)).isFalse();
                     }
             );

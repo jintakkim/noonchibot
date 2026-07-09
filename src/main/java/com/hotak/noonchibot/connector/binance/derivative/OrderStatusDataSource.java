@@ -1,19 +1,13 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantConfigurer;
-import com.hotak.noonchibot.connector.web.RestErrorAction;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.OrderState;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -30,29 +24,6 @@ class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateReque
     private final EventPublisher eventPublisher;
     private final EventSubscriber eventSubscriber;
     private Subscription subscription;
-
-    public OrderStatusDataSource(
-            TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            RestAssistant restAssistant,
-            EventPublisher eventPublisher,
-            EventSubscriber eventSubscriber,
-            CircuitBreakerRegistry circuitBreakerRegistry
-    ) {
-        this(
-                tradingPairSymbolRegistry,
-                new RestAssistantConfigurer(restAssistant)
-                        .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderStatus(Exchange.BINANCE_DERIVATIVE))
-                        .errorClassifier(new BinanceExchangeErrorClassifier())
-                        .on4xxError(error -> error.code() != null
-                                && error.code() == ApiSpec.Code.ORDER_NOT_EXIST_ERROR
-                                ? RestErrorAction.IGNORE_AS_REJECTED
-                                : RestErrorAction.DEFAULT)
-                        .maxRetry(2)
-                        .build(),
-                eventPublisher,
-                eventSubscriber
-        );
-    }
 
     @Override
     public void onEvent(OrderEvent.StatusUpdateRequested event) {
