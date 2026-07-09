@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector;
 
 import com.hotak.noonchibot.core.order.ExchangeRejectedException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 
 public class DefaultExchangeErrorClassifier implements ExchangeErrorClassifier {
@@ -9,10 +10,8 @@ public class DefaultExchangeErrorClassifier implements ExchangeErrorClassifier {
         if (exception instanceof ExchangeTransientException) {
             return exception;
         }
-
         HttpStatusCode statusCode = exception.httpStatusCode;
-        int status = statusCode.value();
-        if (status == 418 || status == 429) {
+        if (statusCode == HttpStatus.I_AM_A_TEAPOT || statusCode == HttpStatus.TOO_MANY_REQUESTS) {
             return new ExchangeRateLimitedException(exception);
         }
         if (statusCode.is4xxClientError()) {
