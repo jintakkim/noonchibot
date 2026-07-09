@@ -7,6 +7,7 @@ import com.hotak.noonchibot.connector.ExchangeTransientException;
 import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import com.hotak.noonchibot.core.order.InsufficientBalanceException;
 import com.hotak.noonchibot.core.order.InvalidOrderRejectedException;
+import com.hotak.noonchibot.core.utils.AsyncUtils;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -20,10 +21,6 @@ public class BinanceExchangeErrorClassifier implements ExchangeErrorClassifier {
     private static final Set<Integer> TRANSIENT_CODES = Set.of(-1000, -1001, -1006, -1007, -1021);
 
     private final ObjectMapper objectMapper;
-
-    public BinanceExchangeErrorClassifier() {
-        this(new ObjectMapper());
-    }
 
     public BinanceExchangeErrorClassifier(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -67,6 +64,11 @@ public class BinanceExchangeErrorClassifier implements ExchangeErrorClassifier {
         return new ExchangeTransientException(exception);
     }
 
+    @Override
+    public boolean test(Throwable throwable) {
+        return AsyncUtils.unwrapCompletionException(throwable) instanceof ExchangeTransientException;
+    }
+
     private boolean isAlreadyClassified(ExchangeApiException exception) {
         return exception instanceof ExchangeTransientException;
     }
@@ -87,4 +89,5 @@ public class BinanceExchangeErrorClassifier implements ExchangeErrorClassifier {
             return null;
         }
     }
+
 }

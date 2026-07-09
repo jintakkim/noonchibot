@@ -59,7 +59,8 @@ public class ExchangeAdapterFactory {
                                 new RestAssistantImpl(restClient, List.of(new ThrottlerLimitIdPreProcessor()), List.of(), null, throttler, objectMapper),
                                 circuitBreakerRegistry,
                                 CircuitBreakerNames.serverTime(Exchange.BINANCE_DERIVATIVE),
-                                2
+                                2,
+                                objectMapper
                         ),
                         ApiSpec.SERVER_TIME_PATH_URL),
                 taskScheduler
@@ -75,7 +76,7 @@ public class ExchangeAdapterFactory {
                 ioExecutor,
                 taskScheduler,
                 tradingPairSymbolRegistry,
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.BINANCE_DERIVATIVE), 2),
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.BINANCE_DERIVATIVE), 2, objectMapper),
                 eventBus,
                 eventBus
         );
@@ -98,12 +99,12 @@ public class ExchangeAdapterFactory {
         TradeFeeSchemaLoader feeSchemaLoader = new TradeFeeSchemaLoader(
                 ioExecutor,
                 tradingPairSymbolRegistry,
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradeFee(Exchange.BINANCE_DERIVATIVE), 2)
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradeFee(Exchange.BINANCE_DERIVATIVE), 2, objectMapper)
         );
         bootStrap.register(feeSchemaLoader);
 
         UserStreamDataSource userStreamDataSource = new UserStreamDataSource(
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.userStream(Exchange.BINANCE_DERIVATIVE), 2),
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.userStream(Exchange.BINANCE_DERIVATIVE), 2, objectMapper),
                 wsAssistant,
                 taskScheduler,
                 objectMapper,
@@ -114,14 +115,14 @@ public class ExchangeAdapterFactory {
         bootStrap.register(userStreamDataSource);
 
         RestBalanceDataSource balancePoller = new RestBalanceDataSource(
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.balance(Exchange.BINANCE_DERIVATIVE), 2),
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.balance(Exchange.BINANCE_DERIVATIVE), 2, objectMapper),
                 eventBus,
                 taskScheduler
         );
         bootStrap.register(balancePoller);
 
         BinanceTradingRuleRegistry binanceTradingRuleRegistry = new BinanceTradingRuleRegistry(
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradingRules(Exchange.BINANCE_DERIVATIVE), 2),
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradingRules(Exchange.BINANCE_DERIVATIVE), 2, objectMapper),
                 new DerivativeTradingRuleParser(tradingPairSymbolRegistry),
                 taskScheduler,
                 ApiSpec.TRADING_RULE_UPDATE_INTERVAL,
@@ -133,8 +134,8 @@ public class ExchangeAdapterFactory {
 
         OrderClientImpl orderClient = new OrderClientImpl(
                 timeSynchronizer,
-                orderEntryRest(rawRestAssistant, circuitBreakerRegistry),
-                orderCancelRest(rawRestAssistant, circuitBreakerRegistry),
+                orderEntryRest(rawRestAssistant, circuitBreakerRegistry, objectMapper),
+                orderCancelRest(rawRestAssistant, circuitBreakerRegistry, objectMapper),
                 tradingPairSymbolRegistry
         );
 
@@ -201,7 +202,7 @@ public class ExchangeAdapterFactory {
         bootStrap.register(new FundingPaymentSnapshotUpdater(fundingPaymentRepository, eventBus));
 
         DerivativeInfoDataSource derivativeInfoDataSource = new DerivativeInfoDataSource(
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.derivativeInfo(Exchange.BINANCE_DERIVATIVE), 1),
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.derivativeInfo(Exchange.BINANCE_DERIVATIVE), 1, objectMapper),
                 tradingPairSymbolRegistry,
                 eventBus,
                 eventBus
@@ -211,7 +212,7 @@ public class ExchangeAdapterFactory {
 
        OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
                 tradingPairSymbolRegistry,
-                orderStatusRest(rawRestAssistant, circuitBreakerRegistry),
+                orderStatusRest(rawRestAssistant, circuitBreakerRegistry, objectMapper),
                 eventBus,
                 eventBus
         );
@@ -219,7 +220,7 @@ public class ExchangeAdapterFactory {
 
         TradeDataSource tradeDataSource = new TradeDataSource(
                 tradingPairSymbolRegistry,
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.trades(Exchange.BINANCE_DERIVATIVE), 2),
+                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.trades(Exchange.BINANCE_DERIVATIVE), 2, objectMapper),
                 eventBus,
                 eventBus
         );
@@ -247,56 +248,48 @@ public class ExchangeAdapterFactory {
             RestAssistant rawRestAssistant,
             CircuitBreakerRegistry circuitBreakerRegistry,
             String circuitName,
-            int maxRetry
+            int maxAttempt,
+            ObjectMapper objectMapper
     ) {
         return new RestAssistantBuilder(rawRestAssistant)
                 .circuit(circuitBreakerRegistry, circuitName)
-                .errorClassifier(new BinanceExchangeErrorClassifier())
-                .maxRetry(maxRetry)
+                .errorClassifier(new BinanceExchangeErrorClassifier(objectMapper))
+                .maxAttempt(maxAttempt)
                 .build();
     }
 
     private static RestAssistant orderEntryRest(
             RestAssistant rawRestAssistant,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            CircuitBreakerRegistry circuitBreakerRegistry,
+            ObjectMapper objectMapper
     ) {
         return new RestAssistantBuilder(rawRestAssistant)
                 .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.BINANCE_DERIVATIVE))
-                .errorClassifier(new BinanceExchangeErrorClassifier())
-                .on4xxError(error -> switch (error.code() == null ? 0 : error.code()) {
-                    case -2010, -2019, -1013, -4164 -> RestErrorAction.IGNORE_AS_REJECTED;
-                    default -> RestErrorAction.DEFAULT;
-                })
+                .errorClassifier(new BinanceExchangeErrorClassifier(objectMapper))
                 .build();
     }
 
     private static RestAssistant orderCancelRest(
             RestAssistant rawRestAssistant,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            CircuitBreakerRegistry circuitBreakerRegistry,
+            ObjectMapper objectMapper
     ) {
         return new RestAssistantBuilder(rawRestAssistant)
                 .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.BINANCE_DERIVATIVE))
-                .errorClassifier(new BinanceExchangeErrorClassifier())
-                .on4xxError(error -> error.code() != null
-                        && error.code() == ApiSpec.Code.UNKNOWN_ORDER_DURING_CANCELLATION_ERROR
-                        ? RestErrorAction.IGNORE_AS_REJECTED
-                        : RestErrorAction.DEFAULT)
-                .maxRetry(1)
+                .errorClassifier(new BinanceExchangeErrorClassifier(objectMapper))
+                .maxAttempt(1)
                 .build();
     }
 
     private static RestAssistant orderStatusRest(
             RestAssistant rawRestAssistant,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            CircuitBreakerRegistry circuitBreakerRegistry,
+            ObjectMapper objectMapper
     ) {
         return new RestAssistantBuilder(rawRestAssistant)
                 .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderStatus(Exchange.BINANCE_DERIVATIVE))
-                .errorClassifier(new BinanceExchangeErrorClassifier())
-                .on4xxError(error -> error.code() != null
-                        && error.code() == ApiSpec.Code.ORDER_NOT_EXIST_ERROR
-                        ? RestErrorAction.IGNORE_AS_REJECTED
-                        : RestErrorAction.DEFAULT)
-                .maxRetry(2)
+                .errorClassifier(new BinanceExchangeErrorClassifier(objectMapper))
+                .maxAttempt(2)
                 .build();
     }
 }

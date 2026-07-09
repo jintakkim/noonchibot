@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,8 +43,8 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
         circuitBreakerRegistry = CircuitBreakerTestSupport.circuitBreakerRegistry();
         RestAssistant derivativeInfoRestAssistant = new RestAssistantBuilder(restAssistant)
                 .circuit(circuitBreakerRegistry, CircuitBreakerNames.derivativeInfo(Exchange.BINANCE_DERIVATIVE))
-                .errorClassifier(new BinanceExchangeErrorClassifier())
-                .maxRetry(1)
+                .errorClassifier(new BinanceExchangeErrorClassifier(new ObjectMapper()))
+                .maxAttempt(1)
                 .build();
         client = new DerivativeInfoDataSource(
                 derivativeInfoRestAssistant,

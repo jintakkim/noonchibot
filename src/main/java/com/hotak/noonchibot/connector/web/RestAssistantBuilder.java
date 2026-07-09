@@ -1,19 +1,20 @@
 package com.hotak.noonchibot.connector.web;
 
+import com.hotak.noonchibot.connector.SimpleExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import tools.jackson.databind.ObjectMapper;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
 
 import java.util.Objects;
-import java.util.function.Function;
 
 public class RestAssistantBuilder {
+    private static final ExchangeErrorClassifier DEFAULT_ERROR_CLASSIFIER = new SimpleExchangeErrorClassifier();
     private final RestAssistant delegate;
     private CircuitBreakerRegistry circuitBreakerRegistry;
     private String circuitName;
-    private ExchangeErrorClassifier errorClassifier = ExchangeErrorClassifier.PASS_THROUGH;
-    private Function<RestExchangeError, RestErrorAction> fourXxHandler = error -> RestErrorAction.DEFAULT;
-    private int maxRetry;
+    private ExchangeErrorClassifier errorClassifier = DEFAULT_ERROR_CLASSIFIER;
+    private int maxAttempts = 1;
 
     public RestAssistantBuilder(RestAssistant delegate) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
@@ -30,30 +31,39 @@ public class RestAssistantBuilder {
         return this;
     }
 
-    public RestAssistantBuilder on4xxError(Function<RestExchangeError, RestErrorAction> fourXxHandler) {
-        this.fourXxHandler = Objects.requireNonNull(fourXxHandler, "fourXxHandler");
-        return this;
-    }
-
-    public RestAssistantBuilder maxRetry(int maxRetry) {
-        if (maxRetry < 0) {
-            throw new IllegalArgumentException("maxRetry must not be negative");
+    public RestAssistantBuilder maxAttempt(int maxAttempt) {
+        if (maxAttempt < 0) {
+            throw new IllegalArgumentException("maxAttempt must not be negative");
         }
-        this.maxRetry = maxRetry;
+        this.maxAttempts = maxAttempt;
         return this;
     }
 
     public RestAssistant build() {
         return new CircuitSupportRestAssistant(
                 delegate,
-                circuitBreakerRegistry == null || circuitName == null
-                        ? null
-                        : circuitBreakerRegistry.circuitBreaker(circuitName),
+                circuitBreakerRegistry.circuitBreaker(circuitName),
                 errorClassifier,
-                fourXxHandler,
-                maxRetry,
-                new ObjectMapper()
+                retry(errorClassifier)
         );
+    }
+
+    private Retry retry(ExchangeErrorClassifier classifier) {
+        if (maxAttempts <= 1) {
+            return null;
+        }
+        RetryConfig config = RetryConfig.custom()
+                .maxAttempts(maxAttempts)
+                .retryOnException(classifier)
+                .build();
+        return Retry.of(retryName(), config);
+    }
+
+    private String retryName() {
+        if (circuitName == null || circuitName.isBlank()) {
+            return "rest-assistant-retry";
+        }
+        return circuitName + ".retry";
     }
 
 }

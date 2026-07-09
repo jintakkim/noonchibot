@@ -217,12 +217,12 @@ public class DerivativeExchangeAdapterFactory {
             RestAssistant rawRestAssistant,
             CircuitBreakerRegistry circuitBreakerRegistry,
             String circuitName,
-            int maxRetry
+            int maxAttempt
     ) {
         return new RestAssistantBuilder(rawRestAssistant)
                 .circuit(circuitBreakerRegistry, circuitName)
-                .errorClassifier(new DefaultExchangeErrorClassifier())
-                .maxRetry(maxRetry)
+                .errorClassifier(new SimpleExchangeErrorClassifier())
+                .maxAttempt(maxAttempt)
                 .build();
     }
 
@@ -232,7 +232,7 @@ public class DerivativeExchangeAdapterFactory {
     ) {
         return new RestAssistantBuilder(rawRestAssistant)
                 .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.HYPERLIQUID_DERIVATIVE))
-                .errorClassifier(new DefaultExchangeErrorClassifier())
+                .errorClassifier(new SimpleExchangeErrorClassifier())
                 .build();
     }
 
@@ -242,8 +242,8 @@ public class DerivativeExchangeAdapterFactory {
     ) {
         return new RestAssistantBuilder(rawRestAssistant)
                 .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.HYPERLIQUID_DERIVATIVE))
-                .errorClassifier(new DefaultExchangeErrorClassifier())
-                .maxRetry(1)
+                .errorClassifier(new SimpleExchangeErrorClassifier())
+                .maxAttempt(1)
                 .build();
     }
 }

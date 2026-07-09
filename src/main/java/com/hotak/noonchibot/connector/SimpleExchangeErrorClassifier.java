@@ -4,7 +4,7 @@ import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 
-public class DefaultExchangeErrorClassifier implements ExchangeErrorClassifier {
+public class SimpleExchangeErrorClassifier implements ExchangeErrorClassifier {
     @Override
     public RuntimeException classify(ExchangeApiException exception) {
         if (exception instanceof ExchangeTransientException) {
@@ -18,5 +18,10 @@ public class DefaultExchangeErrorClassifier implements ExchangeErrorClassifier {
             return new ExchangeRejectedException(exception);
         }
         return new ExchangeTransientException(exception);
+    }
+
+    @Override
+    public boolean test(Throwable throwable) {
+        return throwable instanceof ExchangeTransientException;
     }
 }

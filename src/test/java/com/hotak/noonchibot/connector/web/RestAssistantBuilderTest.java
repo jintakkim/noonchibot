@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.web;
 
 import com.hotak.noonchibot.connector.ExchangeApiException;
+import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.ExchangeTransientException;
 import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -27,13 +28,13 @@ class RestAssistantBuilderTest {
             .build();
 
     @Test
-    void on4xxError_canIgnoreRejectedErrorWithoutOpeningCircuit() {
+    void errorClassifier_canIgnoreRejectedErrorWithoutOpeningCircuit() {
         CircuitBreakerRegistry registry = registry();
         RestAssistant assistant = new RestAssistantBuilder(new ThrowingRestAssistant(
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-2010}")
         ))
                 .circuit(registry, "BINANCE_SPOT.order-entry")
-                .on4xxError(error -> RestErrorAction.IGNORE_AS_REJECTED)
+                .errorClassifier(rejectedClassifier())
                 .build();
 
         assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
@@ -44,7 +45,7 @@ class RestAssistantBuilderTest {
     }
 
     @Test
-    void on4xxError_canRetryWithinSingleCircuitCall() {
+    void errorClassifier_canRetryWithinSingleCircuitCall() {
         CircuitBreakerRegistry registry = registry();
         SequencedRestAssistant delegate = new SequencedRestAssistant(
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":1202}"),
@@ -52,10 +53,8 @@ class RestAssistantBuilderTest {
         );
         RestAssistant assistant = new RestAssistantBuilder(delegate)
                 .circuit(registry, "BINANCE_SPOT.order-status")
-                .on4xxError(error -> error.code() != null && error.code() == 1202
-                        ? RestErrorAction.RETRY
-                        : RestErrorAction.DEFAULT)
-                .maxRetry(1)
+                .errorClassifier(retryableClassifier())
+                .maxAttempt(2)
                 .build();
 
         JsonNode body = assistant.executeRequestAndGetJsonBody(request);
@@ -67,13 +66,13 @@ class RestAssistantBuilderTest {
     }
 
     @Test
-    void on4xxError_canRecordFailureAndOpenCircuit() {
+    void errorClassifier_canRecordFailureAndOpenCircuit() {
         CircuitBreakerRegistry registry = registry();
         RestAssistant assistant = new RestAssistantBuilder(new ThrowingRestAssistant(
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-1021}")
         ))
                 .circuit(registry, "BINANCE_SPOT.server-time")
-                .on4xxError(error -> RestErrorAction.RECORD_FAILURE)
+                .errorClassifier(nonRetryableTransientClassifier())
                 .build();
 
         assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
@@ -81,6 +80,25 @@ class RestAssistantBuilderTest {
 
         assertThat(registry.circuitBreaker("BINANCE_SPOT.server-time").getState())
                 .isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @Test
+    void errorClassifier_recordFailureDoesNotRetry() {
+        CircuitBreakerRegistry registry = registry();
+        SequencedRestAssistant delegate = new SequencedRestAssistant(
+                new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-1021}"),
+                new ObjectMapper().readTree("{\"ok\":true}")
+        );
+        RestAssistant assistant = new RestAssistantBuilder(delegate)
+                .circuit(registry, "BINANCE_SPOT.server-time")
+                .errorClassifier(nonRetryableTransientClassifier())
+                .maxAttempt(1)
+                .build();
+
+        assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
+                .isInstanceOf(ExchangeTransientException.class);
+
+        assertThat(delegate.calls).isEqualTo(1);
     }
 
     @Test
@@ -92,7 +110,6 @@ class RestAssistantBuilderTest {
         );
         RestAssistant assistant = new RestAssistantBuilder(delegate)
                 .circuit(registry, "BINANCE_SPOT.balance")
-                .errorClassifier(exception -> new ExchangeTransientException(exception))
                 .build();
 
         assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
@@ -115,6 +132,54 @@ class RestAssistantBuilderTest {
                 .recordExceptions(ExchangeTransientException.class)
                 .build();
         return CircuitBreakerRegistry.of(config);
+    }
+
+    private static ExchangeErrorClassifier rejectedClassifier() {
+        return new ExchangeErrorClassifier() {
+            @Override
+            public RuntimeException classify(ExchangeApiException exception) {
+                return new ExchangeRejectedException(exception);
+            }
+
+            @Override
+            public boolean test(Throwable throwable) {
+                return false;
+            }
+        };
+    }
+
+    private static ExchangeErrorClassifier retryableClassifier() {
+        return new ExchangeErrorClassifier() {
+            @Override
+            public RuntimeException classify(ExchangeApiException exception) {
+                return new ExchangeTransientException(exception);
+            }
+
+            @Override
+            public boolean test(Throwable throwable) {
+                return throwable instanceof ExchangeTransientException;
+            }
+        };
+    }
+
+    private static ExchangeErrorClassifier nonRetryableTransientClassifier() {
+        return new ExchangeErrorClassifier() {
+            @Override
+            public RuntimeException classify(ExchangeApiException exception) {
+                return new NonRetryableExchangeTransientException(exception);
+            }
+
+            @Override
+            public boolean test(Throwable throwable) {
+                return false;
+            }
+        };
+    }
+
+    private static class NonRetryableExchangeTransientException extends ExchangeTransientException {
+        private NonRetryableExchangeTransientException(ExchangeApiException cause) {
+            super(cause);
+        }
     }
 
     private static class ThrowingRestAssistant implements RestAssistant {
