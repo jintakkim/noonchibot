@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 public abstract class AbstractOrderBookDataSourceTest<T extends AbstractOrderBookDataSource> extends RestClientTest {
@@ -191,9 +190,9 @@ public abstract class AbstractOrderBookDataSourceTest<T extends AbstractOrderBoo
     }
 
     @Test
-    @DisplayName("error 메시지 수신 시 예외를 던진다")
-    void errorMessageThrows() {
-        assertThatThrownBy(() -> dataSource.processMessage(errorMessage()))
-                .isInstanceOf(WebSocketErrorMessageReceivedException.class);
+    @DisplayName("error 메시지 수신 시 재연결 결과를 반환한다")
+    void errorMessageRequestsReconnect() {
+        assertThat(dataSource.processMessage(errorMessage()).directive())
+                .isEqualTo(WebsocketMessageResult.Directive.RECONNECT);
     }
 }

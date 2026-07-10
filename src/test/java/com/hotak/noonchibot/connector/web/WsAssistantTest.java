@@ -11,12 +11,12 @@ import org.springframework.web.socket.client.WebSocketClient;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -25,11 +25,13 @@ class WsAssistantTest {
     private WsAssistantImpl wsAssistant;
     private WebSocketClient webSocketClient;
     private ObjectMapper objectMapper;
+    private RecordingListener listener;
 
     @BeforeEach
     void setUp() {
         webSocketClient = mock(WebSocketClient.class);
         objectMapper = new ObjectMapper();
+        listener = new RecordingListener();
         wsAssistant = new WsAssistantImpl(
                 webSocketClient,
                 new WebSocketHttpHeaders(),
@@ -58,28 +60,27 @@ class WsAssistantTest {
 
     @Test
     @DisplayName("연결 후 메시지를 수신할 수 있다")
-    void receivesMessageAfterConnect() throws InterruptedException {
+    void receivesMessageAfterConnect() {
         WsConnectionImpl conn = connectWithMockSession();
         conn.handleTextMessage(null, new TextMessage("message"));
-        WsResponse response = conn.take();
-        assertThat(response.data()).contains("message");
+        assertThat(listener.messages.getFirst().data()).contains("message");
     }
 
     @Test
-    @DisplayName("의도적인 연결 해제 시 take에서 예외가 발생한다")
+    @DisplayName("의도적인 연결 해제 시 종료 콜백을 전달한다")
     void throwsOnIntentionalDisconnect() {
         WsConnectionImpl conn = connectWithMockSession();
-        conn.disconnect();
+        conn.disconnect(CloseStatus.NORMAL);
         conn.afterConnectionClosed(null, CloseStatus.NORMAL);
-        assertThatThrownBy(conn::take).isInstanceOf(WebSocketDisconnectedException.class);
+        assertThat(listener.closedStatuses).containsExactly(CloseStatus.NORMAL);
     }
 
     @Test
-    @DisplayName("비의도적인 연결 해제 시 take에서 예외가 발생한다")
+    @DisplayName("비의도적인 연결 해제 시 종료 콜백을 전달한다")
     void throwsOnUnintentionalDisconnect() {
         WsConnectionImpl conn = connectWithMockSession();
         conn.afterConnectionClosed(null, CloseStatus.GOING_AWAY);
-        assertThatThrownBy(conn::take).isInstanceOf(WebSocketDisconnectedException.class);
+        assertThat(listener.closedStatuses).containsExactly(CloseStatus.GOING_AWAY);
     }
 
     @Test
@@ -122,7 +123,7 @@ class WsAssistantTest {
 
     @Test
     @DisplayName("postProcessor가 수신 메시지에 적용된다")
-    void appliesPostProcessorsOnReceive() throws InterruptedException {
+    void appliesPostProcessorsOnReceive() {
         WsPostProcessor uppercase = resp -> new WsResponse(
                 resp.data().toUpperCase(), resp.messageType()
         );
@@ -135,22 +136,20 @@ class WsAssistantTest {
         WsConnectionImpl conn = connectWithMockSession();
         conn.handleTextMessage(null, new TextMessage("hello"));
 
-        WsResponse response = conn.take();
-        assertThat(response.data()).isEqualTo("HELLO");
+        assertThat(listener.messages.getFirst().data()).isEqualTo("HELLO");
     }
 
     @Test
     @DisplayName("여러 메시지를 순서대로 수신한다")
-    void receivesMessagesInOrder() throws InterruptedException {
+    void receivesMessagesInOrder() {
         WsConnectionImpl conn = connectWithMockSession();
 
         conn.handleTextMessage(null, new TextMessage("first"));
         conn.handleTextMessage(null, new TextMessage("second"));
         conn.handleTextMessage(null, new TextMessage("third"));
 
-        assertThat(conn.take().data()).isEqualTo("first");
-        assertThat(conn.take().data()).isEqualTo("second");
-        assertThat(conn.take().data()).isEqualTo("third");
+        assertThat(listener.messages).extracting(WsResponse::data)
+                .containsExactly("first", "second", "third");
     }
 
     private WsConnectionImpl connectWithMockSession() {
@@ -166,6 +165,16 @@ class WsAssistantTest {
                     conn.afterConnectionEstablished(session);
                     return CompletableFuture.completedFuture(null);
                 });
-        return (WsConnectionImpl) wsAssistant.connect(URI.create("wss://test.com"));
+        return (WsConnectionImpl) wsAssistant.connect(URI.create("wss://test.com"), listener);
+    }
+
+    private static final class RecordingListener implements WsConnectionListener {
+        private final List<WsResponse> messages = new ArrayList<>();
+        private final List<CloseStatus> closedStatuses = new ArrayList<>();
+
+        @Override public void onConnected(WsConnection connection) { }
+        @Override public void onMessage(WsResponse response) { messages.add(response); }
+        @Override public void onError(Throwable error) { }
+        @Override public void onClosed(CloseStatus status) { closedStatuses.add(status); }
     }
 }

@@ -11,21 +11,29 @@ import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.balance.AccountBalanceTracker;
 import com.hotak.noonchibot.core.config.BotConstants;
 import com.hotak.noonchibot.core.derivative.DerivativeInfoTracker;
-import com.hotak.noonchibot.core.derivative.FundingInfoTracker;
-import com.hotak.noonchibot.core.derivative.FundingPaymentRepository;
-import com.hotak.noonchibot.core.derivative.FundingPaymentSnapshotUpdater;
-import com.hotak.noonchibot.core.derivative.FundingPaymentTracker;
+import com.hotak.noonchibot.core.derivative.funding.FundingInfoTracker;
+import com.hotak.noonchibot.core.derivative.funding.FundingHistoryProperties;
+import com.hotak.noonchibot.core.derivative.funding.FundingPaymentRepository;
+import com.hotak.noonchibot.core.derivative.funding.FundingPaymentSnapshotUpdater;
+import com.hotak.noonchibot.core.derivative.funding.FundingPaymentTracker;
 import com.hotak.noonchibot.core.derivative.PositionTracker;
 import com.hotak.noonchibot.core.event.EventBus;
+import com.hotak.noonchibot.core.event.ExecutionPolicy;
+import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
+import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
+import com.hotak.noonchibot.core.order.OrderSnapshotUpdater;
+import com.hotak.noonchibot.core.order.OrderRecoveryBootstrap;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
+import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
 import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.msgpack.jackson.dataformat.MessagePackMapper;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.WebSocketClient;
@@ -42,16 +50,24 @@ public class DerivativeExchangeAdapterFactory {
             OrderSnapshotRepository orderSnapshotRepository,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             ObjectMapper objectMapper,
             MessagePackMapper messagePackMapper,
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
-            OrderSnapshotRepository orderHistoryRepository,
+            TradingSafetyController tradingSafetyController,
+            FundingHistoryProperties fundingHistoryProperties,
             CircuitBreakerRegistry circuitBreakerRegistry
     ) {
         EventBus eventBus = new EventBus();
-        RestClient restClient = RestClient.builder().baseUrl(DerivativeApiSpec.BASE_URL).build();
+        tradingSafetyController.connect(eventBus);
+        boolean testnet = props.network().isTestnet();
+        String restBaseUrl = testnet ? DerivativeApiSpec.TESTNET_BASE_URL : DerivativeApiSpec.BASE_URL;
+        String websocketUrl = testnet ? DerivativeApiSpec.TESTNET_WS_URL : DerivativeApiSpec.WS_URL;
+        RestClient restClient = RestClient.builder()
+                .baseUrl(restBaseUrl)
+                .build();
         TradingPairSymbolRegistry tradingPairSymbolRegistry = new SimpleTradingPairSymbolRegistry(
                 props.derivative().tradingPairSymbolMap()
         );
@@ -60,11 +76,24 @@ public class DerivativeExchangeAdapterFactory {
                 objectMapper,
                 messagePackMapper,
                 null,
-                true,
+                !testnet,
                 props.address(),
                 props.secret()
         );
-        RestAssistant rawRestAssistant = new RestAssistantImpl(restClient, List.of(), List.of(), authenticator, throttler, objectMapper);
+        RestAssistant baseRestAssistant = new RestAssistantImpl(
+                restClient,
+                List.of(new HyperliquidRateLimitPreProcessor()),
+                List.of(),
+                authenticator,
+                throttler,
+                objectMapper
+        );
+        FundingRateHistoryDataSourceImpl fundingRateHistoryDataSource =
+                new FundingRateHistoryDataSourceImpl(
+                        rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.funding(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                        tradingPairSymbolRegistry
+                );
+        bootStrap.register(new FundingRateHistoryEventHandler(fundingRateHistoryDataSource, eventBus, eventBus));
         WsAssistantImpl wsAssistant = new WsAssistantImpl(webSocketClient, new WebSocketHttpHeaders(), List.of(), List.of(), objectMapper, authenticator);
 
         OrderBookDataSource orderBookDataSource = new OrderBookDataSource(
@@ -72,14 +101,16 @@ public class DerivativeExchangeAdapterFactory {
                 objectMapper,
                 ioExecutor,
                 taskScheduler,
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                applicationEventPublisher,
+                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 tradingPairSymbolRegistry,
+                websocketUrl,
                 eventBus,
                 eventBus
         );
         bootStrap.register(orderBookDataSource);
 
-        OrderTracker orderTracker = new OrderTracker(eventBus, tradeRepository, orderHistoryRepository, eventBus);
+        OrderTracker orderTracker = new OrderTracker(eventBus, tradeRepository, orderSnapshotRepository, eventBus);
         bootStrap.register(orderTracker);
 
         OrderBookTracker orderBookTracker = new OrderBookTracker(
@@ -96,7 +127,7 @@ public class DerivativeExchangeAdapterFactory {
         DerivativeTradeFeeSchemaLoader feeSchemaLoader = new DerivativeTradeFeeSchemaLoader(
                 ioExecutor,
                 tradingPairSymbolRegistry,
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradeFee(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradeFee(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 props.address()
         );
         bootStrap.register(feeSchemaLoader);
@@ -104,15 +135,17 @@ public class DerivativeExchangeAdapterFactory {
         UserStreamDataSource userStreamDataSource = new UserStreamDataSource(
                 wsAssistant,
                 objectMapper,
-                ioExecutor,
+                taskScheduler,
+                applicationEventPublisher,
                 props.address(),
                 tradingPairSymbolRegistry,
-                eventBus
+                eventBus,
+                websocketUrl
         );
         bootStrap.register(userStreamDataSource);
 
         RestBalanceDataSource balanceDataSource = new RestBalanceDataSource(
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.balance(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.balance(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 eventBus,
                 taskScheduler,
                 props.address()
@@ -120,15 +153,15 @@ public class DerivativeExchangeAdapterFactory {
         bootStrap.register(balanceDataSource);
 
         HLTradingRuleRegistry tradingRuleRegistry = new HLTradingRuleRegistry(
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradingRules(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradingRules(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 tradingPairSymbolRegistry,
                 taskScheduler
         );
         bootStrap.register(tradingRuleRegistry);
 
         OrderClientImpl orderClient = new OrderClientImpl(
-                orderEntryRest(rawRestAssistant, circuitBreakerRegistry),
-                orderCancelRest(rawRestAssistant, circuitBreakerRegistry),
+                orderEntryRest(baseRestAssistant, circuitBreakerRegistry),
+                orderCancelRest(baseRestAssistant, circuitBreakerRegistry),
                 tradingRuleRegistry
         );
         ExchangeOrderExecutor exchangeOrderExecutor = new ExchangeOrderExecutor(
@@ -146,43 +179,61 @@ public class DerivativeExchangeAdapterFactory {
                 orderSnapshotRepository
         );
         bootStrap.register(exchangeOrderExecutor);
+        bootStrap.register(new OrderSnapshotUpdater(orderSnapshotRepository, eventBus));
 
-        bootStrap.register(new OrderStatusDataSource(
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderStatus(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+        OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
+                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderStatus(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 eventBus,
                 eventBus,
                 props.address()
-        ));
-        bootStrap.register(new OrderStatusPoller(eventBus, orderTracker, taskScheduler));
-        bootStrap.register(new TradeDataSource(
+        );
+        bootStrap.register(orderStatusDataSource);
+        TradeDataSource tradeDataSource = new TradeDataSource(
                 tradingPairSymbolRegistry,
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.trades(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.trades(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 eventBus,
                 eventBus,
                 props.address()
+        );
+        bootStrap.register(tradeDataSource);
+        bootStrap.register(new OrderRecoveryBootstrap(
+                Exchange.HYPERLIQUID_DERIVATIVE,
+                orderSnapshotRepository,
+                orderStatusDataSource,
+                tradeDataSource,
+                orderTracker
         ));
-        bootStrap.register(new TradePoller(eventBus, taskScheduler, orderTracker));
+        bootStrap.register(new OrderStatusPoller(eventBus, eventBus, orderTracker, taskScheduler));
+        bootStrap.register(new TradePoller(eventBus, eventBus, taskScheduler, orderTracker));
         DeriviativeInnerTransfer innerTransfer = new DeriviativeInnerTransfer(
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.transfer(Exchange.HYPERLIQUID_DERIVATIVE), 1)
+                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.transfer(Exchange.HYPERLIQUID_DERIVATIVE), 1)
         );
         bootStrap.register(new TransferDispatcher(List.of(innerTransfer), eventBus, eventBus));
 
         HyperliquidWsFundingInfoDataSource fundingInfoDataSource = new HyperliquidWsFundingInfoDataSource(
                 wsAssistant,
                 objectMapper,
-                ioExecutor,
+                taskScheduler,
+                applicationEventPublisher,
                 tradingPairSymbolRegistry,
-                rest(rawRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.funding(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.funding(Exchange.HYPERLIQUID_DERIVATIVE), 2),
                 eventBus,
-                tradingPairSymbolRegistry.getAllTradingPairs()
+                tradingPairSymbolRegistry.getAllTradingPairs(),
+                websocketUrl
         );
         bootStrap.register(fundingInfoDataSource);
 
         FundingInfoTracker fundingInfoTracker = new FundingInfoTracker(
+                Exchange.HYPERLIQUID_DERIVATIVE,
                 Duration.ofHours(1),
                 "USDC",
                 tradingPairSymbolRegistry,
-                eventBus
+                eventBus,
+                eventBus,
+                applicationEventPublisher,
+                fundingRateHistoryDataSource,
+                taskScheduler,
+                fundingHistoryProperties
         );
         bootStrap.register(fundingInfoTracker);
 
@@ -201,6 +252,7 @@ public class DerivativeExchangeAdapterFactory {
         bootStrap.register(new FundingPaymentSnapshotUpdater(fundingPaymentRepository, eventBus));
 
         return new DerivativeExchangeConnector(
+                Exchange.HYPERLIQUID_DERIVATIVE,
                 DerivativeApiSpec.PLATFORM_NAME,
                 orderTracker,
                 orderBookTracker,
@@ -208,18 +260,24 @@ public class DerivativeExchangeAdapterFactory {
                 feeSchemaLoader,
                 tradingRuleRegistry,
                 exchangeOrderExecutor,
+                eventBus,
+                eventBus,
+                new HyperliquidPriceCandleDataSource(
+                        rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.rest(Exchange.HYPERLIQUID_DERIVATIVE), 2),
+                        tradingPairSymbolRegistry
+                ),
                 fundingInfoTracker,
                 positionTracker
         );
     }
 
     private static RestAssistant rest(
-            RestAssistant rawRestAssistant,
+            RestAssistant delegate,
             CircuitBreakerRegistry circuitBreakerRegistry,
             String circuitName,
             int maxAttempt
     ) {
-        return new RestAssistantBuilder(rawRestAssistant)
+        return new RestAssistantBuilder(delegate)
                 .circuit(circuitBreakerRegistry, circuitName)
                 .errorClassifier(new SimpleExchangeErrorClassifier())
                 .maxAttempt(maxAttempt)
@@ -227,20 +285,20 @@ public class DerivativeExchangeAdapterFactory {
     }
 
     private static RestAssistant orderEntryRest(
-            RestAssistant rawRestAssistant,
+            RestAssistant delegate,
             CircuitBreakerRegistry circuitBreakerRegistry
     ) {
-        return new RestAssistantBuilder(rawRestAssistant)
+        return new RestAssistantBuilder(delegate)
                 .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.HYPERLIQUID_DERIVATIVE))
                 .errorClassifier(new SimpleExchangeErrorClassifier())
                 .build();
     }
 
     private static RestAssistant orderCancelRest(
-            RestAssistant rawRestAssistant,
+            RestAssistant delegate,
             CircuitBreakerRegistry circuitBreakerRegistry
     ) {
-        return new RestAssistantBuilder(rawRestAssistant)
+        return new RestAssistantBuilder(delegate)
                 .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.HYPERLIQUID_DERIVATIVE))
                 .errorClassifier(new SimpleExchangeErrorClassifier())
                 .maxAttempt(1)

@@ -6,7 +6,7 @@ import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
-import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSourceTest;
+import com.hotak.noonchibot.core.derivative.funding.AbstractWsFundingInfoDataSourceTest;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
@@ -54,11 +54,13 @@ class FundingInfoDataSourceTest extends AbstractWsFundingInfoDataSourceTest<Hype
         return new HyperliquidWsFundingInfoDataSource(
                 wsAssistant,
                 OM,
-                new com.hotak.noonchibot.core.VirtualThreadIoExecutor(),
+                new com.hotak.noonchibot.core.TestTaskScheduler(),
+                event -> { },
                 tradingPairSymbolRegistry,
                 restAssistant,
                 eventPublisher,
-                tradingPairSymbolRegistry.getAllTradingPairs()
+                tradingPairSymbolRegistry.getAllTradingPairs(),
+                DerivativeApiSpec.WS_URL
         );
     }
 

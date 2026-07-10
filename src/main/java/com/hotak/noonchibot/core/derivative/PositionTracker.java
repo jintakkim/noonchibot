@@ -3,6 +3,7 @@ package com.hotak.noonchibot.core.derivative;
 import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.derivative.funding.FundingPayment;
 import com.hotak.noonchibot.core.event.EventSubscriber;
 import com.hotak.noonchibot.core.event.ExecutionPolicy;
 import com.hotak.noonchibot.core.event.Subscription;
@@ -10,6 +11,7 @@ import com.hotak.noonchibot.core.event.internal.derivative.PositionEvent;
 import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Map;
@@ -55,6 +57,10 @@ public class PositionTracker implements LifecycleAware {
         position.update(event.unrealizedPnl(), event.entryPrice(), event.amount());
     }
 
+    public Collection<Position> getPositions() {
+        return positions.values();
+    }
+
     public void applyFundingPayment(FundingPayment payment) {
         String key = createPositionKey(payment.tradingPair(), payment.positionSide());
         Position position = positions.get(key);
@@ -79,6 +85,6 @@ public class PositionTracker implements LifecycleAware {
 
     @Override
     public int phase() {
-        return Phases.DERIVATIVE_INFO_SETUP;
+        return Phases.POSITION_TRACKER_SETUP;
     }
 }

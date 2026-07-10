@@ -49,17 +49,17 @@ public class PairArbitrageStrategy implements Strategy {
 
     @Override
     public ExecutionPlan onTick(StrategyContext context) {
-        List<TargetPosition> targets = new ArrayList<>();
-        List<ExecutionCommand> managementCommands = new ArrayList<>();
+        ExecutionPlan plan = ExecutionPlan.empty();
         for (ArbitragePair pair : config.pairs()) {
-            PairActions actions = evaluate(pair, context);
-            targets.addAll(actions.targets());
-            managementCommands.addAll(actions.managementCommands());
+            plan = plan.merge(evaluate(pair, context));
         }
-        if (!managementCommands.isEmpty()) {
-            return new ExecutionPlan(managementCommands);
-        }
+        return plan;
+    }
 
+    private ExecutionPlan reconcileTargets(
+            List<TargetPosition> targets,
+            StrategyContext context
+    ) {
         ExecutionPlan plan = ExecutionPlan.empty();
         for (TargetPosition target : targets) {
             ExposureSnapshot exposure = calculateExposure(target, context);
@@ -68,14 +68,16 @@ public class PairArbitrageStrategy implements Strategy {
         return plan;
     }
 
-    private PairActions evaluate(
+    private ExecutionPlan evaluate(
             ArbitragePair pair,
             StrategyContext context
     ) {
         ExposureSnapshot longExposure = calculateExposure(pair.longLeg(), context);
         ExposureSnapshot shortExposure = calculateExposure(pair.shortLeg(), context);
-        publishSnapshot(pair, context, longExposure, shortExposure);
         ArbitrageEvaluation evaluation = new ArbitrageEvaluation(context, pair, longExposure, shortExposure);
+        boolean entryMatched = pair.entryCondition().matches(evaluation);
+        boolean orderValid = pair.orderValidityCondition().matches(evaluation);
+        publishSnapshot(pair, context, longExposure, shortExposure, entryMatched, orderValid);
 
         if (pair.stopLossCondition().matches(evaluation)) {
             return exitActions(pair, longExposure, shortExposure, context, "stop loss", true);
@@ -85,25 +87,34 @@ public class PairArbitrageStrategy implements Strategy {
             return exitActions(pair, longExposure, shortExposure, context, "exit", false);
         }
 
+        if (context.tradingStateView().isPaused()) {
+            return invalidOrderActions(pair, longExposure, shortExposure, context);
+        }
+
+        if (!orderValid) {
+            return invalidOrderActions(pair, longExposure, shortExposure, context);
+        }
+
         if (longExposure.hasActiveOrders() || shortExposure.hasActiveOrders()) {
-            return PairActions.empty();
+            return ExecutionPlan.empty();
         }
 
         BigDecimal longAmount = longExposure.filledBaseAmount().abs();
         BigDecimal shortAmount = shortExposure.filledBaseAmount().abs();
-        if (!pair.acceptanceCondition().matches(evaluation)) {
-            return PairActions.targets(rebalanceTargets(pair, longAmount, shortAmount, evaluation));
+        if (longAmount.compareTo(shortAmount) != 0) {
+            return reconcileTargets(rebalanceTargets(
+                    pair,
+                    longAmount,
+                    shortAmount,
+                    evaluation
+            ), context);
         }
 
-        if (!pair.entryCondition().matches(evaluation)) {
-            return PairActions.empty();
-        }
-        if (!pair.longLeg().legCondition().matches(evaluation)
-                || !pair.shortLeg().legCondition().matches(evaluation)) {
-            return PairActions.empty();
+        if (!entryMatched) {
+            return ExecutionPlan.empty();
         }
 
-        return PairActions.targets(entryTargets(pair, longAmount, shortAmount, context.now()));
+        return reconcileTargets(entryTargets(pair, longAmount, shortAmount, context.now()), context);
     }
 
     private List<TargetPosition> rebalanceTargets(
@@ -114,9 +125,6 @@ public class PairArbitrageStrategy implements Strategy {
     ) {
         if (longAmount.compareTo(shortAmount) > 0) {
             ArbitrageLeg shortLeg = pair.shortLeg();
-            if (!shortLeg.legCondition().matches(evaluation)) {
-                return List.of();
-            }
             BigDecimal target = moveToward(
                     shortAmount,
                     longAmount,
@@ -132,9 +140,6 @@ public class PairArbitrageStrategy implements Strategy {
         }
 
         ArbitrageLeg longLeg = pair.longLeg();
-        if (!longLeg.legCondition().matches(evaluation)) {
-            return List.of();
-        }
         BigDecimal target = moveToward(
                 longAmount,
                 shortAmount,
@@ -146,6 +151,76 @@ public class PairArbitrageStrategy implements Strategy {
                 target,
                 evaluation.context().now(),
                 pair.pairId() + " rebalance long leg"
+        ));
+    }
+
+    private ExecutionPlan invalidOrderActions(
+            ArbitragePair pair,
+            ExposureSnapshot longExposure,
+            ExposureSnapshot shortExposure,
+            StrategyContext context
+    ) {
+        if (longExposure.hasPendingCancelOrders() || shortExposure.hasPendingCancelOrders()) {
+            return ExecutionPlan.empty();
+        }
+
+        List<ExecutionCommand> cancellations = new ArrayList<>();
+        if (longExposure.hasOpenOrders()) {
+            cancellations.addAll(cancelCommands(
+                    pair.longLeg(),
+                    context,
+                    pair.pairId() + " order validity lost cancel long orders"
+            ));
+        }
+        if (shortExposure.hasOpenOrders()) {
+            cancellations.addAll(cancelCommands(
+                    pair.shortLeg(),
+                    context,
+                    pair.pairId() + " order validity lost cancel short orders"
+            ));
+        }
+        if (!cancellations.isEmpty()) {
+            return new ExecutionPlan(cancellations);
+        }
+
+        BigDecimal longAmount = longExposure.filledBaseAmount().abs();
+        BigDecimal shortAmount = shortExposure.filledBaseAmount().abs();
+        if (longAmount.compareTo(shortAmount) == 0) {
+            return ExecutionPlan.empty();
+        }
+        return reconcileTargets(
+                reduceLargerLegTargets(pair, longAmount, shortAmount, context.now()),
+                context
+        );
+    }
+
+    private List<TargetPosition> reduceLargerLegTargets(
+            ArbitragePair pair,
+            BigDecimal longAmount,
+            BigDecimal shortAmount,
+            Instant now
+    ) {
+        if (longAmount.compareTo(shortAmount) > 0) {
+            BigDecimal target = moveToward(longAmount, shortAmount, pair.sliceBaseAmount());
+            return List.of(toTarget(
+                    pair.pairId(),
+                    pair.longLeg(),
+                    target,
+                    now,
+                    pair.pairId() + " reduce long leg",
+                    pair.longLeg().executionPolicy().orderStyle().asReduceOnly(),
+                    ExecutionUrgency.NORMAL
+            ));
+        }
+        BigDecimal target = moveToward(shortAmount, longAmount, pair.sliceBaseAmount());
+        return List.of(toTarget(
+                pair.pairId(),
+                pair.shortLeg(),
+                target.negate(),
+                now,
+                pair.pairId() + " reduce short leg",
+                pair.shortLeg().executionPolicy().orderStyle().asReduceOnly(),
+                ExecutionUrgency.NORMAL
         ));
     }
 
@@ -172,7 +247,7 @@ public class PairArbitrageStrategy implements Strategy {
         return targets;
     }
 
-    private PairActions exitActions(
+    private ExecutionPlan exitActions(
             ArbitragePair pair,
             ExposureSnapshot longExposure,
             ExposureSnapshot shortExposure,
@@ -181,7 +256,7 @@ public class PairArbitrageStrategy implements Strategy {
             boolean stopLoss
     ) {
         if (longExposure.hasPendingCancelOrders() || shortExposure.hasPendingCancelOrders()) {
-            return PairActions.empty();
+            return ExecutionPlan.empty();
         }
 
         List<ExecutionCommand> cancellations = new ArrayList<>();
@@ -200,11 +275,10 @@ public class PairArbitrageStrategy implements Strategy {
             ));
         }
         if (!cancellations.isEmpty()) {
-            return new PairActions(List.of(), cancellations);
+            return new ExecutionPlan(cancellations);
         }
 
         List<TargetPosition> targets = new ArrayList<>();
-        TargetOrderStyle orderStyle = stopLoss ? TargetOrderStyle.marketReduceOnly() : null;
         if (longExposure.filledBaseAmount().signum() != 0 || longExposure.hasActiveOrders()) {
             targets.add(toTarget(
                     pair.pairId(),
@@ -212,7 +286,9 @@ public class PairArbitrageStrategy implements Strategy {
                     BigDecimal.ZERO,
                     context.now(),
                     pair.pairId() + " " + reason + " long leg",
-                    orderStyle,
+                    stopLoss
+                            ? TargetOrderStyle.marketReduceOnly()
+                            : pair.longLeg().executionPolicy().orderStyle().asReduceOnly(),
                     stopLoss ? ExecutionUrgency.EMERGENCY : ExecutionUrgency.NORMAL
             ));
         }
@@ -223,11 +299,13 @@ public class PairArbitrageStrategy implements Strategy {
                     BigDecimal.ZERO,
                     context.now(),
                     pair.pairId() + " " + reason + " short leg",
-                    orderStyle,
+                    stopLoss
+                            ? TargetOrderStyle.marketReduceOnly()
+                            : pair.shortLeg().executionPolicy().orderStyle().asReduceOnly(),
                     stopLoss ? ExecutionUrgency.EMERGENCY : ExecutionUrgency.NORMAL
             ));
         }
-        return PairActions.targets(targets);
+        return reconcileTargets(targets, context);
     }
 
     private ExposureSnapshot calculateExposure(
@@ -331,7 +409,9 @@ public class PairArbitrageStrategy implements Strategy {
             ArbitragePair pair,
             StrategyContext context,
             ExposureSnapshot longExposure,
-            ExposureSnapshot shortExposure
+            ExposureSnapshot shortExposure,
+            boolean entryMatched,
+            boolean orderValid
     ) {
         context.snapshotSink().publish(new StrategySnapshot(
                 config.strategyId(),
@@ -345,27 +425,11 @@ public class PairArbitrageStrategy implements Strategy {
                         "shortBaseAmount", shortExposure.filledBaseAmount(),
                         "targetBaseAmount", pair.totalBaseAmount(),
                         "sliceBaseAmount", pair.sliceBaseAmount(),
-                        "acceptanceCondition", pair.acceptanceCondition().getClass().getSimpleName(),
-                        "unbalancedLegHandling", pair.unbalancedLegHandling().name()
+                        "entryMatched", entryMatched,
+                        "orderValid", orderValid,
+                        "tradingPaused", context.tradingStateView().isPaused()
                 )
         ));
     }
 
-    private record PairActions(
-            List<TargetPosition> targets,
-            List<ExecutionCommand> managementCommands
-    ) {
-        private PairActions {
-            targets = List.copyOf(targets);
-            managementCommands = List.copyOf(managementCommands);
-        }
-
-        private static PairActions targets(List<TargetPosition> targets) {
-            return new PairActions(targets, List.of());
-        }
-
-        private static PairActions empty() {
-            return new PairActions(List.of(), List.of());
-        }
-    }
 }

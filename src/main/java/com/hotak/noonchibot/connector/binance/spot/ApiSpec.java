@@ -20,8 +20,11 @@ final class ApiSpec {
 
 
     public static final String REST_BASE_URL = "https://api.binance.com/api";
+    public static final String TESTNET_REST_BASE_URL = "https://demo-api.binance.com/api";
     public static final String WSS_URL = "wss://stream.binance.com:9443/ws";
+    public static final String TESTNET_WSS_URL = "wss://demo-stream.binance.com/ws";
     public static final String WSS_API_URL = "wss://ws-api.binance.com:443/ws-api/v3";
+    public static final String TESTNET_WSS_API_URL = "wss://demo-ws-api.binance.com/ws-api/v3";
     public static final String WS_SUBSCRIBE = "SUBSCRIBE";
     public static final String WS_UNSUBSCRIBE = "UNSUBSCRIBE";
     public static final String TICKER_PRICE_CHANGE_PATH_URL = "/v3/ticker/24hr";
@@ -33,6 +36,7 @@ final class ApiSpec {
     public static final String ACCOUNTS_PATH_URL = "/v3/account";
     public static final String MY_TRADES_PATH_URL = "/v3/myTrades";
     public static final String COMMISSION_RATE_PATH_URL = "/v3/account/commission";
+    public static final String KLINE_PATH_URL = "/v3/klines";
 
     public static final Map<TimeInForce, String> TIME_IN_FORCE_API_VALUE = Map.of(
             TimeInForce.FOK, "FOK",
@@ -120,6 +124,11 @@ final class ApiSpec {
             RateLimit.endpoint(COMMISSION_RATE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 20),
+                            new RateLimit.LinkedLimitWeightPair("RAW_REQUESTS", 1)
+                    )),
+            RateLimit.endpoint(KLINE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 2),
                             new RateLimit.LinkedLimitWeightPair("RAW_REQUESTS", 1)
                     ))
     );

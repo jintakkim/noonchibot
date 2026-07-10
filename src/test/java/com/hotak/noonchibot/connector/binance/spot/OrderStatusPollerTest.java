@@ -3,6 +3,7 @@ package com.hotak.noonchibot.connector.binance.spot;
 import com.hotak.noonchibot.core.TestTaskScheduler;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
+import com.hotak.noonchibot.core.event.EventSubscriber;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderTracker;
@@ -35,20 +36,18 @@ class OrderStatusPollerTest {
         eventPublisher = new TestEventPublisher();
         taskScheduler = new TestTaskScheduler();
         orderTracker = mock(OrderTracker.class);
-        poller = new OrderStatusPoller(eventPublisher, orderTracker, taskScheduler);
+        poller = new OrderStatusPoller(eventPublisher, mock(EventSubscriber.class), orderTracker, taskScheduler);
     }
 
     @Test
-    @DisplayName("시작 시 30초 fixed delay task를 등록하고 task는 상태 조회 요청을 발행한다")
-    void onStart_registersTaskAndPublishesStatusRequests() {
-        when(orderTracker.getAllInFlightOrders()).thenReturn(List.of(order("cid-1", "eid-1", "BTC-USDT")));
-
+    @DisplayName("시작 시 30초 fixed delay task를 등록하고 task는 폴링 요청을 발행한다")
+    void onStart_registersTaskAndPublishesPollingRequest() {
         poller.onStart();
         taskScheduler.onlyScheduledTask().task().run();
 
         assertThat(taskScheduler.onlyScheduledTask().delay()).isEqualTo(Duration.ofSeconds(30));
-        assertThat(eventPublisher.only(OrderEvent.StatusUpdateRequested.class))
-                .isEqualTo(new OrderEvent.StatusUpdateRequested("BTC-USDT", "cid-1"));
+        assertThat(eventPublisher.only(OrderEvent.StatusPollingRequested.class))
+                .isEqualTo(new OrderEvent.StatusPollingRequested(com.hotak.noonchibot.core.Exchange.BINANCE_SPOT));
     }
 
     @Test

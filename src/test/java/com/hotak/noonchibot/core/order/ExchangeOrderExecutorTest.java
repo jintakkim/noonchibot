@@ -208,6 +208,8 @@ class ExchangeOrderExecutorTest {
         executor.processCancelRequest(new OrderEvent.CancelRequested("cid-1"));
 
         OrderEvent.ExchangeCancelRequested request = eventPublisher.only(OrderEvent.ExchangeCancelRequested.class);
+        assertThat(eventPublisher.only(OrderEvent.StatusReceived.class).orderState())
+                .isEqualTo(OrderState.PENDING_CANCEL);
         assertThat(request.tradingPair()).isEqualTo("BTC-USDT");
         assertThat(request.clientOrderId()).isEqualTo("cid-1");
         assertThat(request.exchangeOrderId()).isEqualTo("ex-1");

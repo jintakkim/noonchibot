@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.core.event.internal.derivative;
 
-import com.hotak.noonchibot.core.derivative.FundingPayment;
+import com.hotak.noonchibot.core.derivative.funding.FundingPayment;
 import com.hotak.noonchibot.core.event.internal.CoreEvent;
 
 public sealed interface FundingPaymentEvent extends CoreEvent {

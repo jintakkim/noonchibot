@@ -18,9 +18,13 @@ public final class ApiSpec {
 
     public static final String PLATFORM_NAME = "binanceFuture";
     public static final String REST_BASE_URL = "https://fapi.binance.com/fapi";
+    public static final String TESTNET_REST_BASE_URL = "https://testnet.binancefuture.com/fapi";
     public static final String WSS_PUBLIC_URL = "wss://fstream.binance.com/public/ws";
+    public static final String TESTNET_WSS_PUBLIC_URL = "wss://stream.binancefuture.com/ws";
     public static final String WSS_MARKET_URL = "wss://market.binance.com/market/ws";
+    public static final String TESTNET_WSS_MARKET_URL = "wss://stream.binancefuture.com/ws";
     public static final String WSS_PRIVATE_URL = "wss://fstream.binance.com/ws";
+    public static final String TESTNET_WSS_PRIVATE_URL = "wss://stream.binancefuture.com/ws";
 
     public static final String SERVER_TIME_PATH_URL = "/v1/time";
     public static final String MARK_PRICE_PATH_URL = "/v1/premiumIndex";
@@ -33,6 +37,8 @@ public final class ApiSpec {
     public static final String TRADE_PATH_URL = "/v1/userTrades";
     public static final String COMMISSION_RATE_PATH_URL = "/v1/commissionRate";
     public static final String FUNDING_INFO_PATH_URL = "/v1/fundingInfo";
+    public static final String FUNDING_RATE_HISTORY_PATH_URL = "/v1/fundingRate";
+    public static final String KLINE_PATH_URL = "/v1/klines";
     public static final String POSITION_MODE_PATH_URL = "/fapi/v1/positionSide/dual";
     public static final String LEVERAGE_PATH_URL = "/fapi/v1/leverage";
     public static final String MARGIN_TYPE_PATH_URL = "/fapi/v1/marginType";
@@ -115,6 +121,14 @@ public final class ApiSpec {
             RateLimit.endpoint(FUNDING_INFO_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 0)
+                    )),
+            RateLimit.endpoint(FUNDING_RATE_HISTORY_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 1)
+                    )),
+            RateLimit.endpoint(KLINE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
+                    List.of(
+                            new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 5)
                     )),
             RateLimit.endpoint(POSITION_MODE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
                     List.of(

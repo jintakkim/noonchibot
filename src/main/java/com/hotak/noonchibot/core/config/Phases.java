@@ -6,37 +6,30 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class Phases {
 
-    public static int TIME_SYNCHRONIZATION = 0;
-    public static int WEBSOCKET_CONNECTION = 0;
+    public static final int TIME_SYNCHRONIZATION = 0;
 
-    /**
-     * fundingInfo related
-     */
-    public static int FUNDING_INFO_DATASOURCE_SETUP = 200;
+    public static final int ORDER_BOOK_DATASOURCE_SETUP = 90;
+    public static final int ORDER_TRACKER_SETUP = 100;
+    public static final int ORDER_BOOK_TRACKER_SETUP = 100;
+    public static final int ACCOUNT_BALANCE_TRACKER_SETUP = 100;
+    public static final int FUNDING_INFO_TRACKER_SETUP = 100;
+    public static final int DERIVATIVE_INFO_TRACKER_SETUP = 100;
+    public static final int POSITION_TRACKER_SETUP = 100;
+    public static final int FUNDING_PAYMENT_TRACKER_SETUP = 110;
+    public static final int SNAPSHOT_UPDATER_SETUP = 120;
 
-    /**
-     * derivative info related
-     */
-    public static int DERIVATIVE_INFO_SETUP = 200;
+    public static final int ORDER_STATUS_DATASOURCE_SETUP = 150;
+    public static final int TRADE_DATASOURCE_SETUP = 150;
+    public static final int DERIVATIVE_INFO_DATASOURCE_SETUP = 150;
+    public static final int ORDER_RESTORE = 180;
 
-    public static int TRADING_RULE_SETUP = 200;
+    public static final int TRADING_RULE_SETUP = 200;
+    public static final int BALANCE_SETUP = 200;
+    public static final int TRANSFER_SETUP = 200;
+    public static final int FUNDING_INFO_DATASOURCE_SETUP = 200;
+    public static final int USER_STREAM_DATASOURCE_SETUP = 200;
 
-    public static int TRADE_DATASOURCE_SETUP = 150;
-    public static int TRADE_POLLING = 200;
-
-    public static int BALANCE_SETUP = 200;
-    public static int TRANSFER_SETUP = 200;
-
-    public static int ORDER_BOOK_TRACKER_SETUP = 190;
-    public static int ORDER_BOOK_DATASOURCE_SETUP = 200;
-
-    public static int ORDER_EXECUTOR_SETUP = 300;
-    public static int ORDER_TRACKER_SETUP = 100;
-    public static int ORDER_STATUS_DATASOURCE_SETUP = 150;
-    public static int ORDER_STATUS_POLLING = 200;
-
-    /**
-     * ORDER_TRACKER_SETUP 보다 커야함
-     */
-    public static int USER_STREAM_DATASOURCE_SETUP = 200;
+    public static final int ORDER_EXECUTOR_SETUP = 300;
+    public static final int ORDER_STATUS_POLLING = 350;
+    public static final int TRADE_POLLING = 350;
 }

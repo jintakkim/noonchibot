@@ -6,6 +6,8 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.List;
+import com.hotak.noonchibot.core.derivative.funding.FundingRatePoint;
 
 public sealed interface FundingInfoEvent extends CoreEvent {
     /**
@@ -40,4 +42,33 @@ public sealed interface FundingInfoEvent extends CoreEvent {
 
     /** Funding interval 조회 실패 */
     record IntervalRestFetchFailed(Throwable cause) implements FundingInfoEvent {}
+
+    record HistoryFetchRequested(
+            String tradingPair,
+            Instant fundingTime,
+            Duration fundingInterval,
+            int attempt
+    ) implements FundingInfoEvent {}
+
+    record HistoryReceived(
+            String tradingPair,
+            Instant fundingTime,
+            Duration fundingInterval,
+            int attempt,
+            List<FundingRatePoint> points
+    ) implements FundingInfoEvent {
+        public HistoryReceived {
+            points = List.copyOf(points);
+        }
+    }
+
+    record HistoryFetchFailed(
+            String tradingPair,
+            Instant fundingTime,
+            Duration fundingInterval,
+            int attempt,
+            Throwable cause
+    ) implements FundingInfoEvent {}
+
+    record HistoryUpdated(String tradingPair) implements FundingInfoEvent {}
 }

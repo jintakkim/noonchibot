@@ -1,22 +1,19 @@
 package com.hotak.noonchibot.core.strategy.snapshot;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
+@RequiredArgsConstructor
 public class PersistingStrategySnapshotSink implements StrategySnapshotSink {
     private static final Duration DAILY_WINDOW = Duration.ofHours(24);
     private static final Duration FOUR_HOUR_WINDOW = Duration.ofHours(4);
 
     private final StrategySnapshotRepository strategySnapshotRepository;
-
-    public PersistingStrategySnapshotSink(StrategySnapshotRepository strategySnapshotRepository) {
-        this.strategySnapshotRepository = Objects.requireNonNull(strategySnapshotRepository, "strategySnapshotRepository");
-    }
 
     @Override
     public void publish(StrategySnapshot snapshot) {

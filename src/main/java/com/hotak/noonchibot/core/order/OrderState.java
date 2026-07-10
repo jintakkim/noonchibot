@@ -50,7 +50,7 @@ public enum OrderState {
     }
 
     private static final Map<OrderState, Set<OrderState>> ALLOWED = Map.of(
-            PENDING_CREATE,    Set.of(OPEN, PARTIALLY_FILLED, FILLED, REJECTED, EXPIRED),
+            PENDING_CREATE,    Set.of(PENDING_CANCEL, OPEN, PARTIALLY_FILLED, FILLED, REJECTED, EXPIRED),
             OPEN,              Set.of(PENDING_CANCEL, PARTIALLY_FILLED, FILLED, CANCELED, EXPIRED),
             PENDING_CANCEL,    Set.of(CANCELED, PARTIALLY_FILLED, FILLED),
             PARTIALLY_FILLED,  Set.of(PENDING_CANCEL, FILLED, CANCELED),

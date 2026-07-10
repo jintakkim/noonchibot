@@ -6,16 +6,14 @@ import com.hotak.noonchibot.core.strategy.execution.ExecutionPlan;
 import com.hotak.noonchibot.core.strategy.model.TargetOrderStyle;
 import com.hotak.noonchibot.core.strategy.model.TargetPosition;
 import com.hotak.noonchibot.core.trade.TradeType;
+import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.List;
 
+@RequiredArgsConstructor
 public class ExposureReconciler {
     private final ReconcilePolicy policy;
-
-    public ExposureReconciler(ReconcilePolicy policy) {
-        this.policy = policy;
-    }
 
     public ExecutionPlan reconcile(TargetPosition target, ExposureSnapshot exposure) {
         BigDecimal delta = target.targetBaseAmount().subtract(exposure.projectedBaseAmount());

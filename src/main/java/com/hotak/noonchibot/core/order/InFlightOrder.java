@@ -89,6 +89,28 @@ public class InFlightOrder {
         );
     }
 
+    public static InFlightOrder restore(OrderView view) {
+        InFlightOrder order = new InFlightOrder(
+                view.clientOrderId(),
+                view.tradingPair(),
+                view.orderType(),
+                view.tradeType(),
+                view.amount(),
+                view.price(),
+                view.createdAt(),
+                view.exchangeOrderId(),
+                view.postOnly(),
+                view.timeInForce(),
+                new HashSet<>(view.processedTradeIds()),
+                new HashMap<>(view.accumulatedFees())
+        );
+        order.currentState = view.state();
+        order.executedAmountBase = view.executedBaseAmount();
+        order.executedAmountQuote = view.executedQuoteAmount();
+        order.lastUpdateTimestamp = view.updatedAt();
+        return order;
+    }
+
     /**
      * @return 상태가 최종상태거나 수량이 다채워진 경우 true, 나머지 경우 false
      */
@@ -99,7 +121,7 @@ public class InFlightOrder {
         return executedAmountBase.compareTo(amount.abs()) >= 0;
     }
 
-    public void updateWithTradeUpdate(
+    public boolean updateWithTradeUpdate(
             String tradeId,
             String clientOrderId,
             String exchangeOrderId,
@@ -119,7 +141,7 @@ public class InFlightOrder {
             this.exchangeOrderId = exchangeOrderId;
         }
         if(processedTradeIds.contains(tradeId)) {
-            return;
+            return false;
         }
         executedAmountBase = executedAmountBase.add(fillBaseAmount);
         executedAmountQuote = executedAmountQuote.add(fillQuoteAmount);
@@ -129,17 +151,25 @@ public class InFlightOrder {
                     fee.amount(),
                     BigDecimal::add
             );
-        lastUpdateTimestamp = fillTimestamp;
+        if (lastUpdateTimestamp == null || fillTimestamp.isAfter(lastUpdateTimestamp)) {
+            lastUpdateTimestamp = fillTimestamp;
+        }
         processedTradeIds.add(tradeId);
+        return true;
     }
 
 
-    public void updateWithOrderUpdate(
+    public boolean updateWithOrderUpdate(
             String clientOrderId,
             String exchangeOrderId,
             OrderState newState,
             Instant updateTimestamp
     ) {
+        if (updateTimestamp != null
+                && lastUpdateTimestamp != null
+                && updateTimestamp.isBefore(lastUpdateTimestamp)) {
+            return false;
+        }
         boolean clientOrderIdMatches = clientOrderId != null && Objects.equals(clientOrderId, this.clientOrderId);
         boolean exchangeOrderIdMatches = exchangeOrderId != null && Objects.equals(exchangeOrderId, this.exchangeOrderId);
         if (!clientOrderIdMatches && !exchangeOrderIdMatches) {
@@ -149,9 +179,11 @@ public class InFlightOrder {
                 && this.currentState != newState
                 && this.currentState.canTransitionTo(newState);
         boolean canSetExchangeId = this.exchangeOrderId == null && exchangeOrderId != null;
+        boolean canAdvanceTimestamp = updateTimestamp != null
+                && (lastUpdateTimestamp == null || updateTimestamp.isAfter(lastUpdateTimestamp));
 
-        if (!canChangeState && !canSetExchangeId) {
-            return;
+        if (!canChangeState && !canSetExchangeId && !canAdvanceTimestamp) {
+            return false;
         }
 
         if (canSetExchangeId) {
@@ -160,7 +192,10 @@ public class InFlightOrder {
         if (canChangeState) {
             this.currentState = newState;
         }
-        this.lastUpdateTimestamp = updateTimestamp;
+        if (updateTimestamp != null) {
+            this.lastUpdateTimestamp = updateTimestamp;
+        }
+        return true;
     }
 
     /**

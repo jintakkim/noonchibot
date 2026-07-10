@@ -51,7 +51,8 @@ class OrderBookTrackerTest {
             assertThat(eventSubscriber.isSubscribed(OrderBookEvent.SnapshotReceived.class)).isTrue();
             assertThat(tracker.phase()).isEqualTo(Phases.ORDER_BOOK_TRACKER_SETUP);
             assertThat(tracker.findOrderBook(BTC_PAIR)).isPresent();
-            assertThat(eventPublisher.only(OrderBookEvent.TrackingRequested.class).tradingPair()).isEqualTo(BTC_PAIR);
+            assertThat(eventPublisher.only(OrderBookEvent.TrackingBatchRequested.class).tradingPairs())
+                    .containsExactly(BTC_PAIR);
         }
 
         @Test

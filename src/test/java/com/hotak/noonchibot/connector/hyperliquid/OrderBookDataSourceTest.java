@@ -47,8 +47,10 @@ class OrderBookDataSourceTest extends AbstractOrderBookDataSourceTest<OrderBookD
                 new ObjectMapper(),
                 new VirtualThreadIoExecutor(),
                 taskScheduler,
+                event -> { },
                 restAssistant,
                 HyperliquidFixture.BTC_ETH_REGISTRY,
+                DerivativeApiSpec.WS_URL,
                 eventPublisher,
                 eventSubscriber
         );

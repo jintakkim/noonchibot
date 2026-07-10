@@ -5,9 +5,11 @@ import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
+import com.hotak.noonchibot.core.price.LastTradePrice;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 @Slf4j
@@ -72,12 +74,50 @@ public class OrderBookTracker implements LifecycleAware {
         eventPublisher.publish(new OrderBookEvent.TrackingRequested(tradingPair));
     }
 
+    private void addInitialTradingPairs() {
+        pairsToSubscribe.forEach(tradingPair ->
+                orderBooks.put(tradingPair, new OrderBook(isDex))
+        );
+        if (!pairsToSubscribe.isEmpty()) {
+            eventPublisher.publish(new OrderBookEvent.TrackingBatchRequested(Set.copyOf(pairsToSubscribe)));
+        }
+    }
+
     public Map<String, OrderBook> getOrderBooks() {
         return new HashMap<>(orderBooks);
     }
 
     public Optional<OrderBook> findOrderBook(String tradingPair) {
         return Optional.ofNullable(orderBooks.get(tradingPair));
+    }
+
+    public Optional<LastTradePrice> findLastTradePrice(String tradingPair) {
+        OrderBook orderBook = orderBooks.get(tradingPair);
+        if (orderBook == null
+                || orderBook.getLastTradePrice() == null
+                || orderBook.getLastAppliedTradeTime() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new LastTradePrice(
+                orderBook.getLastTradePrice(),
+                orderBook.getLastAppliedTradeTime()
+        ));
+    }
+
+    public BigDecimal getExecutablePrice(
+            String tradingPair,
+            boolean isBuy,
+            BigDecimal baseAmount
+    ) {
+        OrderBook orderBook = orderBooks.get(tradingPair);
+        if (orderBook == null) {
+            throw new IllegalStateException("order book not found: " + tradingPair);
+        }
+        VWAPForVolumeQueryResult result = orderBook.getVWAPForBaseVolume(isBuy, baseAmount);
+        if (result.vwapPrice() == null || result.fillableBaseVolume().compareTo(baseAmount) < 0) {
+            throw new IllegalStateException("insufficient order book liquidity: " + tradingPair);
+        }
+        return result.vwapPrice();
     }
 
     @Override
@@ -91,7 +131,7 @@ public class OrderBookTracker implements LifecycleAware {
         subscriptions.add(
                 eventSubscriber.subscribe(OrderBookEvent.SnapshotReceived.class, this::processSnapshot, ExecutionPolicy.sequential())
         );
-        pairsToSubscribe.forEach(this::addTradingPair);
+        addInitialTradingPairs();
     }
 
     @Override

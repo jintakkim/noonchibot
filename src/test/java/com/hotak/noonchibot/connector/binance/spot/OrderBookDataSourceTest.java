@@ -44,9 +44,11 @@ class OrderBookDataSourceTest extends AbstractOrderBookDataSourceTest<OrderBookD
                 new ObjectMapper(),
                 new VirtualThreadIoExecutor(),
                 taskScheduler,
+                event -> { },
                 BinanceSpotFixture.BTC_ETH_SOL_REGISTRY,
                 restAssistant,
                 timeSynchronizer,
+                ApiSpec.WSS_URL,
                 eventPublisher,
                 eventSubscriber
         );

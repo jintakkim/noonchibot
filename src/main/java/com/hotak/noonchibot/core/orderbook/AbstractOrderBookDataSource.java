@@ -8,6 +8,7 @@ import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -39,10 +40,11 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
             ObjectMapper objectMapper,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             EventPublisher eventPublisher,
             EventSubscriber eventSubscriber
     ) {
-        super(wsAssistant, objectMapper, ioExecutor);
+        super(wsAssistant, objectMapper, taskScheduler, applicationEventPublisher);
         this.taskScheduler = taskScheduler;
         this.eventPublisher = eventPublisher;
         this.eventSubscriber = eventSubscriber;
@@ -67,12 +69,30 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
         }
     }
 
+    void trackingOrderBooks(OrderBookEvent.TrackingBatchRequested req) {
+        Set<String> newPairs = new HashSet<>(req.tradingPairs());
+        newPairs.removeAll(subscribedPairs);
+        if (newPairs.isEmpty()) return;
+        subscribedPairs.addAll(newPairs);
+        if (!isConnected()) {
+            log.warn("WebSocket not connected; subscriptions will be sent after reconnect: {}", newPairs);
+            return;
+        }
+        try {
+            sendSubscribe(newPairs);
+            newPairs.forEach(this::publishSnapshot);
+        } catch (Exception e) {
+            subscribedPairs.removeAll(newPairs);
+            throw e;
+        }
+    }
+
     /**
      * 연결이 종료되고 재연결시 기존 구독분을 다시 연결한다.
      *
      */
     @Override
-    protected void onConnected() {
+    protected void handleConnected() {
         if (subscribedPairs.isEmpty()) return;
         sendSubscribe(subscribedPairs);
         refreshAllSnapshots();
@@ -87,27 +107,28 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
     }
 
     @Override
-    protected void processMessage(WsResponse response) {
+    protected WebsocketMessageResult processMessage(WsResponse response) {
         if (response.messageType() != WsResponse.MessageType.TEXT) {
             throw new IllegalStateException("cant handle non-text message");
         }
         JsonNode msg = objectMapper.readTree(response.data());
 
         if (isErrorMessage(msg)) {
-            throw new WebSocketErrorMessageReceivedException(msg.toString());
+            return WebsocketMessageResult.reconnect(msg.toString());
         }
-        if (isAckMessage(msg)) return;
+        if (isAckMessage(msg)) return WebsocketMessageResult.acknowledged();
 
         OrderBookMessage.Type type = parseMessageType(msg);
         if (type == null) {
             processUnknownMessage(msg);
-            return;
+            return WebsocketMessageResult.ignored("Unknown order book message: " + msg);
         }
         switch (type) {
             case DIFF -> eventPublisher.publish(parseWsDiffMessage(msg));
             case TRADE -> parseWsTradeMessage(msg).forEach(eventPublisher::publish);
             case SNAPSHOT -> eventPublisher.publish(parseWsSnapshotMessage(msg));
         }
+        return WebsocketMessageResult.processed();
     }
 
     protected void processUnknownMessage(JsonNode msg) {
@@ -136,6 +157,12 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
                 OrderBookEvent.TrackingRequested.class,
                 this::trackingOrderBook,
                 ExecutionPolicy.concurrent()
+                ));
+        handlerSubscriptions.add(
+                eventSubscriber.subscribe(
+                        OrderBookEvent.TrackingBatchRequested.class,
+                        this::trackingOrderBooks,
+                        ExecutionPolicy.concurrent()
                 ));
         snapshotRefreshTask = taskScheduler.scheduleAtFixedRate(
                 this::refreshAllSnapshots,

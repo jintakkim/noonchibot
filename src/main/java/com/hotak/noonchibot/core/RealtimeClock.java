@@ -1,106 +1,90 @@
 package com.hotak.noonchibot.core;
 
-import lombok.extern.slf4j.Slf4j;
+import com.hotak.noonchibot.core.event.SequentialDispatcher;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ScheduledFuture;
 
-@Slf4j
 public class RealtimeClock implements Clock, SmartLifecycle {
-    private final List<TimeIterator> iterators;
+    private final TaskScheduler taskScheduler;
     private final Duration tickSize;
-    private volatile boolean started = false;
+    private final List<Registration> registrations = new CopyOnWriteArrayList<>();
 
-    private volatile Instant currentTimestamp;
-    private volatile Thread clockThread;
+    private volatile boolean running;
+    private volatile ScheduledFuture<?> tickTask;
 
-
-    public RealtimeClock(List<TimeIterator> iterators, Duration tickSize) {
-        this.iterators = new CopyOnWriteArrayList<>(iterators);
+    public RealtimeClock(TaskScheduler taskScheduler, Duration tickSize) {
+        this.taskScheduler = taskScheduler;
         this.tickSize = tickSize;
     }
 
     @Override
-    public void addIterator(TimeIterator iterator) {
-        if(started) iterator.onStart(this, currentTimestamp);
-        iterators.add(iterator);
+    public void addIterator(TimeIterator iterator, SequentialDispatcher dispatcher) {
+        Registration registration = new Registration(iterator, dispatcher);
+        registrations.add(registration);
+        if (running) dispatchStart(registration, Instant.now());
     }
 
     @Override
     public void removeIterator(TimeIterator iterator) {
-        if(iterators.remove(iterator) && started) {
-            iterator.onStop();
-        }
-    }
-
-    /**
-     * 지정된 시간까지 실행 (블로킹)
-     * @param endTime 종료 시간, null이면 무한 실행
-     */
-    @Override
-    public void run(Instant endTime) {
-        long tickMillis = tickSize.toMillis();
-        updateCurrentTimestamp();
-        if (!started) {
-            for (TimeIterator iterator : iterators) {
-                iterator.onStart(this, currentTimestamp);
-            }
-            started = true;
-        }
-        while (true) {
-            try {
-                updateCurrentTimestamp();
-                if (endTime != null && currentTimestamp.isAfter(endTime)) {
-                    break;
-                }
-                long nextTickTime = ((currentTimestamp.toEpochMilli() / tickMillis) + 1) * tickMillis;
-                Thread.sleep(nextTickTime - currentTimestamp.toEpochMilli());
-                executeTick(Instant.ofEpochMilli(nextTickTime));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                log.error("처리되지 못한 예외 발생", e);
-            }
-        }
-        try {
-            for (TimeIterator iterator : iterators) {
-                iterator.onStop();
-            }
-        } catch (Exception e) {
-            log.error("종료 작업중 예외 발생", e);
-        } finally {
-            started = false;
-        }
-    }
-
-    private void executeTick(Instant timestamp) {
-        for (TimeIterator iterator : iterators) {
-            iterator.onTick(timestamp);
-        }
+        registrations.stream()
+                .filter(registration -> registration.iterator() == iterator)
+                .findFirst()
+                .ifPresent(registration -> {
+                    registrations.remove(registration);
+                    if (running) registration.dispatcher().dispatchSequential(iterator::onStop);
+                });
     }
 
     @Override
     public void start() {
-        clockThread = Thread.ofPlatform().name("realtime-clock").start(() -> run(null));
+        if (running) return;
+        running = true;
+        Instant timestamp = Instant.now();
+        registrations.forEach(registration -> dispatchStart(registration, timestamp));
+        tickTask = taskScheduler.scheduleAtFixedRate(this::dispatchTick, tickSize);
     }
 
     @Override
     public void stop() {
-        if (clockThread != null) {
-            clockThread.interrupt();
-        }
+        if (!running) return;
+        running = false;
+        ScheduledFuture<?> task = tickTask;
+        tickTask = null;
+        if (task != null) task.cancel(false);
+        registrations.forEach(registration ->
+                registration.dispatcher().dispatchSequential(registration.iterator()::onStop)
+        );
     }
 
     @Override
     public boolean isRunning() {
-        return clockThread != null && clockThread.isAlive();
+        return running;
     }
 
-    private void updateCurrentTimestamp() {
-        currentTimestamp = Instant.now();
+    private void dispatchStart(Registration registration, Instant timestamp) {
+        registration.dispatcher().dispatchSequential(() ->
+                registration.iterator().onStart(this, timestamp)
+        );
     }
+
+    private void dispatchTick() {
+        if (!running) return;
+        Instant timestamp = Instant.now();
+        registrations.forEach(registration ->
+                registration.dispatcher().dispatchSequential(() ->
+                        registration.iterator().onTick(timestamp)
+                )
+        );
+    }
+
+    private record Registration(
+            TimeIterator iterator,
+            SequentialDispatcher dispatcher
+    ) {}
 }

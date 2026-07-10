@@ -20,8 +20,16 @@ public class WsAssistantImpl implements WsAssistant {
     private final Authenticator authenticator;
 
     @Override
-    public WsConnection connect(URI wsUrl) {
-        WsConnectionImpl wsConnection = new WsConnectionImpl(objectMapper, authenticator, preProcessors, postProcessors);
+    public WsConnection connect(URI wsUrl, WsConnectionListener listener) {
+        log.info("WebSocket connecting: {}://{}", wsUrl.getScheme(), wsUrl.getRawAuthority());
+        WsConnectionImpl wsConnection = new WsConnectionImpl(
+                wsUrl,
+                objectMapper,
+                authenticator,
+                preProcessors,
+                postProcessors,
+                listener
+        );
         webSocketClient.execute(wsConnection, headers, wsUrl).join();
         return wsConnection;
     }

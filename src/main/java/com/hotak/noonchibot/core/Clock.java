@@ -1,9 +1,8 @@
 package com.hotak.noonchibot.core;
 
-import java.time.Instant;
+import com.hotak.noonchibot.core.event.SequentialDispatcher;
 
 public interface Clock {
-    void addIterator(TimeIterator iterator);
+    void addIterator(TimeIterator iterator, SequentialDispatcher dispatcher);
     void removeIterator(TimeIterator iterator);
-    void run(Instant endTime);
 }

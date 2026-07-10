@@ -4,14 +4,15 @@ import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.WsAssistant;
+import com.hotak.noonchibot.connector.web.WsConnection;
 import com.hotak.noonchibot.connector.web.WsRequest;
-import com.hotak.noonchibot.core.Exchange;
-import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.derivative.AbstractWsFundingInfoDataSource;
+import com.hotak.noonchibot.core.derivative.funding.AbstractWsFundingInfoDataSource;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.orderbook.FundingInfoMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,27 +33,42 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
     }
 
     private static final Duration FUNDING_INTERVAL = Duration.ofHours(1);
+    private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
 
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
+    private final String websocketUrl;
 
     public HyperliquidWsFundingInfoDataSource(
             WsAssistant wsAssistant,
             ObjectMapper objectMapper,
-            IoExecutor ioExecutor,
+            TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant,
             EventPublisher eventPublisher,
-            List<String> pairsToSubscribe
+            List<String> pairsToSubscribe,
+            String websocketUrl
             ) {
-        super(wsAssistant, objectMapper, ioExecutor, eventPublisher, pairsToSubscribe);
+        super(wsAssistant, objectMapper, taskScheduler, applicationEventPublisher, eventPublisher, pairsToSubscribe);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
+        this.websocketUrl = websocketUrl;
     }
 
     @Override
     protected URI connectionUri() {
-        return URI.create(DerivativeApiSpec.WS_URL);
+        return URI.create(websocketUrl);
+    }
+
+    @Override
+    protected Duration heartbeatInterval() {
+        return HEARTBEAT_INTERVAL;
+    }
+
+    @Override
+    protected void sendHeartbeat(WsConnection connection) {
+        connection.send(new WsRequest(Map.of("method", "ping"), false));
     }
 
     @Override
@@ -76,7 +92,9 @@ class HyperliquidWsFundingInfoDataSource extends AbstractWsFundingInfoDataSource
     @Override
     protected boolean isAckMessage(JsonNode msg) {
         JsonNode channel = msg.get("channel");
-        return channel != null && "subscriptionResponse".equals(channel.asString());
+        return channel != null
+                && ("subscriptionResponse".equals(channel.asString())
+                || "pong".equals(channel.asString()));
     }
 
     @Override

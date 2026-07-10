@@ -4,8 +4,7 @@ import com.hotak.noonchibot.connector.web.WsConnection;
 import com.hotak.noonchibot.connector.web.WsResponse;
 import com.hotak.noonchibot.connector.web.testutils.MockWsAssistant;
 import com.hotak.noonchibot.connector.web.testutils.MockWsConnection;
-import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.VirtualThreadIoExecutor;
+import com.hotak.noonchibot.core.TestTaskScheduler;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
 import com.hotak.noonchibot.core.event.internal.derivative.PositionEvent;
@@ -30,7 +29,7 @@ class UserStreamDataSourceTest {
     @BeforeEach
     void setUp() {
         eventPublisher = new TestEventPublisher();
-        dataSource = new TestableUserStreamDataSource(new MockWsAssistant(), new ObjectMapper(), new VirtualThreadIoExecutor());
+        dataSource = new TestableUserStreamDataSource(new MockWsAssistant(), new ObjectMapper(), new TestTaskScheduler());
     }
 
     @Test
@@ -95,8 +94,17 @@ class UserStreamDataSourceTest {
     }
 
     private class TestableUserStreamDataSource extends UserStreamDataSource {
-        TestableUserStreamDataSource(MockWsAssistant wsAssistant, ObjectMapper objectMapper, IoExecutor ioExecutor) {
-            super(wsAssistant, objectMapper, ioExecutor, HyperliquidFixture.USER, HyperliquidFixture.BTC_ETH_REGISTRY, eventPublisher);
+        TestableUserStreamDataSource(MockWsAssistant wsAssistant, ObjectMapper objectMapper, TestTaskScheduler taskScheduler) {
+            super(
+                    wsAssistant,
+                    objectMapper,
+                    taskScheduler,
+                    event -> { },
+                    HyperliquidFixture.USER,
+                    HyperliquidFixture.BTC_ETH_REGISTRY,
+                    eventPublisher,
+                    DerivativeApiSpec.WS_URL
+            );
         }
 
         void setConnection(WsConnection wsConnection) {
@@ -104,7 +112,7 @@ class UserStreamDataSourceTest {
         }
 
         void exposeOnConnected() {
-            onConnected();
+            handleConnected();
         }
 
         void exposeProcessMessage(WsResponse response) {

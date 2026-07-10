@@ -2,6 +2,7 @@ package com.hotak.noonchibot.connector.web.testutils;
 
 import com.hotak.noonchibot.connector.web.WsAssistant;
 import com.hotak.noonchibot.connector.web.WsConnection;
+import com.hotak.noonchibot.connector.web.WsConnectionListener;
 
 import java.net.URI;
 import java.util.HashMap;
@@ -21,11 +22,12 @@ public class MockWsAssistant implements WsAssistant {
     }
 
     @Override
-    public WsConnection connect(URI wsUrl) {
+    public WsConnection connect(URI wsUrl, WsConnectionListener listener) {
         MockWsConnection connection = mockWsConnection.get(wsUrl.toString());
         if(connection == null) {
             throw new IllegalStateException("no mock connection found for " + wsUrl);
         }
+        connection.connect(listener);
         return connection;
     }
 }

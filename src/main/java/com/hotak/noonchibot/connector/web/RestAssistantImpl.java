@@ -29,26 +29,30 @@ public class RestAssistantImpl implements RestAssistant {
     }
 
     public RestResponse executeRequestAndGetResponse(RestRequest request) {
-        RestRequest finalRequest = applyAuthentication(applyPreProcessors(request));
-        if (finalRequest.weightOverrides() == null) {
+        RestRequest processedRequest = applyPreProcessors(request);
+        if(processedRequest.weightOverrides() == null) {
             return join(asyncThrottler.execute(
-                    finalRequest.throttlerLimitId(),
+                    processedRequest.throttlerLimitId(),
                     () -> {
-                        RestResponse response = call(finalRequest);
-                        return applyPostProcessors(response);
+                        RestResponse response = executeReadyRequest(processedRequest);
+                        if (response.statusCode().isError() && request.throwError()) {
+                            log.error("네트워크 문제 발생, response: {}", response);
+                            throw new ExchangeApiException(response.statusCode(), response.body());
+                        }
+                        return response;
                     }));
         }
         return join(asyncThrottler.execute(
-                finalRequest.throttlerLimitId(),
+                processedRequest.throttlerLimitId(),
                 () -> {
-                    RestResponse response = applyPostProcessors(call(finalRequest));
+                    RestResponse response = executeReadyRequest(processedRequest);
                     if (response.statusCode().isError() && request.throwError()) {
-                        log.error("rest request failed. response={}", response);
+                        log.error("네트워크 문제 발생, response: {}", response);
                         throw new ExchangeApiException(response.statusCode(), response.body());
                     }
                     return response;
                 },
-                finalRequest.weightOverrides()));
+                processedRequest.weightOverrides()));
     }
 
     private <T> T join(CompletableFuture<T> future) {
@@ -77,6 +81,11 @@ public class RestAssistantImpl implements RestAssistant {
         return request;
     }
 
+    private RestResponse executeReadyRequest(RestRequest request) {
+        RestRequest authenticatedRequest = applyAuthentication(request);
+        return applyPostProcessors(call(authenticatedRequest));
+    }
+
     private RestResponse call(RestRequest request) {
         RestClient.RequestBodySpec spec = restClient.method(request.method())
                 .uri(uriBuilder -> {
@@ -86,17 +95,12 @@ public class RestAssistantImpl implements RestAssistant {
                     }
                     return uriBuilder.build();
                 })
-                .headers(headers -> {
-                    if (request.headers() != null) {
-                        headers.addAll(request.headers());
-                    }
+                .headers(h-> {
+                    if (request.headers() != null) h.addAll(request.headers());
                 });
-        if (request.body() != null) {
-            spec.body(request.body());
-        }
+        if(request.body() != null) spec.body(request.body());
         ResponseEntity<String> entity = spec.retrieve()
-                .onStatus(HttpStatusCode::isError, (req, res) -> {
-                })
+                .onStatus(HttpStatusCode::isError, (req, res) -> {}) // do noting.
                 .toEntity(String.class);
         return new RestResponse(entity.getStatusCode(), entity.getHeaders(), entity.getBody());
     }

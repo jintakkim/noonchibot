@@ -13,6 +13,7 @@ import com.hotak.noonchibot.core.orderbook.OrderBookEntry;
 import com.hotak.noonchibot.core.orderbook.OrderBookMessage;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.context.ApplicationEventPublisher;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -27,20 +28,24 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
 
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final RestAssistant restAssistant;
+    private final String websocketUrl;
 
     public OrderBookDataSource(
             WsAssistant wsAssistant,
             ObjectMapper objectMapper,
             IoExecutor ioExecutor,
             TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             RestAssistant restAssistant,
+            String websocketUrl,
             EventPublisher eventPublisher,
             EventSubscriber eventSubscriber
     ) {
-        super(wsAssistant, objectMapper, ioExecutor, taskScheduler, eventPublisher, eventSubscriber);
+        super(wsAssistant, objectMapper, ioExecutor, taskScheduler, applicationEventPublisher, eventPublisher, eventSubscriber);
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.restAssistant = restAssistant;
+        this.websocketUrl = websocketUrl;
     }
 
     @Override
@@ -90,7 +95,7 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
 
     @Override
     protected OrderBookMessage.Type parseMessageType(JsonNode msg) {
-        String eventType = msg.get("data").get("e").asString();
+        String eventType = msg.path("e").asString();
         return switch (eventType) {
             case "depthUpdate" -> OrderBookMessage.Type.DIFF;
             case "aggTrade" -> OrderBookMessage.Type.TRADE;
@@ -100,28 +105,26 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
 
     @Override
     protected OrderBookEvent.DiffReceived parseWsDiffMessage(JsonNode msg) {
-        JsonNode data = msg.get("data");
-        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(data.get("s").asString());
-        long firstUpdateId = data.get("U").asLong();
-        long lastUpdateId = data.get("u").asLong();
-        Instant eventTime = Instant.ofEpochMilli(data.get("E").asLong());
-        List<OrderBookEntry> bids = parseEntries(data.get("b"));
-        List<OrderBookEntry> asks = parseEntries(data.get("a"));
+        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(msg.get("s").asString());
+        long firstUpdateId = msg.get("U").asLong();
+        long lastUpdateId = msg.get("u").asLong();
+        Instant eventTime = Instant.ofEpochMilli(msg.get("E").asLong());
+        List<OrderBookEntry> bids = parseEntries(msg.get("b"));
+        List<OrderBookEntry> asks = parseEntries(msg.get("a"));
         return new OrderBookEvent.DiffReceived(tradingPair, lastUpdateId, bids, asks, eventTime);
     }
 
     @Override
     protected List<OrderBookEvent.TradeReceived> parseWsTradeMessage(JsonNode msg) {
-        JsonNode data = msg.get("data");
-        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(data.get("s").asString());
-        TradeType tradeType = data.get("m").asBoolean() ? TradeType.SELL : TradeType.BUY;
+        String tradingPair = tradingPairSymbolRegistry.convertExchangeSymbolToTradingPair(msg.get("s").asString());
+        TradeType tradeType = msg.get("m").asBoolean() ? TradeType.SELL : TradeType.BUY;
         return List.of(new OrderBookEvent.TradeReceived(
                     tradingPair,
-                    data.get("a").asLong(),         // aggregate trade id
-                    data.get("p").asDecimal(),         // price
-                    data.get("q").asDecimal(),         // quantity
+                    msg.get("a").asLong(),         // aggregate trade id
+                    msg.get("p").asDecimal(),         // price
+                    msg.get("q").asDecimal(),         // quantity
                     tradeType,
-                    Instant.ofEpochMilli(data.get("T").asLong())
+                    Instant.ofEpochMilli(msg.get("T").asLong())
         ));
     }
 
@@ -168,6 +171,6 @@ class OrderBookDataSource extends AbstractOrderBookDataSource {
 
     @Override
     protected URI connectionUri() {
-        return URI.create(ApiSpec.WSS_PUBLIC_URL);
+        return URI.create(websocketUrl);
     }
 }

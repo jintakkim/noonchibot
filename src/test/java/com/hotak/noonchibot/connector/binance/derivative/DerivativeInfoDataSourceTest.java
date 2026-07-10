@@ -213,7 +213,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
         @Test
         @DisplayName("phase는 DERIVATIVE_INFO_IO이다")
         void phaseIsDerivativeInfoIo() {
-            assertThat(client.phase()).isEqualTo(Phases.DERIVATIVE_INFO_SETUP);
+            assertThat(client.phase()).isEqualTo(Phases.DERIVATIVE_INFO_DATASOURCE_SETUP);
         }
 
         @Test

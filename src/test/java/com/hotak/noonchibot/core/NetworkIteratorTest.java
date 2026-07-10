@@ -7,7 +7,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -55,7 +54,7 @@ public class NetworkIteratorTest {
     }
 
     private Clock createClock(TimeIterator iterator) {
-        return new RealtimeClock(List.of(iterator), Duration.ofMillis(100));
+        return new RealtimeClock(new TestTaskScheduler(), Duration.ofMillis(100));
     }
 
     @Test

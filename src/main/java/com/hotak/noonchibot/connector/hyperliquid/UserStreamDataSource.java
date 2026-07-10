@@ -3,7 +3,6 @@ package com.hotak.noonchibot.connector.hyperliquid;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
-import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.derivative.PositionSide;
 import com.hotak.noonchibot.core.event.EventPublisher;
@@ -13,63 +12,84 @@ import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
 class UserStreamDataSource extends AbstractWebsocketDataSource {
+    private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
     private final String userAddress;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final EventPublisher eventPublisher;
+    private final String websocketUrl;
 
     public UserStreamDataSource(
             WsAssistant wsAssistant,
             ObjectMapper objectMapper,
-            IoExecutor ioExecutor,
+            TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
             String userAddress,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
-            EventPublisher eventPublisher
+            EventPublisher eventPublisher,
+            String websocketUrl
     ) {
-        super(wsAssistant, objectMapper, ioExecutor);
+        super(wsAssistant, objectMapper, taskScheduler, applicationEventPublisher);
         this.userAddress = userAddress;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.eventPublisher = eventPublisher;
+        this.websocketUrl = websocketUrl;
     }
 
     @Override
     protected URI connectionUri() {
-        return URI.create(DerivativeApiSpec.WS_URL);
+        return URI.create(websocketUrl);
     }
 
     @Override
-    protected void onConnected() {
+    protected Duration heartbeatInterval() {
+        return HEARTBEAT_INTERVAL;
+    }
+
+    @Override
+    protected void sendHeartbeat(WsConnection connection) {
+        connection.send(new WsRequest(Map.of("method", "ping"), false));
+    }
+
+    @Override
+    protected void handleConnected() {
         subscribe("orderUpdates");
         subscribe("userFills");
         subscribe("clearinghouseState");
     }
 
     @Override
-    protected void processMessage(WsResponse wsResponse) {
+    protected WebsocketMessageResult processMessage(WsResponse wsResponse) {
         if (wsResponse.messageType() != WsResponse.MessageType.TEXT) {
             throw new IllegalStateException("cant handle non-text message");
         }
         JsonNode root = objectMapper.readTree(wsResponse.data());
         String channel = root.path("channel").asString();
         if ("subscriptionResponse".equals(channel) || "pong".equals(channel)) {
-            return;
+            return WebsocketMessageResult.acknowledged();
         }
         switch (channel) {
             case "orderUpdates" -> handleOrderUpdates(root.path("data"));
             case "userFills" -> handleUserFills(root.path("data"));
             case "clearinghouseState" -> handleClearinghouseState(root.path("data"));
-            default -> log.debug("No handler for channel: {}", channel);
+            default -> {
+                return WebsocketMessageResult.ignored("No handler for channel " + channel + ": " + root);
+            }
         }
+        return WebsocketMessageResult.processed();
     }
 
     private void subscribe(String type) {

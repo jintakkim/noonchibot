@@ -31,7 +31,20 @@ public class TimeSynchronizer implements LifecycleAware {
      * @return ms 단위 반환
      */
     public long serverTime() {
+        ensureInitialSample();
         return (long) (getSystemMs() + timeOffsetMs());
+    }
+
+    private void ensureInitialSample() {
+        if (!timeOffsetSamples.isEmpty()) return;
+        synchronized (this) {
+            if (!timeOffsetSamples.isEmpty()) return;
+            try {
+                updateServerTimeOffset();
+            } catch (Exception e) {
+                log.warn("Failed to initialize server time offset, falling back to local clock", e);
+            }
+        }
     }
 
     private double timeOffsetMs() {
@@ -53,7 +66,7 @@ public class TimeSynchronizer implements LifecycleAware {
         }, UPDATE_INTERVAL);
     }
 
-    void updateServerTimeOffset() {
+    public void updateServerTimeOffset() {
         double localBeforeMs = getSystemMs();
         long serverTimeMs = serverTimeProvider.getServerTimeMs();
         double localAfterMs = getSystemMs();
@@ -96,6 +109,7 @@ public class TimeSynchronizer implements LifecycleAware {
 
     @Override
     public void onStart() {
+        ensureInitialSample();
         scheduleUpdate();
     }
 

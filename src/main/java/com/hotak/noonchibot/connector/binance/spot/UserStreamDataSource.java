@@ -4,7 +4,6 @@ import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.binance.BinanceAuthenticator;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
-import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.balance.AssetState;
 import com.hotak.noonchibot.core.event.EventPublisher;
@@ -13,6 +12,8 @@ import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -29,6 +30,8 @@ class UserStreamDataSource extends AbstractWebsocketDataSource {
     private final BinanceAuthenticator binanceAuthenticator;
     private final TradingPairSymbolRegistry tradingPairSymbolRegistry;
     private final EventPublisher eventPublisher;
+    private final String websocketApiUrl;
+    private volatile String pendingSubscriptionRequestId;
 
     public UserStreamDataSource(
             WsAssistant wsAssistant,
@@ -36,67 +39,85 @@ class UserStreamDataSource extends AbstractWebsocketDataSource {
             BinanceAuthenticator binanceAuthenticator,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             EventPublisher eventPublisher,
-            IoExecutor ioExecutor
+            TaskScheduler taskScheduler,
+            ApplicationEventPublisher applicationEventPublisher,
+            String websocketApiUrl
     ) {
-        super(wsAssistant, objectMapper, ioExecutor);
+        super(wsAssistant, objectMapper, taskScheduler, applicationEventPublisher);
         this.binanceAuthenticator = binanceAuthenticator;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
         this.eventPublisher = eventPublisher;
+        this.websocketApiUrl = websocketApiUrl;
     }
 
     @Override
     protected URI connectionUri() {
-        return URI.create(ApiSpec.WSS_API_URL);
+        return URI.create(websocketApiUrl);
     }
 
     @Override
-    protected void onConnected() {
+    protected void handleConnected() {
         subscribeUserStream();
     }
 
     @Override
-    protected void processMessage(WsResponse response) {
+    protected WebsocketMessageResult processMessage(WsResponse response) {
         if (response.messageType() != WsResponse.MessageType.TEXT) {
             throw new IllegalStateException("cant handle non-text message");
         }
 
         JsonNode eventMessage = objectMapper.readTree(response.data());
-        if (eventMessage.has("id") && eventMessage.has("status")) return;
+        if (eventMessage.has("id") && eventMessage.has("status")) {
+            String responseId = eventMessage.path("id").asString();
+            if (!responseId.equals(pendingSubscriptionRequestId)) {
+                return WebsocketMessageResult.ignored("Unmatched command response: " + eventMessage);
+            }
+
+            pendingSubscriptionRequestId = null;
+            if (eventMessage.path("status").asInt() != 200) {
+                int errorCode = eventMessage.path("error").path("code").asInt();
+                if (errorCode == -2014 || errorCode == -2015) {
+                    return WebsocketMessageResult.reconnect(
+                            "Error authenticating user stream: " + eventMessage);
+                }
+                return WebsocketMessageResult.reconnect(
+                        "Error subscribing to user stream: " + eventMessage);
+            }
+            return WebsocketMessageResult.acknowledged();
+        }
         if (eventMessage.has("event") && eventMessage.has("subscriptionId")) {
             eventMessage = eventMessage.get("event");
         }
         if ("eventStreamTerminated".equals(eventMessage.path("e").asString())) {
-            throw new WebSocketDisconnectedException("Stream terminated by server");
+            return WebsocketMessageResult.reconnect("Stream terminated by server");
         }
 
         String eventType = eventMessage.path("e").asString();
         switch (eventType) {
-            case "executionReport" -> processExecutionReport(eventMessage);
-            case "outboundAccountPosition" -> processBalanceUpdate(eventMessage);
-            default -> log.debug("unknown user stream event: {}", eventMessage);
+            case "executionReport" -> {
+                processExecutionReport(eventMessage);
+                return WebsocketMessageResult.processed();
+            }
+            case "outboundAccountPosition" -> {
+                processBalanceUpdate(eventMessage);
+                return WebsocketMessageResult.processed();
+            }
+            default -> {
+                return WebsocketMessageResult.ignored("Unknown user stream event: " + eventMessage);
+            }
         }
     }
 
     private void subscribeUserStream() {
         Map<String, Object> params = binanceAuthenticator.generateWsSubscribeParams();
         String requestId = UUID.randomUUID().toString();
+        pendingSubscriptionRequestId = requestId;
 
         wsConnection.send(new WsRequest(Map.of(
                 "id", requestId,
                 "method", "userDataStream.subscribe.signature",
                 "params", params
         ), false));
-
-        try {
-            WsResponse response = wsConnection.take();
-            JsonNode data = objectMapper.readTree(response.data());
-            if (data.path("status").asInt() != 200) {
-                throw new WebSocketSubscriptionFailedException("Error subscribing to user stream: " + data);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new WebSocketDisconnectedException("Interrupted while subscribing user stream");
-        }
     }
 
     private void processExecutionReport(JsonNode eventMessage) {

@@ -7,12 +7,15 @@ import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
+@RequiredArgsConstructor
 public class OrderTracker implements LifecycleAware {
     private final EventPublisher eventPublisher;
     private final TradeRepository tradeRepository;
@@ -22,27 +25,18 @@ public class OrderTracker implements LifecycleAware {
             .maximumSize(1000)
             .build();
     private final EventSubscriber eventSubscriber;
-    private final Map<String, InFlightOrder> inFlightOrders = new HashMap<>();
+    private final Map<String, InFlightOrder> inFlightOrders = new ConcurrentHashMap<>();
     private final Set<Subscription> subscriptions = new HashSet<>();
-
-
-    public OrderTracker(
-            EventPublisher eventPublisher,
-            TradeRepository tradeRepository,
-            OrderSnapshotRepository orderSnapshotRepository,
-            EventSubscriber eventSubscriber
-    ) {
-        this.eventPublisher = eventPublisher;
-        this.tradeRepository = tradeRepository;
-        this.orderSnapshotRepository = orderSnapshotRepository;
-        this.eventSubscriber = eventSubscriber;
-    }
 
     void startTrackingOrder(InFlightOrder inFlightOrder) {
         inFlightOrders.put(inFlightOrder.getClientOrderId(), inFlightOrder);
     }
 
     void processTradeUpdate(TradeEvent.Received event) {
+        applyTradeUpdate(event);
+    }
+
+    private void applyTradeUpdate(TradeEvent.Received event) {
         if (event.clientOrderId() == null && event.exchangeOrderId() == null)
             throw new IllegalArgumentException("TradeUpdate에 오더 아이디 정보가 없습니다.");
 
@@ -51,8 +45,9 @@ public class OrderTracker implements LifecycleAware {
             log.error("can't find tracked inFlightOrder (client inFlightOrder id: {}, exchange inFlightOrder id: {})", event.clientOrderId(), event.exchangeOrderId());
             return;
         }
-        event.fills().forEach(fill -> {
-            trackedInFlightOrder.updateWithTradeUpdate(
+        boolean updated = false;
+        for (TradeEvent.Fill fill : event.fills()) {
+            updated |= trackedInFlightOrder.updateWithTradeUpdate(
                     fill.tradeId(),
                     event.clientOrderId(),
                     event.exchangeOrderId(),
@@ -63,25 +58,34 @@ public class OrderTracker implements LifecycleAware {
                     fill.fee(),
                     fill.isMaker()
             );
-        });
+        }
+        if (updated) {
+            publishSnapshotUpdate(trackedInFlightOrder);
+        }
     }
 
     void processOrderUpdate(OrderEvent.StatusReceived event) {
-        InFlightOrder inFlightOrder = findInFlightOrderOrElseThrow(event.clientOrderId(), event.exchangeOrderId());
-        OrderState prevState = inFlightOrder.getCurrentState();
-        inFlightOrder.updateWithOrderUpdate(
+        applyOrderUpdate(event);
+    }
+
+    private void applyOrderUpdate(OrderEvent.StatusReceived event) {
+        InFlightOrder inFlightOrder = getInFlightOrder(event.clientOrderId(), event.exchangeOrderId());
+        if (inFlightOrder == null) {
+            log.debug(
+                    "ignoring order update for untracked order. clientOrderId={}, exchangeOrderId={}",
+                    event.clientOrderId(),
+                    event.exchangeOrderId()
+            );
+            return;
+        }
+        boolean updated = inFlightOrder.updateWithOrderUpdate(
                 event.clientOrderId(),
                 event.exchangeOrderId(),
                 event.orderState(),
                 event.timestamp()
         );
-        if(isOrderStateNotChanged(prevState, inFlightOrder.getCurrentState())) return;
-        eventPublisher.publish(new OrderEvent.SnapshotUpdateRequested(
-                inFlightOrder.getClientOrderId(),
-                inFlightOrder.getExchangeOrderId(),
-                inFlightOrder.getCurrentState(),
-                inFlightOrder.getLastUpdateTimestamp()
-        ));
+        if (!updated) return;
+        publishSnapshotUpdate(inFlightOrder);
 
         if(inFlightOrder.isDone()) {
             recentClosedOrders.put(inFlightOrder.getClientOrderId(), inFlightOrder.toView());
@@ -89,15 +93,27 @@ public class OrderTracker implements LifecycleAware {
         }
     }
 
+    private void publishSnapshotUpdate(InFlightOrder order) {
+        eventPublisher.publish(new OrderEvent.SnapshotUpdateRequested(order.toView()));
+    }
+
+    public void restore(InFlightOrder order) {
+        inFlightOrders.put(order.getClientOrderId(), order);
+    }
+
+    public void reconcile(OrderEvent.StatusReceived event) {
+        applyOrderUpdate(event);
+    }
+
+    public void reconcile(TradeEvent.Received event) {
+        applyTradeUpdate(event);
+    }
+
     /**
      * liquidation, adl, settlement 같은 거래소 시스템에서 발생 시킨 이벤트 처리.
      */
     void processSystemOrderOccur() {
 
-    }
-
-    private boolean isOrderStateNotChanged(OrderState prevState, OrderState currentState) {
-        return prevState == currentState;
     }
 
     public InFlightOrder findInFlightOrderOrElseThrow(String clientOrderId, String exchangeOrderId) {
@@ -136,7 +152,7 @@ public class OrderTracker implements LifecycleAware {
     }
 
     public Collection<InFlightOrder> getAllInFlightOrders() {
-        return inFlightOrders.values();
+        return List.copyOf(inFlightOrders.values());
     }
 
     public Optional<OrderView> getOrderByClientId(String clientOrderId) {
@@ -165,4 +181,5 @@ public class OrderTracker implements LifecycleAware {
     public int phase() {
         return Phases.ORDER_TRACKER_SETUP;
     }
+
 }
