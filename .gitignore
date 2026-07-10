@@ -37,4 +37,6 @@ out/
 .vscode/
 src/test/java/com/hotak/noonchibot/connector/binance/RealTest.java
 scripts/run-testnet-tests.sh
+scripts/run-testnet.sh
 scripts/run-production.sh
+scripts/run-frontend.sh
