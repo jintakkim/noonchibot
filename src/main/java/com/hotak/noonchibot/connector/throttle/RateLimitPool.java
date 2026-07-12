@@ -16,19 +16,30 @@ public class RateLimitPool {
      * @return 해당 weight만큼 여유가 있는지
      */
     public synchronized boolean hasCapacity(int weight, double safetyMarginPct) {
-        purgeExpired(safetyMarginPct);
-        int used = logs.stream().mapToInt(TaskLog::weight).sum();
-        return used + weight <= rateLimit.limit();
+        purgeExpired();
+
+        int used = logs.stream()
+                .mapToInt(TaskLog::weight)
+                .sum();
+
+        int effectiveLimit = Math.max(
+                1,
+                (int) Math.floor(
+                        rateLimit.limit() * (1 - safetyMarginPct)
+                )
+        );
+
+        return used + weight <= effectiveLimit;
     }
 
     public synchronized void record(int weight) {
         logs.addLast(new TaskLog(weight, clock.millis()));
     }
 
-    private void purgeExpired(double safetyMarginPct) {
+    private void purgeExpired() {
         long now = clock.millis();
-        long effectiveWindowMs = (long) (rateLimit.timeInterval().toMillis() * (1 - safetyMarginPct));
-        while (!logs.isEmpty() && now - logs.peekFirst().timestamp() > effectiveWindowMs) {
+        long windowMs = rateLimit.timeInterval().toMillis();
+        while (!logs.isEmpty() && now - logs.peekFirst().timestamp() >= windowMs) {
             logs.pollFirst();
         }
     }
