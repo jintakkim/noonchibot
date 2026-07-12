@@ -73,7 +73,7 @@ public final class ApiSpec {
             // Pools
             RateLimit.pool("REQUEST_WEIGHT", 2400, Duration.ofMinutes(1)),
             RateLimit.pool("ORDERS_1MIN", 1200, Duration.ofMinutes(1)),
-            RateLimit.pool("ORDERS_1SEC", 300, Duration.ofSeconds(1)),
+            RateLimit.pool("ORDERS_10SEC", 300, Duration.ofSeconds(10)),
 
             //endpoints
             RateLimit.endpoint(TICKER_PRICE_CHANGE_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
@@ -99,8 +99,8 @@ public final class ApiSpec {
             RateLimit.endpoint(ORDER_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
                     List.of(
                             new RateLimit.LinkedLimitWeightPair("REQUEST_WEIGHT", 1),
-                            new RateLimit.LinkedLimitWeightPair("ORDERS", 1),
-                            new RateLimit.LinkedLimitWeightPair("ORDERS_24HR", 1)
+                            new RateLimit.LinkedLimitWeightPair("ORDERS_1MIN", 1),
+                            new RateLimit.LinkedLimitWeightPair("ORDERS_10SEC", 1)
                     )),
             RateLimit.endpoint(LISTEN_KEY_PATH_URL, Duration.ofMinutes(1), MAX_REQUEST, NOT_USED,
                     List.of(
