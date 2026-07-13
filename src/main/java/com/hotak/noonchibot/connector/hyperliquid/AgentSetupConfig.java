@@ -1,5 +1,6 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
+import com.hotak.noonchibot.connector.SimpleExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.web.PassthroughAsyncThrottler;
 import com.hotak.noonchibot.connector.web.RestAssistantImpl;
 import org.springframework.context.annotation.Bean;
@@ -24,7 +25,8 @@ public class AgentSetupConfig {
                 List.of(),
                 null,
                 new PassthroughAsyncThrottler(),
-                objectMapper
+                objectMapper,
+                new SimpleExchangeErrorClassifier()
         );
         return new AgentSetupRunner(new HyperliquidAgentGenerator(restAssistant, objectMapper, isMainnet));
     }

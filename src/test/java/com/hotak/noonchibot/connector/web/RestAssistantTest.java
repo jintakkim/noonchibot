@@ -3,7 +3,6 @@ package com.hotak.noonchibot.connector.web;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
-import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -182,6 +181,45 @@ public class RestAssistantTest {
     }
 
     @Test
+    @DisplayName("throttlerLimitId가 없으면 pathUrl을 사용한다")
+    void missingThrottlerLimitId_usesPathUrl() {
+        stubFor(get("/api/ticker").willReturn(okJson("{}")));
+        NoOpAsyncThrottler throttler = new NoOpAsyncThrottler();
+        restAssistant = new RestAssistantImpl(
+                restClient, List.of(), List.of(), null, throttler, objectMapper
+        );
+
+        restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/ticker")
+                        .method(HttpMethod.GET)
+                        .build()
+        );
+
+        assertThat(throttler.limitId).isEqualTo("/api/ticker");
+    }
+
+    @Test
+    @DisplayName("명시한 throttlerLimitId를 pathUrl보다 우선한다")
+    void explicitThrottlerLimitId_takesPrecedence() {
+        stubFor(get("/api/ticker").willReturn(okJson("{}")));
+        NoOpAsyncThrottler throttler = new NoOpAsyncThrottler();
+        restAssistant = new RestAssistantImpl(
+                restClient, List.of(), List.of(), null, throttler, objectMapper
+        );
+
+        restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/ticker")
+                        .method(HttpMethod.GET)
+                        .throttlerLimitId("market-data")
+                        .build()
+        );
+
+        assertThat(throttler.limitId).isEqualTo("market-data");
+    }
+
+    @Test
     @DisplayName("인증은 throttler 대기 이후 실제 호출 직전에 수행한다")
     void auth_runsAfterThrottlerSlotIsAcquired() {
         stubFor(get("/api/account")
@@ -210,8 +248,8 @@ public class RestAssistantTest {
     }
 
     @Test
-    @DisplayName("4xx 에러 - throwError=true면 예외를 던진다")
-    void clientError_throwErrorTrue_throwsException() {
+    @DisplayName("4xx 응답이면 REST API 예외를 던진다")
+    void clientError_throwsException() {
         stubFor(get("/api/inFlightOrder")
                 .willReturn(aResponse()
                         .withStatus(400)
@@ -222,20 +260,19 @@ public class RestAssistantTest {
                         RestRequest.builder()
                                 .pathUrl("/api/inFlightOrder")
                                 .method(HttpMethod.GET)
-                                .throwError(true)
                                 .build()
                 )
-        ).isInstanceOf(ExchangeApiException.class)
+        ).isInstanceOf(com.hotak.noonchibot.core.order.ExchangeRejectedException.class)
                 .satisfies(e -> {
-                    ExchangeApiException ex = (ExchangeApiException) e;
-                    assertThat(ex.httpStatusCode).isEqualTo(HttpStatusCode.valueOf(400));
-                    assertThat(ex.getMessage()).contains("-2010");
+                    ExchangeRestApiException ex = (ExchangeRestApiException) e.getCause();
+                    assertThat(ex.statusCode()).isEqualTo(HttpStatusCode.valueOf(400));
+                    assertThat(ex.responseBody()).contains("-2010");
                 });
     }
 
     @Test
-    @DisplayName("5xx 에러 - throwError=true면 예외를 던진다")
-    void serverError_throwErrorTrue_throwsException() {
+    @DisplayName("5xx 응답이면 REST API 예외를 던진다")
+    void serverError_throwsException() {
         stubFor(get("/api/inFlightOrder")
                 .willReturn(aResponse()
                         .withStatus(503)
@@ -246,59 +283,18 @@ public class RestAssistantTest {
                         RestRequest.builder()
                                 .pathUrl("/api/inFlightOrder")
                                 .method(HttpMethod.GET)
-                                .throwError(true)
                                 .build()
                 )
-        ).isInstanceOf(ExchangeApiException.class)
+        ).isInstanceOf(ExchangeRestApiException.class)
                 .satisfies(e -> {
-                    ExchangeApiException ex = (ExchangeApiException) e;
-                    assertThat(ex.httpStatusCode).isEqualTo(HttpStatusCode.valueOf(503));
+                    ExchangeRestApiException ex = (ExchangeRestApiException) e;
+                    assertThat(ex.statusCode()).isEqualTo(HttpStatusCode.valueOf(503));
                 });
     }
 
     @Test
-    @DisplayName("4xx 에러 - throwError=false면 예외 없이 응답을 반환한다")
-    void clientError_throwErrorFalse_returnsResponse() {
-        stubFor(get("/api/inFlightOrder")
-                .willReturn(aResponse()
-                        .withStatus(400)
-                        .withBody("{\"code\":-2010,\"msg\":\"Insufficient balance\"}")));
-
-        RestResponse response = restAssistant.executeRequestAndGetResponse(
-                RestRequest.builder()
-                        .pathUrl("/api/inFlightOrder")
-                        .method(HttpMethod.GET)
-                        .throwError(false)
-                        .build()
-        );
-
-        assertThat(response.statusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.body()).contains("-2010");
-    }
-
-    @Test
-    @DisplayName("5xx 에러 - throwError=false면 예외 없이 응답을 반환한다")
-    void serverError_throwErrorFalse_returnsResponse() {
-        stubFor(get("/api/inFlightOrder")
-                .willReturn(aResponse()
-                        .withStatus(503)
-                        .withBody("Service Unavailable")));
-
-        RestResponse response = restAssistant.executeRequestAndGetResponse(
-                RestRequest.builder()
-                        .pathUrl("/api/inFlightOrder")
-                        .method(HttpMethod.GET)
-                        .throwError(false)
-                        .build()
-        );
-
-        assertThat(response.statusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
-        assertThat(response.body()).contains("Service Unavailable");
-    }
-
-    @Test
-    @DisplayName("4xx 에러 - throwError=false여도 PostProcessor는 실행된다")
-    void clientError_throwErrorFalse_postProcessorStillRuns() {
+    @DisplayName("4xx 응답에서도 PostProcessor는 실행된다")
+    void clientError_postProcessorStillRuns() {
         stubFor(get("/api/orders")
                 .willReturn(aResponse()
                         .withStatus(429)
@@ -321,15 +317,14 @@ public class RestAssistantTest {
                         RestRequest.builder()
                                 .pathUrl("/api/orders")
                                 .method(HttpMethod.GET)
-                                .throwError(false)
                                 .build()
                 )
         ).isInstanceOf(RateLimitException.class);
     }
 
     @Test
-    @DisplayName("4xx 에러 - PostProcessor가 예외를 안 던지면 throwError에 따라 동작한다")
-    void clientError_postProcessorPassesThrough_followsThrowError() {
+    @DisplayName("PostProcessor가 통과시킨 4xx 응답은 REST API 예외가 된다")
+    void clientError_postProcessorPassesThrough_throwsException() {
         AtomicBoolean postProcessorCalled = new AtomicBoolean(false);
 
         stubFor(get("/api/orders")
@@ -347,31 +342,33 @@ public class RestAssistantTest {
                 null, new NoOpAsyncThrottler(), objectMapper
         );
 
-        RestResponse response = restAssistant.executeRequestAndGetResponse(
-                RestRequest.builder()
-                        .pathUrl("/api/orders")
-                        .method(HttpMethod.GET)
-                        .throwError(false)
-                        .build()
-        );
+        assertThatThrownBy(() -> restAssistant.executeRequestAndGetResponse(
+                        RestRequest.builder()
+                                .pathUrl("/api/orders")
+                                .method(HttpMethod.GET)
+                                .build()
+                ))
+                .isInstanceOf(com.hotak.noonchibot.core.order.ExchangeRejectedException.class);
 
         assertThat(postProcessorCalled).isTrue();
-        assertThat(response.statusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
 
 
     static class NoOpAsyncThrottler implements AsyncThrottler {
+        public String limitId;
         public Map<String, Integer> weightOverrides;
 
         @Override
         public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task, Map<String, Integer> weightOverrides) {
+            this.limitId = limitId;
             this.weightOverrides = weightOverrides;
             return CompletableFuture.completedFuture(task.get());
         }
 
         @Override
         public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task) {
+            this.limitId = limitId;
             return CompletableFuture.completedFuture(task.get());
         }
     }

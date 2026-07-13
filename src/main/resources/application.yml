@@ -17,6 +17,10 @@ spring:
                 format_sql: true
         show-sql: false
 
+    config:
+        import:
+            - optional:classpath:actuator.yml
+
 market-analytics:
     funding:
         # 조회 기간

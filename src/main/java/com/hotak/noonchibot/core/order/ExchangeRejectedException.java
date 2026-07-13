@@ -1,11 +1,9 @@
 package com.hotak.noonchibot.core.order;
 
-public class ExchangeRejectedException extends RuntimeException {
-    public ExchangeRejectedException(String message) {
-        super(message);
-    }
+import com.hotak.noonchibot.connector.web.ExchangeRestApiException;
 
-    public ExchangeRejectedException(Throwable cause) {
-        super(cause.getMessage(), cause);
+public class ExchangeRejectedException extends ExchangeRestApiException {
+    public ExchangeRejectedException(ExchangeRestApiException exception) {
+        super(exception.statusCode(), exception.responseBody(), exception);
     }
 }

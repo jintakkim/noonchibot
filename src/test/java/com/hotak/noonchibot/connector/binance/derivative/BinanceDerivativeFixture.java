@@ -30,7 +30,6 @@ public final class BinanceDerivativeFixture {
                         .params(Map.of(
                                 "dualSidePosition", positionMode
                         ))
-                        .throwError(false)
                         .authRequired(true)
                         .build(),
                 ok("""
@@ -50,7 +49,6 @@ public final class BinanceDerivativeFixture {
                                 "dualSidePosition", positionMode
                         ))
                         .authRequired(true)
-                        .throwError(false)
                         .build(),
                 badRequest("""
                 {
@@ -110,7 +108,6 @@ public final class BinanceDerivativeFixture {
                                 "marginType", marginMode
                         ))
                         .authRequired(true)
-                        .throwError(false)
                         .build(),
                 ok("""
                 {
@@ -130,7 +127,6 @@ public final class BinanceDerivativeFixture {
                                 "marginType", marginMode
                         ))
                         .authRequired(true)
-                        .throwError(false)
                         .build(),
                 badRequest("""
                 {
@@ -150,7 +146,6 @@ public final class BinanceDerivativeFixture {
                                 "marginType", marginMode
                         ))
                         .authRequired(true)
-                        .throwError(false)
                         .build(),
                 badRequest("""
                 {

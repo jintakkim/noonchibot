@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.web.testutils;
 
-import com.hotak.noonchibot.connector.ExchangeApiException;
+import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
+import com.hotak.noonchibot.connector.web.ExchangeRestApiException;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.RestResponse;
@@ -15,6 +16,7 @@ public class MockRestAssistant implements RestAssistant {
 
     private final List<RestFixture> fixtures = new ArrayList<>();
     private final List<RestRequest> recordedRequests = new ArrayList<>();
+    private ExchangeErrorClassifier exchangeErrorClassifier;
 
     @Override
     public JsonNode executeRequestAndGetJsonBody(RestRequest request) {
@@ -33,8 +35,14 @@ public class MockRestAssistant implements RestAssistant {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No matching fixture found for request: " + request));
 
-        if(!match.getThen().statusCode().is2xxSuccessful() && match.getWhen().throwError()) {
-            throw new ExchangeApiException(match.getThen().statusCode(), match.getThen().body());
+        if(!match.getThen().statusCode().is2xxSuccessful()) {
+            ExchangeRestApiException exception = new ExchangeRestApiException(
+                    match.getThen().statusCode(),
+                    match.getThen().body()
+            );
+            throw exchangeErrorClassifier == null
+                    ? exception
+                    : exchangeErrorClassifier.classify(exception);
         }
         return match;
     }
@@ -42,6 +50,10 @@ public class MockRestAssistant implements RestAssistant {
 
     public void addFixture(RestFixture fixture) {
         fixtures.add(fixture);
+    }
+
+    public void setExchangeErrorClassifier(ExchangeErrorClassifier exchangeErrorClassifier) {
+        this.exchangeErrorClassifier = exchangeErrorClassifier;
     }
 
     public void addFixture(List<RestFixture> fixtures) {

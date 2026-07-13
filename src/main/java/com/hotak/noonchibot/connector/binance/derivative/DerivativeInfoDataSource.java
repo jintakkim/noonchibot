@@ -1,7 +1,7 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
-import com.hotak.noonchibot.connector.binance.BinanceResponseCodeParser;
+import com.hotak.noonchibot.connector.web.NoChangeRequiredException;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.core.LifecycleAware;
@@ -12,7 +12,6 @@ import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.derivative.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
-import tools.jackson.databind.JsonNode;
 
 import java.util.HashSet;
 import java.util.Map;
@@ -77,20 +76,19 @@ class DerivativeInfoDataSource implements LifecycleAware {
     ) implements FailureAwareEventHandler<PositionModeChangeEvent.IORequested> {
         @Override
         public void onEvent(PositionModeChangeEvent.IORequested req) {
-            JsonNode res = restAssistant.executeRequestAndGetJsonBody(
-                    RestRequest.builder()
-                            .method(HttpMethod.POST)
-                            .pathUrl(ApiSpec.POSITION_MODE_PATH_URL)
-                            .params(Map.of(
-                                    "dualSidePosition", req.wantTo() == PositionMode.HEDGE
-                            ))
-                            .authRequired(true)
-                            .throwError(false)
-                            .build()
-            );
-            int code = BinanceResponseCodeParser.parseCode(res);
-            if (code != ApiSpec.Code.SUCCESS && code != ApiSpec.Code.NO_NEED_TO_CHANGE_POSITION_SIDE) {
-                throw new IllegalStateException("Position mode change failed: " + res);
+            try {
+                restAssistant.executeRequestAndGetResponse(
+                        RestRequest.builder()
+                                .method(HttpMethod.POST)
+                                .pathUrl(ApiSpec.POSITION_MODE_PATH_URL)
+                                .params(Map.of(
+                                        "dualSidePosition", req.wantTo() == PositionMode.HEDGE
+                                ))
+                                .authRequired(true)
+                                .build()
+                );
+            } catch (NoChangeRequiredException ignored) {
+                // The requested mode is already active.
             }
             log.debug("Position mode applied: {}", req.wantTo());
             eventPublisher.publish(new PositionModeChangeEvent.Applied(req.wantTo()));
@@ -143,21 +141,20 @@ class DerivativeInfoDataSource implements LifecycleAware {
                 case MarginMode.CROSS -> "CROSSED";
                 case MarginMode.ISOLATED -> "ISOLATED";
             };
-            JsonNode res = restAssistant.executeRequestAndGetJsonBody(
-                    RestRequest.builder()
-                            .method(HttpMethod.POST)
-                            .pathUrl(ApiSpec.MARGIN_TYPE_PATH_URL)
-                            .params(Map.of(
-                                    "symbol", exchangeSymbol,
-                                    "marginType", marginType
-                            ))
-                            .authRequired(true)
-                            .throwError(false)
-                            .build()
-            );
-            int code = BinanceResponseCodeParser.parseCode(res);
-            if (code != ApiSpec.Code.SUCCESS && code != ApiSpec.Code.NO_NEED_TO_CHANGE_MARGIN_TYPE) {
-                throw new IllegalStateException("Margin mode change failed: " + res);
+            try {
+                restAssistant.executeRequestAndGetResponse(
+                        RestRequest.builder()
+                                .method(HttpMethod.POST)
+                                .pathUrl(ApiSpec.MARGIN_TYPE_PATH_URL)
+                                .params(Map.of(
+                                        "symbol", exchangeSymbol,
+                                        "marginType", marginType
+                                ))
+                                .authRequired(true)
+                                .build()
+                );
+            } catch (NoChangeRequiredException ignored) {
+                // The requested mode is already active.
             }
             log.debug("Margin mode applied: {} -> {}", req.tradingPair(), req.wantTo());
             eventPublisher.publish(new MarginModeChangeEvent.Applied(req.tradingPair(), req.wantTo()));

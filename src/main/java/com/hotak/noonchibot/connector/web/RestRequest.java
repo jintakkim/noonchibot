@@ -15,9 +15,7 @@ public record RestRequest(
         boolean authRequired,
         String throttlerLimitId,
         // null 전달시 Property의 기본설정 weight 사용
-        Map<String, Integer> weightOverrides,
-        //true - rest 요청 중 에러 발생시 예외 발생, false 예외 무시 후 리턴
-        boolean throwError
+        Map<String, Integer> weightOverrides
 ) {
     public static Builder builder() {
         return new Builder();
@@ -32,8 +30,7 @@ public record RestRequest(
                 .headers(headers)
                 .authRequired(authRequired)
                 .throttlerLimitId(throttlerLimitId)
-                .weightOverrides(weightOverrides)
-                .throwError(throwError);
+                .weightOverrides(weightOverrides);
     }
 
     public static class Builder {
@@ -45,7 +42,6 @@ public record RestRequest(
         private boolean authRequired = false;
         private String throttlerLimitId;
         private Map<String, Integer> weightOverrides = Collections.emptyMap();
-        private boolean throwError = true;
 
         public Builder method(HttpMethod method) {
             this.method = method;
@@ -87,11 +83,6 @@ public record RestRequest(
             return this;
         }
 
-        public Builder throwError(boolean throwError) {
-            this.throwError = throwError;
-            return this;
-        }
-
         public RestRequest build() {
             if (method == null) {
                 throw new IllegalArgumentException("method is required");
@@ -100,7 +91,7 @@ public record RestRequest(
                 throw new IllegalArgumentException("pathUrl is required");
             }
             return new RestRequest(method, pathUrl, params, body, headers,
-                    authRequired, throttlerLimitId, weightOverrides, throwError);
+                    authRequired, throttlerLimitId, weightOverrides);
         }
     }
 }

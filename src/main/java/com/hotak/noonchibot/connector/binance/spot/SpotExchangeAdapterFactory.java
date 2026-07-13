@@ -4,7 +4,6 @@ import com.hotak.noonchibot.connector.*;
 import com.hotak.noonchibot.connector.binance.*;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottlerImpl;
-import com.hotak.noonchibot.connector.throttle.ThrottlerLimitIdPreProcessor;
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.BootStrap;
 import com.hotak.noonchibot.core.Exchange;
@@ -12,7 +11,6 @@ import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.balance.AccountBalanceTracker;
 import com.hotak.noonchibot.core.config.BotConstants;
 import com.hotak.noonchibot.core.event.EventBus;
-import com.hotak.noonchibot.core.event.ExecutionPolicy;
 import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.OrderSnapshotUpdater;
@@ -20,10 +18,8 @@ import com.hotak.noonchibot.core.order.OrderRecoveryBootstrap;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
-import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.RestClient;
@@ -46,7 +42,7 @@ public class SpotExchangeAdapterFactory {
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             TradingSafetyController tradingSafetyController,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            MeterRegistry meterRegistry
     ) {
         EventBus eventBus = new EventBus();
         tradingSafetyController.connect(eventBus);
@@ -60,12 +56,18 @@ public class SpotExchangeAdapterFactory {
         AsyncThrottler throttler = new AsyncThrottlerImpl(ApiSpec.RATE_LIMITS, ioExecutor);
         TimeSynchronizer timeSynchronizer = new TimeSynchronizer(
                 new BinanceServerTimeProvider(
-                        rest(
-                                new RestAssistantImpl(restClient, List.of(new ThrottlerLimitIdPreProcessor()), List.of(), null, throttler, objectMapper),
-                                circuitBreakerRegistry,
-                                CircuitBreakerNames.serverTime(Exchange.BINANCE_SPOT),
-                                2,
-                                objectMapper
+                        new MeteredRestAssistant(
+                                new RestAssistantImpl(
+                                        restClient,
+                                        List.of(),
+                                        List.of(),
+                                        null,
+                                        throttler,
+                                        objectMapper,
+                                        new BinanceExchangeErrorClassifier(objectMapper)
+                                ),
+                                meterRegistry,
+                                Exchange.BINANCE_SPOT.name()
                         ),
                         ApiSpec.SERVER_TIME_PATH_URL),
                 taskScheduler
@@ -73,15 +75,20 @@ public class SpotExchangeAdapterFactory {
         bootStrap.register(timeSynchronizer);
 
         BinanceAuthenticator authenticator = new BinanceAuthenticator(props.apiKey(), props.secretKey(), timeSynchronizer, objectMapper);
-        RestAssistant rawRestAssistant = new RestAssistantImpl(
-                restClient,
-                List.of(new ThrottlerLimitIdPreProcessor()),
-                List.of(),
-                authenticator,
-                throttler,
-                objectMapper
+        RestAssistant rawRestAssistant = new MeteredRestAssistant(
+                new RestAssistantImpl(
+                        restClient,
+                        List.of(),
+                        List.of(),
+                        authenticator,
+                        throttler,
+                        objectMapper,
+                        new BinanceExchangeErrorClassifier(objectMapper)
+                ),
+                meterRegistry,
+                Exchange.BINANCE_SPOT.name()
         );
-        RestAssistant baseRestAssistant = new BinanceTimestampRecoveringRestAssistant(
+        RestAssistant baseRestAssistant = new TimestampRecoveringRestAssistant(
                 rawRestAssistant,
                 timeSynchronizer,
                 objectMapper
@@ -95,7 +102,7 @@ public class SpotExchangeAdapterFactory {
                 taskScheduler,
                 applicationEventPublisher,
                 tradingPairSymbolRegistry,
-                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.orderBook(Exchange.BINANCE_SPOT), 2, objectMapper),
+                baseRestAssistant,
                 timeSynchronizer,
                 testnet ? ApiSpec.TESTNET_WSS_URL : ApiSpec.WSS_URL,
                 eventBus,
@@ -120,7 +127,7 @@ public class SpotExchangeAdapterFactory {
         TradeFeeSchemaLoader feeSchemaLoader = new TradeFeeSchemaLoader(
                 ioExecutor,
                 tradingPairSymbolRegistry,
-                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradeFee(Exchange.BINANCE_SPOT), 2, objectMapper)
+                baseRestAssistant
         );
         bootStrap.register(feeSchemaLoader);
 
@@ -137,14 +144,14 @@ public class SpotExchangeAdapterFactory {
         bootStrap.register(userStreamDataSource);
 
         RestBalanceDataSource balanceDataSource = new RestBalanceDataSource(
-                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.balance(Exchange.BINANCE_SPOT), 2, objectMapper),
+                baseRestAssistant,
                 eventBus,
                 taskScheduler
         );
         bootStrap.register(balanceDataSource);
 
         BinanceTradingRuleRegistry tradingRuleRegistry = new BinanceTradingRuleRegistry(
-                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.tradingRules(Exchange.BINANCE_SPOT), 2, objectMapper),
+                baseRestAssistant,
                 new TradingRuleParser(tradingPairSymbolRegistry),
                 taskScheduler,
                 ApiSpec.TRADING_RULE_UPDATE_INTERVAL,
@@ -156,8 +163,8 @@ public class SpotExchangeAdapterFactory {
 
         OrderClientImpl orderClient = new OrderClientImpl(
                 timeSynchronizer,
-                orderEntryRest(baseRestAssistant, circuitBreakerRegistry, objectMapper),
-                orderCancelRest(baseRestAssistant, circuitBreakerRegistry, objectMapper),
+                baseRestAssistant,
+                baseRestAssistant,
                 tradingPairSymbolRegistry
         );
         ExchangeOrderExecutor exchangeOrderExecutor = new ExchangeOrderExecutor(
@@ -179,14 +186,14 @@ public class SpotExchangeAdapterFactory {
 
         OrderStatusDataSource orderStatusDataSource = new OrderStatusDataSource(
                 tradingPairSymbolRegistry,
-                orderStatusRest(baseRestAssistant, circuitBreakerRegistry, objectMapper),
+                baseRestAssistant,
                 eventBus,
                 eventBus
         );
         bootStrap.register(orderStatusDataSource);
         TradeDataSource tradeDataSource = new TradeDataSource(
                 tradingPairSymbolRegistry,
-                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.trades(Exchange.BINANCE_SPOT), 2, objectMapper),
+                baseRestAssistant,
                 eventBus,
                 eventBus
         );
@@ -203,7 +210,7 @@ public class SpotExchangeAdapterFactory {
 
         PriceCandleDataSource priceCandleDataSource = new BinancePriceCandleDataSource(
                 Exchange.BINANCE_SPOT,
-                rest(baseRestAssistant, circuitBreakerRegistry, CircuitBreakerNames.rest(Exchange.BINANCE_SPOT), 2, objectMapper),
+                baseRestAssistant,
                 tradingPairSymbolRegistry,
                 ApiSpec.KLINE_PATH_URL
         );
@@ -221,52 +228,4 @@ public class SpotExchangeAdapterFactory {
         );
     }
 
-    private static RestAssistant rest(
-            RestAssistant delegate,
-            CircuitBreakerRegistry circuitBreakerRegistry,
-            String circuitName,
-            int maxAttempt,
-            ObjectMapper objectMapper
-    ) {
-        return new RestAssistantBuilder(delegate)
-                .circuit(circuitBreakerRegistry, circuitName)
-                .errorClassifier(new BinanceExchangeErrorClassifier(objectMapper))
-                .maxAttempt(maxAttempt)
-                .build();
-    }
-
-    private static RestAssistant orderEntryRest(
-            RestAssistant delegate,
-            CircuitBreakerRegistry circuitBreakerRegistry,
-            ObjectMapper objectMapper
-    ) {
-        return new RestAssistantBuilder(delegate)
-                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderEntry(Exchange.BINANCE_SPOT))
-                .errorClassifier(new BinanceExchangeErrorClassifier(objectMapper))
-                .build();
-    }
-
-    private static RestAssistant orderCancelRest(
-            RestAssistant delegate,
-            CircuitBreakerRegistry circuitBreakerRegistry,
-            ObjectMapper objectMapper
-    ) {
-        return new RestAssistantBuilder(delegate)
-                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderCancel(Exchange.BINANCE_SPOT))
-                .errorClassifier(new BinanceExchangeErrorClassifier(objectMapper))
-                .maxAttempt(1)
-                .build();
-    }
-
-    private static RestAssistant orderStatusRest(
-            RestAssistant delegate,
-            CircuitBreakerRegistry circuitBreakerRegistry,
-            ObjectMapper objectMapper
-    ) {
-        return new RestAssistantBuilder(delegate)
-                .circuit(circuitBreakerRegistry, CircuitBreakerNames.orderStatus(Exchange.BINANCE_SPOT))
-                .errorClassifier(new BinanceExchangeErrorClassifier(objectMapper))
-                .maxAttempt(2)
-                .build();
-    }
 }

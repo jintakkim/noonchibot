@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.connector.binance.spot;
 
-import com.hotak.noonchibot.connector.ExchangeApiException;
+import com.hotak.noonchibot.connector.web.ExchangeRestApiException;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
@@ -80,9 +80,9 @@ class OrderClientImpl implements OrderClient {
             OrderState orderState = ApiSpec.ORDER_STATE.getOrDefault(orderStatus, OrderState.OPEN);
 
             return new OrderPlaceResult(exchangeOrderId, orderState, transactTime);
-        } catch (ExchangeApiException e) {
-            if (e.httpStatusCode == HttpStatusCode.valueOf(503)
-                    && e.getMessage().contains("Unknown error, please check your request or try again later.")) {
+        } catch (ExchangeRestApiException e) {
+            if (e.statusCode().isSameCodeAs(HttpStatusCode.valueOf(503))
+                    && e.responseBody().contains("Unknown error, please check your request or try again later.")) {
                 return new OrderPlaceResult(null, OrderState.PENDING_CREATE, Instant.ofEpochMilli(timeSynchronizer.serverTime()));
             }
             throw e;

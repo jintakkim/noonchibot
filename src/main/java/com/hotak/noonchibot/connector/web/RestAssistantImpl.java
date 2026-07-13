@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.web;
 
-import com.hotak.noonchibot.connector.ExchangeApiException;
+import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
+import com.hotak.noonchibot.connector.SimpleExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,26 @@ public class RestAssistantImpl implements RestAssistant {
     private final Authenticator authenticator;
     private final AsyncThrottler asyncThrottler;
     private final ObjectMapper objectMapper;
+    private final ExchangeErrorClassifier exchangeErrorClassifier;
+
+    public RestAssistantImpl(
+            RestClient restClient,
+            List<RestPreProcessor> preProcessors,
+            List<RestPostProcessor> postProcessors,
+            Authenticator authenticator,
+            AsyncThrottler asyncThrottler,
+            ObjectMapper objectMapper
+    ) {
+        this(
+                restClient,
+                preProcessors,
+                postProcessors,
+                authenticator,
+                asyncThrottler,
+                objectMapper,
+                new SimpleExchangeErrorClassifier()
+        );
+    }
 
     public JsonNode executeRequestAndGetJsonBody(RestRequest request) {
         return objectMapper.readTree(executeRequestAndGetResponse(request).body());
@@ -30,29 +51,39 @@ public class RestAssistantImpl implements RestAssistant {
 
     public RestResponse executeRequestAndGetResponse(RestRequest request) {
         RestRequest processedRequest = applyPreProcessors(request);
+        String throttlerLimitId = resolveThrottlerLimitId(processedRequest);
+
         if(processedRequest.weightOverrides() == null) {
             return join(asyncThrottler.execute(
-                    processedRequest.throttlerLimitId(),
-                    () -> {
-                        RestResponse response = executeReadyRequest(processedRequest);
-                        if (response.statusCode().isError() && request.throwError()) {
-                            log.error("네트워크 문제 발생, response: {}", response);
-                            throw new ExchangeApiException(response.statusCode(), response.body());
-                        }
-                        return response;
-                    }));
+                    throttlerLimitId,
+                    () -> executeAndValidate(processedRequest)
+            ));
         }
+
         return join(asyncThrottler.execute(
-                processedRequest.throttlerLimitId(),
-                () -> {
-                    RestResponse response = executeReadyRequest(processedRequest);
-                    if (response.statusCode().isError() && request.throwError()) {
-                        log.error("네트워크 문제 발생, response: {}", response);
-                        throw new ExchangeApiException(response.statusCode(), response.body());
-                    }
-                    return response;
-                },
-                processedRequest.weightOverrides()));
+                throttlerLimitId,
+                () -> executeAndValidate(processedRequest),
+                processedRequest.weightOverrides()
+        ));
+    }
+
+    private String resolveThrottlerLimitId(RestRequest request) {
+        return request.throttlerLimitId() != null
+                ? request.throttlerLimitId()
+                : request.pathUrl();
+    }
+
+    private RestResponse executeAndValidate(RestRequest request) {
+        RestResponse response = executeReadyRequest(request);
+        if (response.statusCode().isError()) {
+            log.error("Exchange REST request failed. response={}", response);
+            ExchangeRestApiException exception = new ExchangeRestApiException(
+                    response.statusCode(),
+                    response.body()
+            );
+            throw exchangeErrorClassifier.classify(exception);
+        }
+        return response;
     }
 
     private <T> T join(CompletableFuture<T> future) {

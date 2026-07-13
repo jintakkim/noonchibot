@@ -1,7 +1,9 @@
 package com.hotak.noonchibot.core.order;
 
+import com.hotak.noonchibot.connector.web.ExchangeRestApiException;
+
 public class InsufficientBalanceException extends ExchangeRejectedException {
-    public InsufficientBalanceException(Throwable cause) {
+    public InsufficientBalanceException(ExchangeRestApiException cause) {
         super(cause);
     }
 }

@@ -10,7 +10,7 @@ import com.hotak.noonchibot.core.derivative.funding.FundingHistoryProperties;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -56,7 +56,7 @@ public class BinanceConfig {
             TradeRepository tradeRepository,
             OrderSnapshotRepository orderSnapshotRepository,
             TradingSafetyController tradingSafetyController,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            MeterRegistry meterRegistry
     ) {
         return SpotExchangeAdapterFactory.create(
                 bootStrap,
@@ -69,7 +69,7 @@ public class BinanceConfig {
                 webSocketClient,
                 tradeRepository,
                 tradingSafetyController,
-                circuitBreakerRegistry
+                meterRegistry
         );
     }
 
@@ -87,7 +87,7 @@ public class BinanceConfig {
             OrderSnapshotRepository orderSnapshotRepository,
             TradingSafetyController tradingSafetyController,
             FundingHistoryProperties fundingHistoryProperties,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            MeterRegistry meterRegistry
     ) {
         return DerivativeExchangeAdapterFactory.create(
                 bootStrap,
@@ -102,7 +102,7 @@ public class BinanceConfig {
                 fundingPaymentRepository,
                 tradingSafetyController,
                 fundingHistoryProperties,
-                circuitBreakerRegistry
+                meterRegistry
         );
 
     }

@@ -3,9 +3,6 @@ package com.hotak.noonchibot.connector.binance.derivative;
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
-import com.hotak.noonchibot.connector.web.RestAssistant;
-import com.hotak.noonchibot.connector.web.RestAssistantBuilder;
-import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.derivative.*;
 import com.hotak.noonchibot.core.event.EventSubscriberAssert;
@@ -15,10 +12,6 @@ import com.hotak.noonchibot.core.event.internal.derivative.LeverageChangeEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.MarginModeChangeEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.PositionModeChangeEvent;
 import com.hotak.noonchibot.core.order.ExchangeRejectedException;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerNames;
-import com.hotak.noonchibot.core.resilience.CircuitBreakerTestSupport;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,7 +25,6 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
     private TestEventPublisher eventPublisher;
     private TestEventSubscriber eventSubscriber;
     private final TradingPairSymbolRegistry symbolRegistry = BinanceDerivativeFixture.BTC_ETH_SOL_REGISTRY;
-    private CircuitBreakerRegistry circuitBreakerRegistry;
     private DerivativeInfoDataSource client;
 
 
@@ -40,14 +32,9 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
     void setup() {
         eventPublisher = new TestEventPublisher();
         eventSubscriber = new TestEventSubscriber();
-        circuitBreakerRegistry = CircuitBreakerTestSupport.circuitBreakerRegistry();
-        RestAssistant derivativeInfoRestAssistant = new RestAssistantBuilder(restAssistant)
-                .circuit(circuitBreakerRegistry, CircuitBreakerNames.derivativeInfo(Exchange.BINANCE_DERIVATIVE))
-                .errorClassifier(new BinanceExchangeErrorClassifier(new ObjectMapper()))
-                .maxAttempt(1)
-                .build();
+        restAssistant.setExchangeErrorClassifier(new BinanceExchangeErrorClassifier(new ObjectMapper()));
         client = new DerivativeInfoDataSource(
-                derivativeInfoRestAssistant,
+                restAssistant,
                 symbolRegistry,
                 eventPublisher,
                 eventSubscriber
@@ -175,9 +162,6 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
                     () -> {
                         client.marginModeChangeHandler.onEvent(new MarginModeChangeEvent.IORequested("BTC-USDT", MarginMode.ISOLATED));
                         assertThat(eventPublisher.hasEventOfType(MarginModeChangeEvent.Applied.class)).isTrue();
-                        assertThat(derivativeInfoCircuit().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
-                        assertThat(derivativeInfoCircuit().getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
-                        assertThat(derivativeInfoCircuit().getMetrics().getNumberOfFailedCalls()).isZero();
                     }
             );
         }
@@ -246,9 +230,5 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
             client.onShutdown();
             EventSubscriberAssert.assertThat(eventSubscriber).hasNoSubscriptions();
         }
-    }
-
-    private CircuitBreaker derivativeInfoCircuit() {
-        return circuitBreakerRegistry.circuitBreaker(CircuitBreakerNames.derivativeInfo(Exchange.BINANCE_DERIVATIVE));
     }
 }

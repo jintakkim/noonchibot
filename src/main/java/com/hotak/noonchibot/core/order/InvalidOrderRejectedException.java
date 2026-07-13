@@ -1,7 +1,9 @@
 package com.hotak.noonchibot.core.order;
 
+import com.hotak.noonchibot.connector.web.ExchangeRestApiException;
+
 public class InvalidOrderRejectedException extends ExchangeRejectedException {
-    public InvalidOrderRejectedException(Throwable cause) {
+    public InvalidOrderRejectedException(ExchangeRestApiException cause) {
         super(cause);
     }
 }
