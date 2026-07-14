@@ -11,11 +11,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executor;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 public class AsyncPassthroughThrottlerTest {
@@ -209,5 +214,135 @@ public class AsyncPassthroughThrottlerTest {
             clock.advance(Duration.ofSeconds(3));
             assertThat(future.get(1, TimeUnit.SECONDS)).isEqualTo("ok");
         }
+    }
+
+    @Nested
+    @DisplayName("다중 풀 원자적 소비")
+    class AtomicMultiplePoolConsumption {
+        @Test
+        @DisplayName("linked pool 하나가 부족하면 다른 풀도 소비하지 않는다")
+        void insufficientLinkedPoolDoesNotPartiallyConsumeOtherPools() throws Exception {
+            clock = new TestClock(Instant.now());
+            throttler = new AsyncThrottlerImpl(List.of(
+                    RateLimit.pool("LONG_WINDOW", 1, Duration.ofMinutes(1)),
+                    RateLimit.pool("SHORT_WINDOW", 1, Duration.ofSeconds(1)),
+                    RateLimit.endpoint("/api/exhaust", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
+                            new RateLimit.LinkedLimitWeightPair("SHORT_WINDOW", 1))),
+                    RateLimit.endpoint("/api/multi", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
+                            new RateLimit.LinkedLimitWeightPair("LONG_WINDOW", 1),
+                            new RateLimit.LinkedLimitWeightPair("SHORT_WINDOW", 1)))
+            ), executor, Duration.ofMillis(10), 0.0, clock);
+
+            throttler.execute("/api/exhaust", () -> "exhausted")
+                    .get(1, TimeUnit.SECONDS);
+
+            var future = throttler.execute("/api/multi", () -> "ok");
+            Thread.sleep(50);
+            assertThat(future.isDone()).isFalse();
+
+            clock.advance(Duration.ofSeconds(2));
+            assertThat(future.get(1, TimeUnit.SECONDS)).isEqualTo("ok");
+        }
+
+        @Test
+        @DisplayName("동시 요청도 shared pool의 허용량을 초과하지 않는다")
+        void concurrentRequestsDoNotExceedSharedPoolCapacity() throws Exception {
+            int capacity = 32;
+            int requestCount = 64;
+            CountDownLatch workersReady = new CountDownLatch(requestCount);
+            CountDownLatch start = new CountDownLatch(1);
+            TaskExecutor simultaneousExecutor = task -> Thread.ofVirtual().start(() -> {
+                workersReady.countDown();
+                try {
+                    start.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                task.run();
+            });
+            clock = new TestClock(Instant.now());
+            throttler = new AsyncThrottlerImpl(List.of(
+                    RateLimit.pool("SHARED", capacity, Duration.ofSeconds(1)),
+                    RateLimit.endpoint("/api/concurrent", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
+                            new RateLimit.LinkedLimitWeightPair("SHARED", 1)))
+            ), simultaneousExecutor, Duration.ofMillis(10), 0.0, clock);
+            AtomicInteger executed = new AtomicInteger();
+
+            var futures = IntStream.range(0, requestCount)
+                    .mapToObj(i -> throttler.execute(
+                            "/api/concurrent",
+                            () -> executed.incrementAndGet()
+                    ))
+                    .toList();
+
+            assertThat(workersReady.await(2, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            awaitCount(executed, capacity);
+            Thread.sleep(50);
+            assertThat(executed.get()).isEqualTo(capacity);
+
+            clock.advance(Duration.ofSeconds(2));
+            for (var future : futures) {
+                future.get(2, TimeUnit.SECONDS);
+            }
+            assertThat(executed.get()).isEqualTo(requestCount);
+        }
+    }
+
+    @Nested
+    @DisplayName("대기 중단")
+    class InterruptedWaiting {
+        @Test
+        @DisplayName("대기 스레드가 interrupt되면 실제 task를 실행하지 않는다")
+        void interruptedWaitDoesNotExecuteTask() throws Exception {
+            AtomicReference<Thread> worker = new AtomicReference<>();
+            TaskExecutor capturingExecutor = task -> Thread.ofVirtual().start(() -> {
+                worker.set(Thread.currentThread());
+                task.run();
+            });
+            clock = new TestClock(Instant.now());
+            throttler = new AsyncThrottlerImpl(List.of(
+                    RateLimit.pool("POOL", 1, Duration.ofMinutes(1)),
+                    RateLimit.endpoint("/api/wait", Duration.ofMinutes(1), Integer.MAX_VALUE, 1, List.of(
+                            new RateLimit.LinkedLimitWeightPair("POOL", 1)))
+            ), capturingExecutor, Duration.ofSeconds(1), 0.0, clock);
+
+            throttler.execute("/api/wait", () -> "first")
+                    .get(1, TimeUnit.SECONDS);
+
+            worker.set(null);
+            AtomicBoolean taskExecuted = new AtomicBoolean();
+            var waiting = throttler.execute("/api/wait", () -> {
+                taskExecuted.set(true);
+                return "second";
+            });
+            Thread waitingThread = awaitWorker(worker);
+            Thread.sleep(50);
+
+            waitingThread.interrupt();
+
+            assertThatThrownBy(() -> waiting.get(1, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class);
+            assertThat(waiting.isCompletedExceptionally()).isTrue();
+            assertThat(taskExecuted.get()).isFalse();
+        }
+    }
+
+    private static void awaitCount(AtomicInteger counter, int expected) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (counter.get() < expected && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        assertThat(counter.get()).isEqualTo(expected);
+    }
+
+    private static Thread awaitWorker(AtomicReference<Thread> worker) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (worker.get() == null && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        assertThat(worker.get()).isNotNull();
+        return worker.get();
     }
 }

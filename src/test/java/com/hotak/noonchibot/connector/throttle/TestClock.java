@@ -3,7 +3,7 @@ package com.hotak.noonchibot.connector.throttle;
 import java.time.*;
 
 public class TestClock extends Clock {
-    private Instant instant;
+    private volatile Instant instant;
     private final ZoneId zone = ZoneOffset.UTC;
 
     public TestClock(Instant initial) {
