@@ -3,19 +3,15 @@ package com.hotak.noonchibot.connector.web;
 import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
 import com.hotak.noonchibot.core.utils.AsyncUtils;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.retry.Retry;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
 
 import java.util.function.Supplier;
 
-@Slf4j
 @RequiredArgsConstructor
-class CircuitSupportRestAssistant implements RestAssistant {
+class RetrySupportRestAssistant implements RestAssistant {
     private final RestAssistant delegate;
-    private final CircuitBreaker circuitBreaker;
     private final ExchangeErrorClassifier exchangeErrorClassifier;
     private final Retry retry;
 
@@ -30,12 +26,7 @@ class CircuitSupportRestAssistant implements RestAssistant {
     }
 
     private <T> T execute(Supplier<T> request) {
-        Supplier<T> retrying = decorateRetry(() -> executeClassifying(request));
-        if (circuitBreaker == null) {
-            log.warn("circuit breaker is null, running without circuitBreaker.");
-            return retrying.get();
-        }
-        return CircuitBreaker.decorateSupplier(circuitBreaker, retrying).get();
+        return decorateRetry(() -> executeClassifying(request)).get();
     }
 
     private <T> Supplier<T> decorateRetry(Supplier<T> request) {

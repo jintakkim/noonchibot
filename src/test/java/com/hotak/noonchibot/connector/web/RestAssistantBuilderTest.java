@@ -4,17 +4,13 @@ import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.ExchangeTransientException;
 import com.hotak.noonchibot.core.order.ExchangeRejectedException;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
-import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.CompletionException;
@@ -29,14 +25,13 @@ class RestAssistantBuilderTest {
             .build();
 
     @Test
-    void errorClassifier_canIgnoreRejectedErrorWithoutOpeningCircuit() {
-        CircuitBreakerRegistry registry = registry();
+    @DisplayName("거절 오류는 분류하되 재시도하지 않는다")
+    void rejectedError_isClassifiedWithoutRetry() {
         SequencedRestAssistant delegate = new SequencedRestAssistant(
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-2010}"),
-                new ObjectMapper().readTree("{\"ok\":true}")
+                jsonBody()
         );
         RestAssistant assistant = new RestAssistantBuilder(delegate)
-                .circuit(registry, "BINANCE_SPOT.order-entry")
                 .errorClassifier(rejectedClassifier())
                 .maxAttempt(3)
                 .build();
@@ -45,21 +40,16 @@ class RestAssistantBuilderTest {
                 .isInstanceOf(ExchangeRejectedException.class);
 
         assertThat(delegate.calls).isEqualTo(1);
-        assertThat(registry.circuitBreaker("BINANCE_SPOT.order-entry").getState())
-                .isEqualTo(CircuitBreaker.State.CLOSED);
-        assertThat(registry.circuitBreaker("BINANCE_SPOT.order-entry")
-                .getMetrics().getNumberOfFailedCalls()).isZero();
     }
 
     @Test
-    void errorClassifier_canRetryWithinSingleCircuitCall() {
-        CircuitBreakerRegistry registry = registry();
+    @DisplayName("재시도 가능 오류는 분류한 뒤 설정한 횟수 안에서 재시도한다")
+    void retryableError_isClassifiedAndRetried() {
         SequencedRestAssistant delegate = new SequencedRestAssistant(
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":1202}"),
-                new ObjectMapper().readTree("{\"ok\":true}")
+                jsonBody()
         );
         RestAssistant assistant = new RestAssistantBuilder(delegate)
-                .circuit(registry, "BINANCE_SPOT.order-status")
                 .errorClassifier(retryableClassifier())
                 .maxAttempt(2)
                 .build();
@@ -68,105 +58,73 @@ class RestAssistantBuilderTest {
 
         assertThat(body.get("ok").asBoolean()).isTrue();
         assertThat(delegate.calls).isEqualTo(2);
-        assertThat(registry.circuitBreaker("BINANCE_SPOT.order-status").getState())
-                .isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
     @Test
+    @DisplayName("CompletionException으로 감싼 거래소 오류도 분류하고 재시도한다")
     void completionWrappedExchangeApiException_isUnwrappedClassifiedAndRetried() {
-        CircuitBreakerRegistry registry = registry();
         SequencedRestAssistant delegate = new SequencedRestAssistant(
                 new CompletionException(new ExchangeApiException(
                         HttpStatusCode.valueOf(500),
                         "temporary failure"
                 )),
-                new ObjectMapper().readTree("{\"ok\":true}")
+                jsonBody()
         );
         RestAssistant assistant = new RestAssistantBuilder(delegate)
-                .circuit(registry, "BINANCE_SPOT.order-status")
                 .maxAttempt(2)
                 .build();
 
         JsonNode body = assistant.executeRequestAndGetJsonBody(request);
 
-        CircuitBreaker circuit = registry.circuitBreaker("BINANCE_SPOT.order-status");
         assertThat(body.get("ok").asBoolean()).isTrue();
         assertThat(delegate.calls).isEqualTo(2);
-        assertThat(circuit.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
-        assertThat(circuit.getMetrics().getNumberOfFailedCalls()).isZero();
     }
 
     @Test
-    void errorClassifier_canRecordFailureAndOpenCircuit() {
-        CircuitBreakerRegistry registry = registry();
-        RestAssistant assistant = new RestAssistantBuilder(new ThrowingRestAssistant(
-                new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-1021}")
-        ))
-                .circuit(registry, "BINANCE_SPOT.server-time")
-                .errorClassifier(nonRetryableTransientClassifier())
-                .build();
-
-        assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
-                .isInstanceOf(ExchangeTransientException.class);
-
-        assertThat(registry.circuitBreaker("BINANCE_SPOT.server-time").getState())
-                .isEqualTo(CircuitBreaker.State.OPEN);
-    }
-
-    @Test
-    void errorClassifier_recordFailureDoesNotRetry() {
-        CircuitBreakerRegistry registry = registry();
+    @DisplayName("분류 결과가 재시도 대상이 아니면 첫 실패를 즉시 전파한다")
+    void nonRetryableClassifiedError_isNotRetried() {
         SequencedRestAssistant delegate = new SequencedRestAssistant(
                 new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-1021}"),
-                new ObjectMapper().readTree("{\"ok\":true}")
+                jsonBody()
         );
         RestAssistant assistant = new RestAssistantBuilder(delegate)
-                .circuit(registry, "BINANCE_SPOT.server-time")
                 .errorClassifier(nonRetryableTransientClassifier())
                 .maxAttempt(3)
                 .build();
 
         assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
-                .isInstanceOf(ExchangeTransientException.class);
+                .isInstanceOf(NonRetryableExchangeTransientException.class);
 
         assertThat(delegate.calls).isEqualTo(1);
-        assertThat(registry.circuitBreaker("BINANCE_SPOT.server-time").getState())
-                .isEqualTo(CircuitBreaker.State.OPEN);
-        assertThat(registry.circuitBreaker("BINANCE_SPOT.server-time")
-                .getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
     }
 
     @Test
-    void openCircuit_blocksNextCallBeforeDelegate() {
-        CircuitBreakerRegistry registry = registry();
+    @DisplayName("최대 시도 횟수를 설정하지 않으면 한 번만 호출한다")
+    void defaultMaxAttempt_callsDelegateOnce() {
         SequencedRestAssistant delegate = new SequencedRestAssistant(
-                new ExchangeApiException(HttpStatusCode.valueOf(500), "{\"code\":-1000}"),
-                new ObjectMapper().readTree("{\"ok\":true}")
+                new ExchangeApiException(HttpStatusCode.valueOf(500), "temporary failure"),
+                jsonBody()
         );
-        RestAssistant assistant = new RestAssistantBuilder(delegate)
-                .circuit(registry, "BINANCE_SPOT.balance")
-                .build();
+        RestAssistant assistant = new RestAssistantBuilder(delegate).build();
 
         assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
                 .isInstanceOf(ExchangeTransientException.class);
-        assertThat(registry.circuitBreaker("BINANCE_SPOT.balance").getState())
-                .isEqualTo(CircuitBreaker.State.OPEN);
 
-        assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
-                .isInstanceOf(CallNotPermittedException.class);
         assertThat(delegate.calls).isEqualTo(1);
     }
 
-    private CircuitBreakerRegistry registry() {
-        CircuitBreakerConfig config = CircuitBreakerConfig.custom()
-                .failureRateThreshold(50)
-                .waitDurationInOpenState(Duration.ofSeconds(30))
-                .slidingWindowSize(1)
-                .minimumNumberOfCalls(1)
-                .ignoreExceptions(ExchangeRejectedException.class)
-                .recordExceptions(ExchangeTransientException.class)
-                .build();
-        return CircuitBreakerRegistry.of(config);
+    @Test
+    @DisplayName("음수 최대 시도 횟수는 허용하지 않는다")
+    void negativeMaxAttempt_isRejected() {
+        RestAssistantBuilder builder = new RestAssistantBuilder(new SequencedRestAssistant(jsonBody()));
+
+        assertThatThrownBy(() -> builder.maxAttempt(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("maxAttempt must not be negative");
+    }
+
+    private static JsonNode jsonBody() {
+        return new ObjectMapper().readTree("{\"ok\":true}");
     }
 
     private static ExchangeErrorClassifier rejectedClassifier() {
@@ -214,24 +172,6 @@ class RestAssistantBuilderTest {
     private static class NonRetryableExchangeTransientException extends ExchangeTransientException {
         private NonRetryableExchangeTransientException(ExchangeApiException cause) {
             super(cause);
-        }
-    }
-
-    private static class ThrowingRestAssistant implements RestAssistant {
-        private final RuntimeException exception;
-
-        private ThrowingRestAssistant(RuntimeException exception) {
-            this.exception = exception;
-        }
-
-        @Override
-        public JsonNode executeRequestAndGetJsonBody(RestRequest request) {
-            throw exception;
-        }
-
-        @Override
-        public RestResponse executeRequestAndGetResponse(RestRequest request) {
-            throw exception;
         }
     }
 
