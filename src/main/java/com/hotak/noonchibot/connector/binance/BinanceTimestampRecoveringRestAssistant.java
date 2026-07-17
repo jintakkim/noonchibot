@@ -2,6 +2,7 @@ package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.ExchangeApiException;
 import com.hotak.noonchibot.connector.web.RestAssistant;
+import com.hotak.noonchibot.connector.web.RestJsonBodyParser;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.RestResponse;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
@@ -23,7 +24,8 @@ public class BinanceTimestampRecoveringRestAssistant implements RestAssistant {
 
     @Override
     public JsonNode executeRequestAndGetJsonBody(RestRequest request) {
-        return objectMapper.readTree(executeRequestAndGetResponse(request).body());
+        RestResponse response = executeRequestAndGetResponse(request);
+        return RestJsonBodyParser.parse(objectMapper, request, response);
     }
 
     @Override

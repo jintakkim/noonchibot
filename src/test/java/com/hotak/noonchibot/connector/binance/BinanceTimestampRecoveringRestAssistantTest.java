@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.ExchangeApiException;
+import com.hotak.noonchibot.connector.ExchangeProtocolException;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
 import com.hotak.noonchibot.connector.web.RestResponse;
@@ -98,6 +99,22 @@ class BinanceTimestampRecoveringRestAssistantTest {
         verify(timeSynchronizer).updateServerTimeOffset();
         verify(delegate, times(2)).executeRequestAndGetResponse(request);
         verify(delegate, never()).executeRequestAndGetJsonBody(request);
+    }
+
+    @Test
+    @DisplayName("복구 응답의 JSON 문법이 잘못되면 ExchangeProtocolException을 던진다")
+    void executeRequestAndGetJsonBody_whenBodyIsMalformed_throwsExchangeProtocolException() {
+        RestRequest request = signedRequest(true);
+        when(delegate.executeRequestAndGetResponse(request))
+                .thenReturn(new RestResponse(HttpStatus.OK, new HttpHeaders(), "{\"ok\":"));
+
+        assertThatThrownBy(() -> restAssistant.executeRequestAndGetJsonBody(request))
+                .isInstanceOf(ExchangeProtocolException.class)
+                .hasMessageContaining("GET /v3/account")
+                .hasCauseInstanceOf(RuntimeException.class);
+
+        verify(timeSynchronizer, never()).updateServerTimeOffset();
+        verify(delegate).executeRequestAndGetResponse(request);
     }
 
     private static RestRequest signedRequest(boolean throwError) {

@@ -26,7 +26,8 @@ public class RestAssistantImpl implements RestAssistant {
     private final ObjectMapper objectMapper;
 
     public JsonNode executeRequestAndGetJsonBody(RestRequest request) {
-        return objectMapper.readTree(executeRequestAndGetResponse(request).body());
+        RestResponse response = executeRequestAndGetResponse(request);
+        return RestJsonBodyParser.parse(objectMapper, request, response);
     }
 
     public RestResponse executeRequestAndGetResponse(RestRequest request) {

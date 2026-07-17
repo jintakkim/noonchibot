@@ -4,6 +4,7 @@ package com.hotak.noonchibot.connector.web;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import com.hotak.noonchibot.connector.ExchangeApiException;
+import com.hotak.noonchibot.connector.ExchangeProtocolException;
 import com.hotak.noonchibot.connector.throttle.AsyncThrottler;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,6 +75,40 @@ public class RestAssistantTest {
         );
         // then
         assertThat(result.get("price").asString()).isEqualTo("50000");
+    }
+
+    @Test
+    @DisplayName("JSON body가 비어 있으면 ExchangeProtocolException을 던진다")
+    void emptyJsonBody_throwsExchangeProtocolException() {
+        stubFor(get("/api/empty")
+                .willReturn(ok().withBody("   ")));
+
+        assertThatThrownBy(() -> restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .pathUrl("/api/empty")
+                        .method(HttpMethod.GET)
+                        .build()
+        )).isInstanceOf(ExchangeProtocolException.class)
+                .hasMessageContaining("GET /api/empty")
+                .hasMessageContaining("body was empty")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("JSON 문법이 잘못되면 원본 파싱 예외를 보존한 ExchangeProtocolException을 던진다")
+    void malformedJson_throwsExchangeProtocolException() {
+        stubFor(get("/api/malformed")
+                .willReturn(ok().withBody("{\"price\":")));
+
+        assertThatThrownBy(() -> restAssistant.executeRequestAndGetJsonBody(
+                RestRequest.builder()
+                        .pathUrl("/api/malformed")
+                        .method(HttpMethod.GET)
+                        .build()
+        )).isInstanceOf(ExchangeProtocolException.class)
+                .hasMessageContaining("GET /api/malformed")
+                .hasMessageContaining("Invalid JSON response body")
+                .hasCauseInstanceOf(RuntimeException.class);
     }
 
     @Test
