@@ -76,7 +76,6 @@ public class RestAssistantTest {
         assertThat(result.get("price").asString()).isEqualTo("50000");
     }
 
-
     @Test
     @DisplayName("POST 요청 - body를 전송하고 응답을 받는다")
     void post_sendsBodyAndReturnsResponse() {
@@ -182,6 +181,80 @@ public class RestAssistantTest {
     }
 
     @Test
+    @DisplayName("preProcessor는 등록 순서대로 앞선 처리 결과를 이어받는다")
+    void preProcessors_applySequentially() {
+        stubFor(get("/api/ticker")
+                .willReturn(okJson("{\"symbol\":\"BTCUSDT\"}")));
+
+        List<String> observations = new ArrayList<>();
+        RestPreProcessor first = request -> {
+            observations.add("first:" + request.throttlerLimitId());
+            return request.toBuilder()
+                    .throttlerLimitId("first-limit")
+                    .build();
+        };
+        RestPreProcessor second = request -> {
+            observations.add("second:" + request.throttlerLimitId());
+            return request.toBuilder()
+                    .throttlerLimitId("second-limit")
+                    .build();
+        };
+        restAssistant = new RestAssistantImpl(
+                restClient,
+                List.of(first, second),
+                List.of(),
+                null,
+                new NoOpAsyncThrottler(),
+                objectMapper
+        );
+
+        restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/ticker")
+                        .method(HttpMethod.GET)
+                        .build()
+        );
+
+        assertThat(observations).containsExactly(
+                "first:null",
+                "second:first-limit"
+        );
+    }
+
+    @Test
+    @DisplayName("최종 전처리 요청의 limitId와 weightOverrides를 throttler에 전달한다")
+    void processedRequest_isPassedToThrottler() {
+        stubFor(get("/api/ticker")
+                .willReturn(okJson("{\"symbol\":\"BTCUSDT\"}")));
+
+        Map<String, Integer> processedWeights = Map.of("REQUEST_WEIGHT", 5);
+        RestPreProcessor processor = request -> request.toBuilder()
+                .throttlerLimitId("processed-limit")
+                .weightOverrides(processedWeights)
+                .build();
+        NoOpAsyncThrottler throttler = new NoOpAsyncThrottler();
+        restAssistant = new RestAssistantImpl(
+                restClient,
+                List.of(processor),
+                List.of(),
+                null,
+                throttler,
+                objectMapper
+        );
+
+        restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/ticker")
+                        .method(HttpMethod.GET)
+                        .throttlerLimitId("original-limit")
+                        .build()
+        );
+
+        assertThat(throttler.limitId).isEqualTo("processed-limit");
+        assertThat(throttler.weightOverrides).isEqualTo(processedWeights);
+    }
+
+    @Test
     @DisplayName("인증은 throttler 대기 이후 실제 호출 직전에 수행한다")
     void auth_runsAfterThrottlerSlotIsAcquired() {
         stubFor(get("/api/account")
@@ -207,6 +280,30 @@ public class RestAssistantTest {
         );
 
         assertThat(events).containsExactly("throttled", "authenticated");
+    }
+
+    @Test
+    @DisplayName("실패한 CompletableFuture에서 원래 ExchangeApiException을 꺼내 던진다")
+    void asyncThrottlerFailure_unwrapsOriginalExchangeApiException() {
+        ExchangeApiException expected = new ExchangeApiException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Service Unavailable"
+        );
+        restAssistant = new RestAssistantImpl(
+                restClient,
+                List.of(),
+                List.of(),
+                null,
+                new FailedAsyncThrottler(expected),
+                objectMapper
+        );
+
+        assertThatThrownBy(() -> restAssistant.executeRequestAndGetResponse(
+                RestRequest.builder()
+                        .pathUrl("/api/not-called")
+                        .method(HttpMethod.GET)
+                        .build()
+        )).isSameAs(expected);
     }
 
     @Test
@@ -362,17 +459,42 @@ public class RestAssistantTest {
 
 
     static class NoOpAsyncThrottler implements AsyncThrottler {
+        public String limitId;
         public Map<String, Integer> weightOverrides;
 
         @Override
         public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task, Map<String, Integer> weightOverrides) {
+            this.limitId = limitId;
             this.weightOverrides = weightOverrides;
-            return CompletableFuture.completedFuture(task.get());
+            return CompletableFuture.supplyAsync(task, Runnable::run);
         }
 
         @Override
         public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task) {
-            return CompletableFuture.completedFuture(task.get());
+            this.limitId = limitId;
+            return CompletableFuture.supplyAsync(task, Runnable::run);
+        }
+    }
+
+    static class FailedAsyncThrottler implements AsyncThrottler {
+        private final RuntimeException failure;
+
+        FailedAsyncThrottler(RuntimeException failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public <T> CompletableFuture<T> execute(
+                String limitId,
+                Supplier<T> task,
+                Map<String, Integer> weightOverrides
+        ) {
+            return CompletableFuture.failedFuture(failure);
+        }
+
+        @Override
+        public <T> CompletableFuture<T> execute(String limitId, Supplier<T> task) {
+            return CompletableFuture.failedFuture(failure);
         }
     }
 

@@ -13,6 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.function.Supplier;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -30,29 +31,27 @@ public class RestAssistantImpl implements RestAssistant {
 
     public RestResponse executeRequestAndGetResponse(RestRequest request) {
         RestRequest processedRequest = applyPreProcessors(request);
-        if(processedRequest.weightOverrides() == null) {
-            return join(asyncThrottler.execute(
-                    processedRequest.throttlerLimitId(),
-                    () -> {
-                        RestResponse response = executeReadyRequest(processedRequest);
-                        if (response.statusCode().isError() && request.throwError()) {
-                            log.error("네트워크 문제 발생, response: {}", response);
-                            throw new ExchangeApiException(response.statusCode(), response.body());
-                        }
-                        return response;
-                    }));
-        }
+
+        Supplier<RestResponse> task = () -> {
+            RestResponse response = executeReadyRequest(processedRequest);
+
+            if (response.statusCode().isError()
+                    && processedRequest.throwError()) {
+                log.error("REST 요청 실패, response: {}", response);
+                throw new ExchangeApiException(
+                        response.statusCode(),
+                        response.body()
+                );
+            }
+
+            return response;
+        };
+
         return join(asyncThrottler.execute(
                 processedRequest.throttlerLimitId(),
-                () -> {
-                    RestResponse response = executeReadyRequest(processedRequest);
-                    if (response.statusCode().isError() && request.throwError()) {
-                        log.error("네트워크 문제 발생, response: {}", response);
-                        throw new ExchangeApiException(response.statusCode(), response.body());
-                    }
-                    return response;
-                },
-                processedRequest.weightOverrides()));
+                task,
+                processedRequest.weightOverrides()
+        ));
     }
 
     private <T> T join(CompletableFuture<T> future) {
