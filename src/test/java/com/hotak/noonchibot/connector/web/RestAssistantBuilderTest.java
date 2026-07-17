@@ -17,6 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Queue;
+import java.util.concurrent.CompletionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,18 +31,24 @@ class RestAssistantBuilderTest {
     @Test
     void errorClassifier_canIgnoreRejectedErrorWithoutOpeningCircuit() {
         CircuitBreakerRegistry registry = registry();
-        RestAssistant assistant = new RestAssistantBuilder(new ThrowingRestAssistant(
-                new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-2010}")
-        ))
+        SequencedRestAssistant delegate = new SequencedRestAssistant(
+                new ExchangeApiException(HttpStatusCode.valueOf(400), "{\"code\":-2010}"),
+                new ObjectMapper().readTree("{\"ok\":true}")
+        );
+        RestAssistant assistant = new RestAssistantBuilder(delegate)
                 .circuit(registry, "BINANCE_SPOT.order-entry")
                 .errorClassifier(rejectedClassifier())
+                .maxAttempt(3)
                 .build();
 
         assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
                 .isInstanceOf(ExchangeRejectedException.class);
 
+        assertThat(delegate.calls).isEqualTo(1);
         assertThat(registry.circuitBreaker("BINANCE_SPOT.order-entry").getState())
                 .isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(registry.circuitBreaker("BINANCE_SPOT.order-entry")
+                .getMetrics().getNumberOfFailedCalls()).isZero();
     }
 
     @Test
@@ -63,6 +70,30 @@ class RestAssistantBuilderTest {
         assertThat(delegate.calls).isEqualTo(2);
         assertThat(registry.circuitBreaker("BINANCE_SPOT.order-status").getState())
                 .isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    @Test
+    void completionWrappedExchangeApiException_isUnwrappedClassifiedAndRetried() {
+        CircuitBreakerRegistry registry = registry();
+        SequencedRestAssistant delegate = new SequencedRestAssistant(
+                new CompletionException(new ExchangeApiException(
+                        HttpStatusCode.valueOf(500),
+                        "temporary failure"
+                )),
+                new ObjectMapper().readTree("{\"ok\":true}")
+        );
+        RestAssistant assistant = new RestAssistantBuilder(delegate)
+                .circuit(registry, "BINANCE_SPOT.order-status")
+                .maxAttempt(2)
+                .build();
+
+        JsonNode body = assistant.executeRequestAndGetJsonBody(request);
+
+        CircuitBreaker circuit = registry.circuitBreaker("BINANCE_SPOT.order-status");
+        assertThat(body.get("ok").asBoolean()).isTrue();
+        assertThat(delegate.calls).isEqualTo(2);
+        assertThat(circuit.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
+        assertThat(circuit.getMetrics().getNumberOfFailedCalls()).isZero();
     }
 
     @Test
@@ -92,13 +123,17 @@ class RestAssistantBuilderTest {
         RestAssistant assistant = new RestAssistantBuilder(delegate)
                 .circuit(registry, "BINANCE_SPOT.server-time")
                 .errorClassifier(nonRetryableTransientClassifier())
-                .maxAttempt(1)
+                .maxAttempt(3)
                 .build();
 
         assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
                 .isInstanceOf(ExchangeTransientException.class);
 
         assertThat(delegate.calls).isEqualTo(1);
+        assertThat(registry.circuitBreaker("BINANCE_SPOT.server-time").getState())
+                .isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(registry.circuitBreaker("BINANCE_SPOT.server-time")
+                .getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
     }
 
     @Test

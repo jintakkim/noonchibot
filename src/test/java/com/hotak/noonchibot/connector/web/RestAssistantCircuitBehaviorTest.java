@@ -1,6 +1,7 @@
 package com.hotak.noonchibot.connector.web;
 
 import com.hotak.noonchibot.connector.ExchangeApiException;
+import com.hotak.noonchibot.connector.ExchangeProtocolException;
 import com.hotak.noonchibot.connector.ExchangeTransientException;
 import com.hotak.noonchibot.core.order.ExchangeRejectedException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
@@ -83,6 +84,30 @@ class RestAssistantCircuitBehaviorTest {
     }
 
     @Test
+    @DisplayName("프로토콜 오류는 재시도하지 않고 서킷 실패 1회로 기록한다")
+    void protocolFailure_isNotRetriedAndIsRecordedAsOneCircuitFailure() {
+        CircuitBreakerRegistry registry = registry();
+        ExchangeProtocolException failure = new ExchangeProtocolException(
+                "Invalid JSON response body",
+                null
+        );
+        ScriptedRestAssistant delegate = ScriptedRestAssistant.forJsonBodies(failure);
+        RestAssistant assistant = new RestAssistantBuilder(delegate)
+                .circuit(registry, "BINANCE_SPOT.order-status")
+                .maxAttempt(3)
+                .build();
+
+        assertThatThrownBy(() -> assistant.executeRequestAndGetJsonBody(request))
+                .isSameAs(failure);
+
+        CircuitBreaker circuit = registry.circuitBreaker("BINANCE_SPOT.order-status");
+        assertThat(delegate.jsonBodyCalls).isEqualTo(1);
+        assertThat(circuit.getMetrics().getNumberOfSuccessfulCalls()).isZero();
+        assertThat(circuit.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
+        assertThat(circuit.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @Test
     @DisplayName("동일 registry의 서로 다른 서킷 이름은 상태를 공유하지 않는다")
     void differentCircuitNames_areIsolatedWithinTheSameRegistry() {
         CircuitBreakerRegistry registry = registry();
@@ -118,7 +143,10 @@ class RestAssistantCircuitBehaviorTest {
                 .slidingWindowSize(1)
                 .minimumNumberOfCalls(1)
                 .ignoreExceptions(ExchangeRejectedException.class)
-                .recordExceptions(ExchangeTransientException.class)
+                .recordExceptions(
+                        ExchangeTransientException.class,
+                        ExchangeProtocolException.class
+                )
                 .build();
         return CircuitBreakerRegistry.of(config);
     }
