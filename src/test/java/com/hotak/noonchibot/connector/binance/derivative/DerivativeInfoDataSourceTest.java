@@ -169,12 +169,17 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
 
         @Test
         @DisplayName("이미 같은 마진 모드라도 정상 처리되어 Applied 이벤트 발행")
-        void marginModeNoNeedToChangeIsTreatedAsSuccess() {
+        void repeatedMarginModeNoNeedToChangeIsTreatedAsSuccess() {
             runWith(
                     BinanceDerivativeFixture.marginModeNoNeedToChange("BTCUSDT", "ISOLATED"),
                     () -> {
-                        client.marginModeChangeHandler.onEvent(new MarginModeChangeEvent.IORequested("BTC-USDT", MarginMode.ISOLATED));
-                        assertThat(eventPublisher.hasEventOfType(MarginModeChangeEvent.Applied.class)).isTrue();
+                        MarginModeChangeEvent.IORequested request =
+                                new MarginModeChangeEvent.IORequested("BTC-USDT", MarginMode.ISOLATED);
+
+                        client.marginModeChangeHandler.onEvent(request);
+                        client.marginModeChangeHandler.onEvent(request);
+
+                        assertThat(eventPublisher.countEventsOfType(MarginModeChangeEvent.Applied.class)).isEqualTo(2);
                         assertThat(derivativeInfoCircuit().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
                         assertThat(derivativeInfoCircuit().getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
                         assertThat(derivativeInfoCircuit().getMetrics().getNumberOfFailedCalls()).isZero();
