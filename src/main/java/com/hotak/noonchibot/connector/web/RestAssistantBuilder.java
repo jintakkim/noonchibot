@@ -42,7 +42,7 @@ public class RestAssistantBuilder {
     public RestAssistant build() {
         return new CircuitSupportRestAssistant(
                 delegate,
-                circuitBreakerRegistry.circuitBreaker(circuitName),
+                circuitBreakerRegistry == null ? null : circuitBreakerRegistry.circuitBreaker(circuitName),
                 errorClassifier,
                 retry(errorClassifier)
         );

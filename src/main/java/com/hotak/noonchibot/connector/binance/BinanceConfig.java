@@ -10,7 +10,6 @@ import com.hotak.noonchibot.core.derivative.funding.FundingHistoryProperties;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -55,8 +54,7 @@ public class BinanceConfig {
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             OrderSnapshotRepository orderSnapshotRepository,
-            TradingSafetyController tradingSafetyController,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            TradingSafetyController tradingSafetyController
     ) {
         return SpotExchangeAdapterFactory.create(
                 bootStrap,
@@ -68,8 +66,7 @@ public class BinanceConfig {
                 objectMapper,
                 webSocketClient,
                 tradeRepository,
-                tradingSafetyController,
-                circuitBreakerRegistry
+                tradingSafetyController
         );
     }
 
@@ -86,8 +83,7 @@ public class BinanceConfig {
             FundingPaymentRepository fundingPaymentRepository,
             OrderSnapshotRepository orderSnapshotRepository,
             TradingSafetyController tradingSafetyController,
-            FundingHistoryProperties fundingHistoryProperties,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            FundingHistoryProperties fundingHistoryProperties
     ) {
         return DerivativeExchangeAdapterFactory.create(
                 bootStrap,
@@ -101,8 +97,7 @@ public class BinanceConfig {
                 tradeRepository,
                 fundingPaymentRepository,
                 tradingSafetyController,
-                fundingHistoryProperties,
-                circuitBreakerRegistry
+                fundingHistoryProperties
         );
 
     }

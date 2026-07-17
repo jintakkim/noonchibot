@@ -9,7 +9,6 @@ import com.hotak.noonchibot.core.derivative.funding.FundingHistoryProperties;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.msgpack.jackson.dataformat.MessagePackMapper;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -53,8 +52,7 @@ public class HyperliquidConfig {
             FundingPaymentRepository fundingPaymentRepository,
             OrderSnapshotRepository orderSnapshotRepository,
             TradingSafetyController tradingSafetyController,
-            FundingHistoryProperties fundingHistoryProperties,
-            CircuitBreakerRegistry circuitBreakerRegistry
+            FundingHistoryProperties fundingHistoryProperties
     ) {
         return DerivativeExchangeAdapterFactory.create(
                 bootStrap,
@@ -69,8 +67,7 @@ public class HyperliquidConfig {
                 tradeRepository,
                 fundingPaymentRepository,
                 tradingSafetyController,
-                fundingHistoryProperties,
-                circuitBreakerRegistry
+                fundingHistoryProperties
         );
     }
 }
