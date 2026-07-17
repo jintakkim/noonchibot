@@ -28,6 +28,8 @@ public class MockRestAssistant implements RestAssistant {
     }
 
     private RestFixture findMatchingFixture(RestRequest request) {
+        recordedRequests.add(request);
+
         RestFixture match =  fixtures.stream()
                 .filter(fixture -> fixture.isMatch(request))
                 .findFirst()
