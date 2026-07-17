@@ -3,8 +3,8 @@ package com.hotak.noonchibot.connector.web;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 
-import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 
 public record RestRequest(
         HttpMethod method,
@@ -14,11 +14,20 @@ public record RestRequest(
         HttpHeaders headers,
         boolean authRequired,
         String throttlerLimitId,
-        // null 전달시 Property의 기본설정 weight 사용
+        // 빈 Map이면 ApiSpec 기본 weight를 사용하고, 값이 있으면 해당 limitId의 weight를 덮어쓴다.
         Map<String, Integer> weightOverrides,
         //true - rest 요청 중 에러 발생시 예외 발생, false 예외 무시 후 리턴
         boolean throwError
 ) {
+    public RestRequest {
+        weightOverrides = Map.copyOf(
+                Objects.requireNonNull(
+                        weightOverrides,
+                        "weightOverrides must not be null"
+                )
+        );
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -44,7 +53,7 @@ public record RestRequest(
         private HttpHeaders headers = new HttpHeaders();
         private boolean authRequired = false;
         private String throttlerLimitId;
-        private Map<String, Integer> weightOverrides = Collections.emptyMap();
+        private Map<String, Integer> weightOverrides = Map.of();
         private boolean throwError = true;
 
         public Builder method(HttpMethod method) {
