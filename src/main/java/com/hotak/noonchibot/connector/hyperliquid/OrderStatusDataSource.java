@@ -2,10 +2,15 @@ package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.exchange.ExchangeOperation;
 import com.hotak.noonchibot.core.event.*;
+import com.hotak.noonchibot.core.event.internal.exchange.ExchangeFailureEvent;
+import com.hotak.noonchibot.core.event.internal.exchange.ExchangeOperationSucceededEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import com.hotak.noonchibot.core.order.OrderNotFoundException;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderStatusReader;
 import lombok.RequiredArgsConstructor;
@@ -29,12 +34,29 @@ class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateReque
     public void onEvent(OrderEvent.StatusUpdateRequested event) {
         try {
             eventPublisher.publish(fetch(event.tradingPair(), event.clientOrderId()));
-        } catch (IllegalStateException exception) {
+            eventPublisher.publish(new ExchangeOperationSucceededEvent(
+                    Exchange.HYPERLIQUID_DERIVATIVE,
+                    ExchangeOperation.ORDER_STATUS_QUERY,
+                    Instant.now()
+            ));
+        } catch (OrderNotFoundException exception) {
             log.warn(
                     "Order not found on exchange: tradingPair={}, cloid={}",
                     event.tradingPair(),
                     event.clientOrderId()
             );
+        } catch (Exception cause) {
+            eventPublisher.publish(new ExchangeFailureEvent(
+                    Exchange.HYPERLIQUID_DERIVATIVE,
+                    ExchangeOperation.ORDER_STATUS_QUERY,
+                    event.tradingPair(),
+                    event.clientOrderId(),
+                    null,
+                    null,
+                    null,
+                    cause,
+                    Instant.now()
+            ));
         }
     }
 
@@ -51,7 +73,7 @@ class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateReque
                 .build());
 
         if ("unknownOid".equals(response.get("status").asString())) {
-            throw new IllegalStateException("order not found on exchange: " + clientOrderId);
+            throw new OrderNotFoundException("order not found on exchange: " + clientOrderId);
         }
         JsonNode orderWrapper = response.get("order");
         JsonNode orderNode = orderWrapper.get("order");

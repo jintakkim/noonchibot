@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class EventPublishingExecutionPlanExecutorTest {
     @Test
-    @DisplayName("execution command를 거래소가 포함된 order event로 변환한다")
+    @DisplayName("execution command를 거래소와 전략 실행 문맥이 포함된 order event로 변환한다")
     void execute_publishesExchangeScopedOrderEvents() {
         TestEventPublisher eventPublisher = new TestEventPublisher();
         EventPublishingExecutionPlanExecutor executor = new EventPublishingExecutionPlanExecutor(eventPublisher);
@@ -34,6 +34,7 @@ class EventPublishingExecutionPlanExecutorTest {
         executor.execute(new ExecutionPlan(List.of(
                 new ExecutionCommand.SubmitOrder(
                         "funding-arb",
+                        "BTC-USDT-pair",
                         Exchange.BINANCE_DERIVATIVE,
                         "long leg",
                         candidate
@@ -50,9 +51,12 @@ class EventPublishingExecutionPlanExecutorTest {
         assertThat(createRequested.candidate()).isSameAs(candidate);
         assertThat(createRequested.clientOrderId()).isNull();
         assertThat(createRequested.exchange()).isEqualTo(Exchange.BINANCE_DERIVATIVE);
+        assertThat(createRequested.strategyId()).isEqualTo("funding-arb");
+        assertThat(createRequested.executionGroupId()).isEqualTo("BTC-USDT-pair");
 
         OrderEvent.CancelRequested cancelRequested = eventPublisher.only(OrderEvent.CancelRequested.class);
         assertThat(cancelRequested.clientOrderId()).isEqualTo("cid-1");
         assertThat(cancelRequested.exchange()).isEqualTo(Exchange.HYPERLIQUID_DERIVATIVE);
+        assertThat(cancelRequested.strategyId()).isEqualTo("funding-arb");
     }
 }

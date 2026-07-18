@@ -3,10 +3,15 @@ package com.hotak.noonchibot.connector.binance.spot;
 import com.hotak.noonchibot.connector.TradingPairSymbolRegistry;
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
+import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
+import com.hotak.noonchibot.core.exchange.ExchangeOperation;
 import com.hotak.noonchibot.core.event.*;
+import com.hotak.noonchibot.core.event.internal.exchange.ExchangeFailureEvent;
+import com.hotak.noonchibot.core.event.internal.exchange.ExchangeOperationSucceededEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import com.hotak.noonchibot.core.order.OrderNotFoundException;
 import com.hotak.noonchibot.core.order.OrderState;
 import com.hotak.noonchibot.core.order.OrderStatusReader;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +34,32 @@ class OrderStatusDataSource implements EventHandler<OrderEvent.StatusUpdateReque
 
     @Override
     public void onEvent(OrderEvent.StatusUpdateRequested event) {
-        eventPublisher.publish(fetch(event.tradingPair(), event.clientOrderId()));
+        try {
+            eventPublisher.publish(fetch(event.tradingPair(), event.clientOrderId()));
+            eventPublisher.publish(new ExchangeOperationSucceededEvent(
+                    Exchange.BINANCE_SPOT,
+                    ExchangeOperation.ORDER_STATUS_QUERY,
+                    Instant.now()
+            ));
+        } catch (OrderNotFoundException exception) {
+            log.warn(
+                    "Order not found on exchange: tradingPair={}, clientOrderId={}",
+                    event.tradingPair(),
+                    event.clientOrderId()
+            );
+        } catch (Exception cause) {
+            eventPublisher.publish(new ExchangeFailureEvent(
+                    Exchange.BINANCE_SPOT,
+                    ExchangeOperation.ORDER_STATUS_QUERY,
+                    event.tradingPair(),
+                    event.clientOrderId(),
+                    null,
+                    null,
+                    null,
+                    cause,
+                    Instant.now()
+            ));
+        }
     }
 
     @Override

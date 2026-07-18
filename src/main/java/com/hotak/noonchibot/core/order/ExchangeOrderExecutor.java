@@ -7,7 +7,10 @@ import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
+import com.hotak.noonchibot.core.event.internal.exchange.ExchangeFailureEvent;
+import com.hotak.noonchibot.core.event.internal.exchange.ExchangeOperationSucceededEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import com.hotak.noonchibot.core.exchange.ExchangeOperation;
 import com.hotak.noonchibot.core.orderbook.OrderBook;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.trade.TradeType;
@@ -120,7 +123,11 @@ public class ExchangeOrderExecutor implements LifecycleAware {
             }
             InFlightOrder order = createValidatedInFlightOrder(event, clientOrderId);
             orderTracker.startTrackingOrder(order);
-            eventPublisher.publish(new OrderEvent.ExchangeCreateRequested(order));
+            eventPublisher.publish(new OrderEvent.ExchangeCreateRequested(
+                    order,
+                    event.strategyId(),
+                    event.executionGroupId()
+            ));
         } catch (Exception cause) {
             eventPublisher.publish(new OrderEvent.Failed(
                     event.candidate().getTradingPair(),
@@ -254,24 +261,49 @@ public class ExchangeOrderExecutor implements LifecycleAware {
 
     @VisibleForTesting
     void processExchangeCreateRequest(OrderEvent.ExchangeCreateRequested event) {
+        InFlightOrder order = event.inFlightOrder();
         try {
-            saveInitialSnapshot(event.inFlightOrder());
-            OrderPlaceResult result = orderClient.placeOrder(event.inFlightOrder());
-            eventPublisher.publish(new OrderEvent.StatusReceived(
-                    event.inFlightOrder().getTradingPair(),
-                    event.inFlightOrder().getClientOrderId(),
-                    result.exchangeOrderId(),
-                    result.orderState(),
-                    result.timestamp()
-            ));
+            saveInitialSnapshot(order);
         } catch (Exception cause) {
             eventPublisher.publish(new OrderEvent.Failed(
-                    event.inFlightOrder().getTradingPair(),
-                    event.inFlightOrder().getClientOrderId(),
-                    event.inFlightOrder().getExchangeOrderId(),
+                    order.getTradingPair(),
+                    order.getClientOrderId(),
+                    order.getExchangeOrderId(),
                     cause
             ));
+            return;
         }
+
+        OrderPlaceResult result;
+        try {
+            result = orderClient.placeOrder(order);
+        } catch (Exception cause) {
+            eventPublisher.publish(new ExchangeFailureEvent(
+                    exchange,
+                    ExchangeOperation.ORDER_PLACE,
+                    order.getTradingPair(),
+                    order.getClientOrderId(),
+                    order.getExchangeOrderId(),
+                    event.strategyId(),
+                    event.executionGroupId(),
+                    cause,
+                    Instant.now()
+            ));
+            return;
+        }
+
+        eventPublisher.publish(new OrderEvent.StatusReceived(
+                order.getTradingPair(),
+                order.getClientOrderId(),
+                result.exchangeOrderId(),
+                result.orderState(),
+                result.timestamp()
+        ));
+        eventPublisher.publish(new ExchangeOperationSucceededEvent(
+                exchange,
+                ExchangeOperation.ORDER_PLACE,
+                Instant.now()
+        ));
     }
 
     private void saveInitialSnapshot(InFlightOrder order) {
@@ -296,7 +328,8 @@ public class ExchangeOrderExecutor implements LifecycleAware {
             eventPublisher.publish(new OrderEvent.ExchangeCancelRequested(
                     order.getTradingPair(),
                     order.getClientOrderId(),
-                    order.getExchangeOrderId()
+                    order.getExchangeOrderId(),
+                    event.strategyId()
             ));
         } catch (Exception cause) {
             eventPublisher.publish(new OrderEvent.Failed(
@@ -310,22 +343,35 @@ public class ExchangeOrderExecutor implements LifecycleAware {
 
     @VisibleForTesting
     void processExchangeCancelRequest(OrderEvent.ExchangeCancelRequested event) {
+        OrderCancelResult result;
         try {
-            OrderCancelResult result = orderClient.cancelOrder(event.tradingPair(), event.clientOrderId());
-            eventPublisher.publish(new OrderEvent.StatusReceived(
-                    event.tradingPair(),
-                    event.clientOrderId(),
-                    event.exchangeOrderId(),
-                    result.cancelFinalized() ? OrderState.CANCELED : OrderState.PENDING_CANCEL,
-                    result.timestamp()
-            ));
+            result = orderClient.cancelOrder(event.tradingPair(), event.clientOrderId());
         } catch (Exception cause) {
-            eventPublisher.publish(new OrderEvent.Failed(
+            eventPublisher.publish(new ExchangeFailureEvent(
+                    exchange,
+                    ExchangeOperation.ORDER_CANCEL,
                     event.tradingPair(),
                     event.clientOrderId(),
                     event.exchangeOrderId(),
-                    cause
+                    event.strategyId(),
+                    null,
+                    cause,
+                    Instant.now()
             ));
+            return;
         }
+
+        eventPublisher.publish(new OrderEvent.StatusReceived(
+                event.tradingPair(),
+                event.clientOrderId(),
+                event.exchangeOrderId(),
+                result.cancelFinalized() ? OrderState.CANCELED : OrderState.PENDING_CANCEL,
+                result.timestamp()
+        ));
+        eventPublisher.publish(new ExchangeOperationSucceededEvent(
+                exchange,
+                ExchangeOperation.ORDER_CANCEL,
+                Instant.now()
+        ));
     }
 }

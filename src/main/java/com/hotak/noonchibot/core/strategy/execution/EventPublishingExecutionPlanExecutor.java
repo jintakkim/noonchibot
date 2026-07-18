@@ -20,14 +20,17 @@ public class EventPublishingExecutionPlanExecutor implements ExecutionPlanExecut
             eventPublisher.publish(new OrderEvent.CreateRequested(
                     submit.candidate(),
                     null,
-                    submit.exchange()
+                    submit.exchange(),
+                    submit.strategyId(),
+                    submit.executionGroupId()
             ));
             return;
         }
         if (command instanceof ExecutionCommand.CancelOrder cancel) {
             eventPublisher.publish(new OrderEvent.CancelRequested(
                     cancel.clientOrderId(),
-                    cancel.exchange()
+                    cancel.exchange(),
+                    cancel.strategyId()
             ));
             return;
         }

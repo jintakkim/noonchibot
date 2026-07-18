@@ -7,9 +7,11 @@ import com.hotak.noonchibot.core.BootStrap;
 import com.hotak.noonchibot.core.IoExecutor;
 import com.hotak.noonchibot.core.derivative.funding.FundingPaymentRepository;
 import com.hotak.noonchibot.core.derivative.funding.FundingHistoryProperties;
+import com.hotak.noonchibot.core.exchange.ExchangeEligibilityRegistry;
+import com.hotak.noonchibot.core.exchange.ExchangeFailurePolicy;
+import com.hotak.noonchibot.core.order.OrderReconciliationTaskRepository;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.TradeRepository;
-import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -54,7 +56,9 @@ public class BinanceConfig {
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             OrderSnapshotRepository orderSnapshotRepository,
-            TradingSafetyController tradingSafetyController
+            OrderReconciliationTaskRepository reconciliationTaskRepository,
+            ExchangeFailurePolicy exchangeFailurePolicy,
+            ExchangeEligibilityRegistry exchangeEligibilityRegistry
     ) {
         return SpotExchangeAdapterFactory.create(
                 bootStrap,
@@ -66,7 +70,9 @@ public class BinanceConfig {
                 objectMapper,
                 webSocketClient,
                 tradeRepository,
-                tradingSafetyController
+                reconciliationTaskRepository,
+                exchangeFailurePolicy,
+                exchangeEligibilityRegistry
         );
     }
 
@@ -82,8 +88,10 @@ public class BinanceConfig {
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
             OrderSnapshotRepository orderSnapshotRepository,
-            TradingSafetyController tradingSafetyController,
-            FundingHistoryProperties fundingHistoryProperties
+            FundingHistoryProperties fundingHistoryProperties,
+            OrderReconciliationTaskRepository reconciliationTaskRepository,
+            ExchangeFailurePolicy exchangeFailurePolicy,
+            ExchangeEligibilityRegistry exchangeEligibilityRegistry
     ) {
         return DerivativeExchangeAdapterFactory.create(
                 bootStrap,
@@ -96,8 +104,10 @@ public class BinanceConfig {
                 webSocketClient,
                 tradeRepository,
                 fundingPaymentRepository,
-                tradingSafetyController,
-                fundingHistoryProperties
+                fundingHistoryProperties,
+                reconciliationTaskRepository,
+                exchangeFailurePolicy,
+                exchangeEligibilityRegistry
         );
 
     }

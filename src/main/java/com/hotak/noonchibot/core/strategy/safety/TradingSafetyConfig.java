@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class TradingSafetyConfig {
-    @Bean(destroyMethod = "close")
+    @Bean
     public TradingSafetyController tradingSafetyController() {
         return new TradingSafetyController();
     }

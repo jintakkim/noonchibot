@@ -19,16 +19,21 @@ import com.hotak.noonchibot.core.derivative.funding.FundingPaymentTracker;
 import com.hotak.noonchibot.core.derivative.PositionTracker;
 import com.hotak.noonchibot.core.event.EventBus;
 import com.hotak.noonchibot.core.event.ExecutionPolicy;
+import com.hotak.noonchibot.core.exchange.ExchangeEligibilityRegistry;
+import com.hotak.noonchibot.core.exchange.ExchangeFailureCoordinator;
+import com.hotak.noonchibot.core.exchange.ExchangeFailurePolicy;
+import com.hotak.noonchibot.core.exchange.ExchangeRecoveryProbe;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.order.ExchangeOrderExecutor;
+import com.hotak.noonchibot.core.order.OrderReconciliationCoordinator;
+import com.hotak.noonchibot.core.order.OrderReconciliationTaskRepository;
 import com.hotak.noonchibot.core.order.OrderSnapshotRepository;
 import com.hotak.noonchibot.core.order.OrderSnapshotUpdater;
 import com.hotak.noonchibot.core.order.OrderRecoveryBootstrap;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import com.hotak.noonchibot.core.order.TradeRepository;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
-import com.hotak.noonchibot.core.strategy.safety.TradingSafetyController;
 import org.msgpack.jackson.dataformat.MessagePackMapper;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.context.ApplicationEventPublisher;
@@ -54,11 +59,12 @@ public class DerivativeExchangeAdapterFactory {
             WebSocketClient webSocketClient,
             TradeRepository tradeRepository,
             FundingPaymentRepository fundingPaymentRepository,
-            TradingSafetyController tradingSafetyController,
-            FundingHistoryProperties fundingHistoryProperties
+            FundingHistoryProperties fundingHistoryProperties,
+            OrderReconciliationTaskRepository reconciliationTaskRepository,
+            ExchangeFailurePolicy exchangeFailurePolicy,
+            ExchangeEligibilityRegistry exchangeEligibilityRegistry
     ) {
         EventBus eventBus = new EventBus();
-        tradingSafetyController.connect(eventBus);
         boolean testnet = props.network().isTestnet();
         String restBaseUrl = testnet ? DerivativeApiSpec.TESTNET_BASE_URL : DerivativeApiSpec.BASE_URL;
         String websocketUrl = testnet ? DerivativeApiSpec.TESTNET_WS_URL : DerivativeApiSpec.WS_URL;
@@ -185,6 +191,30 @@ public class DerivativeExchangeAdapterFactory {
                 props.address()
         );
         bootStrap.register(orderStatusDataSource);
+        OrderReconciliationCoordinator reconciliationCoordinator = new OrderReconciliationCoordinator(
+                Exchange.HYPERLIQUID_DERIVATIVE,
+                reconciliationTaskRepository,
+                orderStatusDataSource,
+                eventBus,
+                taskScheduler
+        );
+        bootStrap.register(new ExchangeFailureCoordinator(
+                eventBus,
+                exchangeFailurePolicy,
+                exchangeEligibilityRegistry,
+                reconciliationCoordinator,
+                eventBus
+        ));
+        bootStrap.register(reconciliationCoordinator);
+        bootStrap.register(new ExchangeRecoveryProbe(
+                Exchange.HYPERLIQUID_DERIVATIVE,
+                exchangeEligibilityRegistry,
+                reconciliationTaskRepository,
+                orderStatusDataSource,
+                eventBus,
+                taskScheduler,
+                orderTracker
+        ));
         TradeDataSource tradeDataSource = new TradeDataSource(
                 tradingPairSymbolRegistry,
                 rest(baseRestAssistant, 2),

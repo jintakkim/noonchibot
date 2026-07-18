@@ -11,18 +11,32 @@ import java.time.Instant;
 
 public sealed interface OrderEvent extends CoreEvent {
     /** 주문 생성 요청 */
-    record CreateRequested(OrderCandidate candidate, String clientOrderId, Exchange exchange) implements OrderEvent {
+    record CreateRequested(
+            OrderCandidate candidate,
+            String clientOrderId,
+            Exchange exchange,
+            String strategyId,
+            String executionGroupId
+    ) implements OrderEvent {
+        public CreateRequested(OrderCandidate candidate, String clientOrderId, Exchange exchange) {
+            this(candidate, clientOrderId, exchange, null, null);
+        }
+
         public CreateRequested(OrderCandidate candidate, String clientOrderId) {
-            this(candidate, clientOrderId, null);
+            this(candidate, clientOrderId, null, null, null);
         }
     }
 
     /**
      * 취소 요청
      */
-    record CancelRequested(String clientOrderId, Exchange exchange) implements OrderEvent {
+    record CancelRequested(String clientOrderId, Exchange exchange, String strategyId) implements OrderEvent {
+        public CancelRequested(String clientOrderId, Exchange exchange) {
+            this(clientOrderId, exchange, null);
+        }
+
         public CancelRequested(String clientOrderId) {
-            this(clientOrderId, null);
+            this(clientOrderId, null, null);
         }
     }
 
@@ -33,9 +47,26 @@ public sealed interface OrderEvent extends CoreEvent {
     ) implements OrderEvent {
     }
 
-    record ExchangeCreateRequested(InFlightOrder inFlightOrder) implements OrderEvent {}
+    record ExchangeCreateRequested(
+            InFlightOrder inFlightOrder,
+            String strategyId,
+            String executionGroupId
+    ) implements OrderEvent {
+        public ExchangeCreateRequested(InFlightOrder inFlightOrder) {
+            this(inFlightOrder, null, null);
+        }
+    }
 
-    record ExchangeCancelRequested(String tradingPair, String clientOrderId, String exchangeOrderId) implements OrderEvent {}
+    record ExchangeCancelRequested(
+            String tradingPair,
+            String clientOrderId,
+            String exchangeOrderId,
+            String strategyId
+    ) implements OrderEvent {
+        public ExchangeCancelRequested(String tradingPair, String clientOrderId, String exchangeOrderId) {
+            this(tradingPair, clientOrderId, exchangeOrderId, null);
+        }
+    }
 
     /**
      * 상태 업데이트 요청

@@ -6,7 +6,10 @@ import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
 import com.hotak.noonchibot.core.event.TestEventSubscriber;
+import com.hotak.noonchibot.core.event.internal.exchange.ExchangeFailureEvent;
+import com.hotak.noonchibot.core.event.internal.exchange.ExchangeOperationSucceededEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
+import com.hotak.noonchibot.core.exchange.ExchangeOperation;
 import com.hotak.noonchibot.core.orderbook.OrderBookTracker;
 import com.hotak.noonchibot.core.trade.TradeType;
 import com.hotak.noonchibot.core.trade.TradingRule;
@@ -108,7 +111,10 @@ class ExchangeOrderExecutorTest {
     void createRequested_publishesExchangeCreateRequestedWithQuantizedOrder() {
         executor.processCreateRequest(new OrderEvent.CreateRequested(
                 limitBuy("0.019999", "50000.123"),
-                "cid-1"
+                "cid-1",
+                EXCHANGE,
+                "strategy-1",
+                "group-1"
         ));
 
         OrderEvent.ExchangeCreateRequested event = eventPublisher.only(OrderEvent.ExchangeCreateRequested.class);
@@ -118,6 +124,8 @@ class ExchangeOrderExecutorTest {
         assertThat(order.getTradingPair()).isEqualTo("BTC-USDT");
         assertThat(order.getAmount()).isEqualByComparingTo("0.01999");
         assertThat(order.getPrice()).isEqualByComparingTo("50000.12");
+        assertThat(event.strategyId()).isEqualTo("strategy-1");
+        assertThat(event.executionGroupId()).isEqualTo("group-1");
         verify(orderTracker).startTrackingOrder(order);
     }
 
@@ -167,14 +175,39 @@ class ExchangeOrderExecutorTest {
     }
 
     @Test
-    @DisplayName("거래소 주문 생성 전 snapshot을 저장하고 성공하면 status received를 발행한다")
+    @DisplayName("검증된 주문의 추적 시작에 실패하면 주문 실패 이벤트를 발행한다")
+    void createRequested_whenTrackerFails_publishesOrderFailure() {
+        IllegalStateException cause = new IllegalStateException("tracker unavailable");
+        doThrow(cause).when(orderTracker).startTrackingOrder(any(InFlightOrder.class));
+
+        executor.processCreateRequest(new OrderEvent.CreateRequested(
+                limitBuy("0.019999", "50000.123"),
+                "cid-1",
+                EXCHANGE,
+                "strategy-1",
+                "group-1"
+        ));
+
+        OrderEvent.Failed failed = eventPublisher.only(OrderEvent.Failed.class);
+        assertThat(failed.tradingPair()).isEqualTo("BTC-USDT");
+        assertThat(failed.clientOrderId()).isEqualTo("cid-1");
+        assertThat(failed.throwable()).isSameAs(cause);
+        assertThat(eventPublisher.hasEventOfType(ExchangeFailureEvent.class)).isFalse();
+    }
+
+    @Test
+    @DisplayName("거래소 주문 생성 전 snapshot을 저장하고 성공하면 상태와 작업 성공 이벤트를 발행한다")
     void exchangeCreateRequested_whenOrderClientSucceeds_savesSnapshotAndPublishesStatusReceived() {
         InFlightOrder order = inFlightOrder("cid-1", null);
         Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
         when(orderClient.placeOrder(order))
                 .thenReturn(new OrderPlaceResult("ex-1", OrderState.OPEN, timestamp));
 
-        executor.processExchangeCreateRequest(new OrderEvent.ExchangeCreateRequested(order));
+        executor.processExchangeCreateRequest(new OrderEvent.ExchangeCreateRequested(
+                order,
+                "strategy-1",
+                "group-1"
+        ));
 
         verify(orderSnapshotRepository).save(any(OrderSnapshot.class));
         OrderEvent.StatusReceived status = eventPublisher.only(OrderEvent.StatusReceived.class);
@@ -183,20 +216,58 @@ class ExchangeOrderExecutorTest {
         assertThat(status.exchangeOrderId()).isEqualTo("ex-1");
         assertThat(status.orderState()).isEqualTo(OrderState.OPEN);
         assertThat(status.timestamp()).isEqualTo(timestamp);
+        ExchangeOperationSucceededEvent succeeded =
+                eventPublisher.only(ExchangeOperationSucceededEvent.class);
+        assertThat(succeeded.exchange()).isEqualTo(EXCHANGE);
+        assertThat(succeeded.operation()).isEqualTo(ExchangeOperation.ORDER_PLACE);
+        assertThat(succeeded.occurredAt()).isNotNull();
     }
 
     @Test
-    @DisplayName("거래소 주문 생성 실패 시 failed 이벤트를 발행한다")
-    void exchangeCreateRequested_whenOrderClientFails_publishesFailed() {
+    @DisplayName("거래소 주문 생성 실패 시 전략 문맥을 포함한 거래소 실패 이벤트를 발행한다")
+    void exchangeCreateRequested_whenOrderClientFails_publishesExchangeFailure() {
         InFlightOrder order = inFlightOrder("cid-1", null);
-        when(orderClient.placeOrder(order)).thenThrow(new IllegalStateException("boom"));
+        IllegalStateException cause = new IllegalStateException("boom");
+        when(orderClient.placeOrder(order)).thenThrow(cause);
 
-        executor.processExchangeCreateRequest(new OrderEvent.ExchangeCreateRequested(order));
+        executor.processExchangeCreateRequest(new OrderEvent.ExchangeCreateRequested(
+                order,
+                "strategy-1",
+                "group-1"
+        ));
+
+        ExchangeFailureEvent failed = eventPublisher.only(ExchangeFailureEvent.class);
+        assertThat(failed.exchange()).isEqualTo(EXCHANGE);
+        assertThat(failed.operation()).isEqualTo(ExchangeOperation.ORDER_PLACE);
+        assertThat(failed.tradingPair()).isEqualTo("BTC-USDT");
+        assertThat(failed.clientOrderId()).isEqualTo("cid-1");
+        assertThat(failed.exchangeOrderId()).isNull();
+        assertThat(failed.strategyId()).isEqualTo("strategy-1");
+        assertThat(failed.executionGroupId()).isEqualTo("group-1");
+        assertThat(failed.cause()).isSameAs(cause);
+        assertThat(failed.occurredAt()).isNotNull();
+        assertThat(eventPublisher.hasEventOfType(OrderEvent.Failed.class)).isFalse();
+    }
+
+    @Test
+    @DisplayName("초기 snapshot 저장 실패는 거래소 실패가 아닌 주문 실패 이벤트로 발행한다")
+    void exchangeCreateRequested_whenInitialSnapshotFails_publishesOrderFailure() {
+        InFlightOrder order = inFlightOrder("cid-1", null);
+        IllegalStateException cause = new IllegalStateException("snapshot unavailable");
+        when(orderSnapshotRepository.save(any(OrderSnapshot.class))).thenThrow(cause);
+
+        executor.processExchangeCreateRequest(new OrderEvent.ExchangeCreateRequested(
+                order,
+                "strategy-1",
+                "group-1"
+        ));
 
         OrderEvent.Failed failed = eventPublisher.only(OrderEvent.Failed.class);
         assertThat(failed.tradingPair()).isEqualTo("BTC-USDT");
         assertThat(failed.clientOrderId()).isEqualTo("cid-1");
-        assertThat(failed.throwable()).isInstanceOf(IllegalStateException.class);
+        assertThat(failed.throwable()).isSameAs(cause);
+        assertThat(eventPublisher.hasEventOfType(ExchangeFailureEvent.class)).isFalse();
+        verifyNoInteractions(orderClient);
     }
 
     @Test
@@ -205,7 +276,11 @@ class ExchangeOrderExecutorTest {
         InFlightOrder order = inFlightOrder("cid-1", "ex-1");
         when(orderTracker.getInFlightOrderByClientId("cid-1")).thenReturn(order);
 
-        executor.processCancelRequest(new OrderEvent.CancelRequested("cid-1"));
+        executor.processCancelRequest(new OrderEvent.CancelRequested(
+                "cid-1",
+                EXCHANGE,
+                "strategy-1"
+        ));
 
         OrderEvent.ExchangeCancelRequested request = eventPublisher.only(OrderEvent.ExchangeCancelRequested.class);
         assertThat(eventPublisher.only(OrderEvent.StatusReceived.class).orderState())
@@ -213,6 +288,7 @@ class ExchangeOrderExecutorTest {
         assertThat(request.tradingPair()).isEqualTo("BTC-USDT");
         assertThat(request.clientOrderId()).isEqualTo("cid-1");
         assertThat(request.exchangeOrderId()).isEqualTo("ex-1");
+        assertThat(request.strategyId()).isEqualTo("strategy-1");
     }
 
     @Test
@@ -240,7 +316,7 @@ class ExchangeOrderExecutorTest {
     }
 
     @Test
-    @DisplayName("거래소 취소가 확정되면 CANCELED 상태 수신 이벤트를 발행한다")
+    @DisplayName("거래소 취소가 확정되면 CANCELED 상태와 작업 성공 이벤트를 발행한다")
     void exchangeCancelRequested_whenCancelIsFinalized_publishesCanceledStatus() {
         Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
         when(orderClient.cancelOrder("BTC-USDT", "cid-1"))
@@ -251,6 +327,11 @@ class ExchangeOrderExecutorTest {
         OrderEvent.StatusReceived status = eventPublisher.only(OrderEvent.StatusReceived.class);
         assertThat(status.orderState()).isEqualTo(OrderState.CANCELED);
         assertThat(status.timestamp()).isEqualTo(timestamp);
+        ExchangeOperationSucceededEvent succeeded =
+                eventPublisher.only(ExchangeOperationSucceededEvent.class);
+        assertThat(succeeded.exchange()).isEqualTo(EXCHANGE);
+        assertThat(succeeded.operation()).isEqualTo(ExchangeOperation.ORDER_CANCEL);
+        assertThat(succeeded.occurredAt()).isNotNull();
     }
 
     @Test
@@ -262,6 +343,32 @@ class ExchangeOrderExecutorTest {
         executor.processExchangeCancelRequest(new OrderEvent.ExchangeCancelRequested("BTC-USDT", "cid-1", "ex-1"));
 
         assertThat(eventPublisher.only(OrderEvent.StatusReceived.class).orderState()).isEqualTo(OrderState.PENDING_CANCEL);
+    }
+
+    @Test
+    @DisplayName("거래소 주문 취소 실패 시 전략 문맥을 포함한 거래소 실패 이벤트를 발행한다")
+    void exchangeCancelRequested_whenOrderClientFails_publishesExchangeFailure() {
+        IllegalStateException cause = new IllegalStateException("boom");
+        when(orderClient.cancelOrder("BTC-USDT", "cid-1")).thenThrow(cause);
+
+        executor.processExchangeCancelRequest(new OrderEvent.ExchangeCancelRequested(
+                "BTC-USDT",
+                "cid-1",
+                "ex-1",
+                "strategy-1"
+        ));
+
+        ExchangeFailureEvent failed = eventPublisher.only(ExchangeFailureEvent.class);
+        assertThat(failed.exchange()).isEqualTo(EXCHANGE);
+        assertThat(failed.operation()).isEqualTo(ExchangeOperation.ORDER_CANCEL);
+        assertThat(failed.tradingPair()).isEqualTo("BTC-USDT");
+        assertThat(failed.clientOrderId()).isEqualTo("cid-1");
+        assertThat(failed.exchangeOrderId()).isEqualTo("ex-1");
+        assertThat(failed.strategyId()).isEqualTo("strategy-1");
+        assertThat(failed.executionGroupId()).isNull();
+        assertThat(failed.cause()).isSameAs(cause);
+        assertThat(failed.occurredAt()).isNotNull();
+        assertThat(eventPublisher.hasEventOfType(OrderEvent.Failed.class)).isFalse();
     }
 
     private OrderCandidate limitBuy(String amount, String price) {

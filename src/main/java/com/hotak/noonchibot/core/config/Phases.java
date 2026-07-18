@@ -21,7 +21,9 @@ public final class Phases {
     public static final int ORDER_STATUS_DATASOURCE_SETUP = 150;
     public static final int TRADE_DATASOURCE_SETUP = 150;
     public static final int DERIVATIVE_INFO_DATASOURCE_SETUP = 150;
+    public static final int EXCHANGE_FAILURE_COORDINATOR = 170;
     public static final int ORDER_RESTORE = 180;
+    public static final int ORDER_RECONCILIATION = 190;
 
     public static final int TRADING_RULE_SETUP = 200;
     public static final int BALANCE_SETUP = 200;
@@ -32,4 +34,5 @@ public final class Phases {
     public static final int ORDER_EXECUTOR_SETUP = 300;
     public static final int ORDER_STATUS_POLLING = 350;
     public static final int TRADE_POLLING = 350;
+    public static final int EXCHANGE_RECOVERY_PROBE = 360;
 }
