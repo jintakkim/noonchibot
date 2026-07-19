@@ -9,9 +9,11 @@ import com.hotak.noonchibot.core.event.EventSubscriberAssert;
 import com.hotak.noonchibot.core.event.TestEventPublisher;
 import com.hotak.noonchibot.core.event.TestEventSubscriber;
 import com.hotak.noonchibot.core.event.internal.derivative.LeverageChangeEvent;
+import com.hotak.noonchibot.core.event.internal.derivative.LeverageChangeIORequestedEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.MarginModeChangeEvent;
+import com.hotak.noonchibot.core.event.internal.derivative.MarginModeChangeIORequestedEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.PositionModeChangeEvent;
-import com.hotak.noonchibot.core.order.ExchangeRejectedException;
+import com.hotak.noonchibot.core.event.internal.derivative.PositionModeChangeIORequestedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -19,13 +21,12 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class DerivativeInfoDataSourceTest extends RestClientTest {
+class DerivativeAccountCommandExecutorTest extends RestClientTest {
     private TestEventPublisher eventPublisher;
     private TestEventSubscriber eventSubscriber;
     private final TradingPairSymbolRegistry symbolRegistry = BinanceDerivativeFixture.BTC_ETH_SOL_REGISTRY;
-    private DerivativeInfoDataSource client;
+    private DerivativeAccountCommandExecutor executor;
 
 
     @BeforeEach
@@ -33,7 +34,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
         eventPublisher = new TestEventPublisher();
         eventSubscriber = new TestEventSubscriber();
         restAssistant.setExchangeErrorClassifier(new BinanceExchangeErrorClassifier(new ObjectMapper()));
-        client = new DerivativeInfoDataSource(
+        executor = new DerivativeAccountCommandExecutor(
                 restAssistant,
                 symbolRegistry,
                 eventPublisher,
@@ -51,7 +52,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
             runWith(
                     BinanceDerivativeFixture.positionModeChangeSuccess(true),
                     () -> {
-                        client.positionModeChangeHandler.onEvent(new PositionModeChangeEvent.IORequested(PositionMode.HEDGE));
+                        executor.positionModeChangeHandler.onEvent(new PositionModeChangeIORequestedEvent(PositionMode.HEDGE));
 
                         var occurred = eventPublisher.getFirstEventOfType(PositionModeChangeEvent.Applied.class);
                         assertThat(occurred)
@@ -67,21 +68,12 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
             runWith(
                     BinanceDerivativeFixture.positionModeNoNeedToChange(true),
                     () -> {
-                        client.positionModeChangeHandler.onEvent(new PositionModeChangeEvent.IORequested(PositionMode.HEDGE));
+                        executor.positionModeChangeHandler.onEvent(new PositionModeChangeIORequestedEvent(PositionMode.HEDGE));
                         assertThat(eventPublisher.hasEventOfType(PositionModeChangeEvent.Applied.class)).isTrue();
                     }
             );
         }
 
-        @Test
-        @DisplayName("실패시 이벤드 발행")
-        void failureOccursFailedEvent() {
-            client.positionModeChangeHandler.onFailure(
-                    new PositionModeChangeEvent.IORequested(PositionMode.HEDGE),
-                    new IllegalStateException("position mode change failed")
-            );
-            assertThat(eventPublisher.hasEventOfType(PositionModeChangeEvent.Failed.class)).isTrue();
-        }
     }
 
     @Nested
@@ -93,7 +85,7 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
             runWith(
                     BinanceDerivativeFixture.leverageChangeSuccess("BTCUSDT", 4, 12000000),
                     () -> {
-                        client.leverageChangeHandler.onEvent(new LeverageChangeEvent.IORequested("BTC-USDT", 4));
+                        executor.leverageChangeHandler.onEvent(new LeverageChangeIORequestedEvent("BTC-USDT", 4));
                         var occurred = eventPublisher.getFirstEventOfType(LeverageChangeEvent.Applied.class);
                         assertThat(occurred)
                                 .isPresent()
@@ -106,27 +98,15 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
         }
 
         @Test
-        @DisplayName("불가능한 레버리지로 레버리지 변경 요청 실패시 이벤트 발행")
-        void leverageChangeFailurePublishesEvent() {
+        @DisplayName("레버리지 변경 실패시 예외를 전파하지 않고 Applied 이벤트도 발행하지 않는다")
+        void leverageChangeFailureOnlyLogs() {
             runWith(
                     BinanceDerivativeFixture.leverageChangeFailure("BTCUSDT", 500),
                     () -> {
-                        assertThatThrownBy(() ->
-                        client.leverageChangeHandler.onEvent(new LeverageChangeEvent.IORequested("BTC-USDT", 500)))
-                                .isInstanceOf(ExchangeRejectedException.class);
+                        executor.leverageChangeHandler.onEvent(new LeverageChangeIORequestedEvent("BTC-USDT", 500));
                         assertThat(eventPublisher.hasEventOfType(LeverageChangeEvent.Applied.class)).isFalse();
                     }
             );
-        }
-
-        @Test
-        @DisplayName("실패시 이벤드 발행")
-        void failureOccursFailedEvent() {
-            client.leverageChangeHandler.onFailure(
-                    new LeverageChangeEvent.IORequested("BTCUSDT", 500),
-                    new IllegalStateException("leverage change failed")
-            );
-            assertThat(eventPublisher.hasEventOfType(LeverageChangeEvent.Failed.class)).isTrue();
         }
     }
 
@@ -140,8 +120,8 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
             runWith(
                     BinanceDerivativeFixture.marginModeChangeSuccess("BTCUSDT", "ISOLATED"),
                     () -> {
-                        client.marginModeChangeHandler.onEvent(
-                                new MarginModeChangeEvent.IORequested("BTC-USDT", MarginMode.ISOLATED));
+                        executor.marginModeChangeHandler.onEvent(
+                                new MarginModeChangeIORequestedEvent("BTC-USDT", MarginMode.ISOLATED));
 
                         var occurred = eventPublisher.getFirstEventOfType(MarginModeChangeEvent.Applied.class);
                         assertThat(occurred)
@@ -160,34 +140,23 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
             runWith(
                     BinanceDerivativeFixture.marginModeNoNeedToChange("BTCUSDT", "ISOLATED"),
                     () -> {
-                        client.marginModeChangeHandler.onEvent(new MarginModeChangeEvent.IORequested("BTC-USDT", MarginMode.ISOLATED));
+                        executor.marginModeChangeHandler.onEvent(new MarginModeChangeIORequestedEvent("BTC-USDT", MarginMode.ISOLATED));
                         assertThat(eventPublisher.hasEventOfType(MarginModeChangeEvent.Applied.class)).isTrue();
                     }
             );
         }
 
         @Test
-        @DisplayName("잘못된 심볼로 마진 모드 변경 시도시 예외 발생")
-        void marginModeInvalidSymbolThrows() {
+        @DisplayName("마진 모드 변경 실패시 예외를 전파하지 않고 Applied 이벤트도 발행하지 않는다")
+        void marginModeChangeFailureOnlyLogs() {
             runWith(
                     BinanceDerivativeFixture.marginModeInvalidSymbol("INVALID", "ISOLATED"),
                     () -> {
-                        assertThatThrownBy(() ->
-                                client.marginModeChangeHandler.onEvent(new MarginModeChangeEvent.IORequested("INVALID", MarginMode.ISOLATED)))
-                                .isInstanceOf(IllegalArgumentException.class);
+                        executor.marginModeChangeHandler.onEvent(
+                                new MarginModeChangeIORequestedEvent("INVALID", MarginMode.ISOLATED));
                         assertThat(eventPublisher.hasEventOfType(MarginModeChangeEvent.Applied.class)).isFalse();
                     }
             );
-        }
-
-        @Test
-        @DisplayName("실패시 이벤드 발행")
-        void failureOccursFailedEvent() {
-            client.marginModeChangeHandler.onFailure(
-                    new MarginModeChangeEvent.IORequested("Invalid", MarginMode.ISOLATED),
-                    new IllegalStateException("margin mode change failed")
-            );
-            assertThat(eventPublisher.hasEventOfType(MarginModeChangeEvent.Failed.class)).isTrue();
         }
     }
 
@@ -197,37 +166,37 @@ class DerivativeInfoDataSourceTest extends RestClientTest {
         @Test
         @DisplayName("phase는 DERIVATIVE_INFO_IO이다")
         void phaseIsDerivativeInfoIo() {
-            assertThat(client.phase()).isEqualTo(Phases.DERIVATIVE_INFO_DATASOURCE_SETUP);
+            assertThat(executor.phase()).isEqualTo(Phases.DERIVATIVE_ACCOUNT_COMMAND_EXECUTOR_SETUP);
         }
 
         @Test
         @DisplayName("시작시 시 3개 핸들러가 Concurrent로 구독된다")
         void onStart_subscribesAllHandlersWithConcurrent() {
-            client.onStart();
+            executor.onStart();
             EventSubscriberAssert.assertThat(eventSubscriber)
                     .hasSubscriptionCount(3);
 
             EventSubscriberAssert.assertThat(eventSubscriber)
-                    .subscription(PositionModeChangeEvent.IORequested.class)
+                    .subscription(PositionModeChangeIORequestedEvent.class)
                     .usesConcurrentPolicy()
-                    .hasHandler(client.positionModeChangeHandler);
+                    .hasHandler(executor.positionModeChangeHandler);
 
             EventSubscriberAssert.assertThat(eventSubscriber)
-                    .subscription(LeverageChangeEvent.IORequested.class)
+                    .subscription(LeverageChangeIORequestedEvent.class)
                     .usesConcurrentPolicy()
-                    .hasHandler(client.leverageChangeHandler);
+                    .hasHandler(executor.leverageChangeHandler);
 
             EventSubscriberAssert.assertThat(eventSubscriber)
-                    .subscription(MarginModeChangeEvent.IORequested.class)
+                    .subscription(MarginModeChangeIORequestedEvent.class)
                     .usesConcurrentPolicy()
-                    .hasHandler(client.marginModeChangeHandler);
+                    .hasHandler(executor.marginModeChangeHandler);
         }
 
         @Test
         @DisplayName("종료 시 모든 구독이 해제된다")
         void onShutdown_unsubscribesAll() {
-            client.onStart();
-            client.onShutdown();
+            executor.onStart();
+            executor.onShutdown();
             EventSubscriberAssert.assertThat(eventSubscriber).hasNoSubscriptions();
         }
     }

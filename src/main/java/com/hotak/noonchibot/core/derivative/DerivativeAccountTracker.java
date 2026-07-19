@@ -4,15 +4,15 @@ import com.google.common.annotations.VisibleForTesting;
 import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.*;
-import com.hotak.noonchibot.core.event.internal.derivative.LeverageChangeEvent;
-import com.hotak.noonchibot.core.event.internal.derivative.MarginModeChangeEvent;
-import com.hotak.noonchibot.core.event.internal.derivative.PositionModeChangeEvent;
+import com.hotak.noonchibot.core.event.internal.derivative.LeverageChangeAppliedEvent;
+import com.hotak.noonchibot.core.event.internal.derivative.MarginModeChangeAppliedEvent;
+import com.hotak.noonchibot.core.event.internal.derivative.PositionModeChangeAppliedEvent;
 import lombok.RequiredArgsConstructor;
 
 import java.util.*;
 
 @RequiredArgsConstructor
-public class DerivativeInfoTracker implements LifecycleAware {
+public class DerivativeAccountTracker implements LifecycleAware {
     private final EventSubscriber eventSubscriber;
     private PositionMode positionMode = null;
     private final Map<String, Integer> leverages = new HashMap<>();
@@ -32,34 +32,34 @@ public class DerivativeInfoTracker implements LifecycleAware {
     }
 
     @VisibleForTesting
-    void onMarginModeChanged(MarginModeChangeEvent.Applied event) {
+    void onMarginModeChanged(MarginModeChangeAppliedEvent event) {
         marginModes.put(event.tradingPair(), event.changedTo());
     }
 
     @VisibleForTesting
-    void onPositionModeChanged(PositionModeChangeEvent.Applied event) {
+    void onPositionModeChanged(PositionModeChangeAppliedEvent event) {
         positionMode = event.changedTo();
     }
 
     @VisibleForTesting
-    void onLeverageChanged(LeverageChangeEvent.Applied event) {
+    void onLeverageChanged(LeverageChangeAppliedEvent event) {
         leverages.put(event.tradingPair(), event.changedTo());
     }
 
     @Override
     public void onStart() {
         subscriptions.add(eventSubscriber.subscribe(
-                PositionModeChangeEvent.Applied.class,
+                PositionModeChangeAppliedEvent.class,
                 this::onPositionModeChanged ,
                 ExecutionPolicy.sequential()
         ));
         subscriptions.add(eventSubscriber.subscribe(
-                LeverageChangeEvent.Applied.class,
+                LeverageChangeAppliedEvent.class,
                 this::onLeverageChanged,
                 ExecutionPolicy.sequential()
         ));
         subscriptions.add(eventSubscriber.subscribe(
-                MarginModeChangeEvent.Applied.class,
+                MarginModeChangeAppliedEvent.class,
                 this::onMarginModeChanged,
                 ExecutionPolicy.sequential()
         ));

@@ -11,15 +11,15 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class DerivativeInfoTrackerTest {
+class DerivativeAccountTrackerTest {
 
-    private DerivativeInfoTracker tracker;
+    private DerivativeAccountTracker tracker;
     private TestEventSubscriber eventSubscriber;
 
     @BeforeEach
     void setup() {
         eventSubscriber = new TestEventSubscriber();
-        tracker = new DerivativeInfoTracker(eventSubscriber);
+        tracker = new DerivativeAccountTracker(eventSubscriber);
     }
 
     @Test

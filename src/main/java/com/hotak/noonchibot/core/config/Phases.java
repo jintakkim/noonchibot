@@ -20,7 +20,7 @@ public final class Phases {
 
     public static final int ORDER_STATUS_DATASOURCE_SETUP = 150;
     public static final int TRADE_DATASOURCE_SETUP = 150;
-    public static final int DERIVATIVE_INFO_DATASOURCE_SETUP = 150;
+    public static final int DERIVATIVE_ACCOUNT_COMMAND_EXECUTOR_SETUP = 150;
     public static final int ORDER_RESTORE = 180;
 
     public static final int TRADING_RULE_SETUP = 200;
