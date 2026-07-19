@@ -1,7 +1,6 @@
 package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.EventPublisher;
@@ -12,13 +11,14 @@ import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Duration;
 import java.util.concurrent.ScheduledFuture;
 
 @RequiredArgsConstructor
-class TradePoller implements LifecycleAware {
+class TradePoller implements SmartLifecycle {
     private static final Duration TRADE_POLLING_INTERVAL = Duration.ofMinutes(1);
 
     private final EventPublisher eventPublisher;
@@ -26,10 +26,14 @@ class TradePoller implements LifecycleAware {
     private final TaskScheduler taskScheduler;
     private final OrderTracker orderTracker;
     private volatile ScheduledFuture<?> scheduledFuture;
+    private volatile boolean running = false;
     private Subscription subscription;
 
     @Override
-    public void onStart() {
+    public void start() {
+        if (running) {
+            return;
+        }
         subscription = eventSubscriber.subscribe(
                 TradeEvent.PollingRequested.class,
                 this::poll,
@@ -39,10 +43,12 @@ class TradePoller implements LifecycleAware {
                 () -> eventPublisher.publish(new TradeEvent.PollingRequested(Exchange.HYPERLIQUID_DERIVATIVE)),
                 TRADE_POLLING_INTERVAL
         );
+        running = true;
     }
 
     @Override
-    public void onShutdown() {
+    public void stop() {
+        running = false;
         if (subscription != null) {
             subscription.close();
             subscription = null;
@@ -54,7 +60,12 @@ class TradePoller implements LifecycleAware {
     }
 
     @Override
-    public int phase() {
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
         return Phases.TRADE_POLLING;
     }
 

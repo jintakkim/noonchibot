@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.client.funding;
 
-import com.hotak.noonchibot.connector.DerivativeExchangeConnector;
+import com.hotak.noonchibot.core.DerivativeExchangeRuntime;
 import com.hotak.noonchibot.core.BootStrap;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.derivative.funding.FundingGapMarket;
@@ -25,19 +25,19 @@ import java.util.stream.Collectors;
 public class FundingHistoryConfig {
     @Bean
     public FundingGapHistoryService fundingGapHistoryService(
-            List<DerivativeExchangeConnector> connectors,
+            List<DerivativeExchangeRuntime> connectors,
             FundingHistoryProperties properties,
             BootStrap bootStrap
     ) {
         Map<Exchange, FundingInfoTracker> trackers = connectors.stream()
                 .collect(Collectors.toUnmodifiableMap(
-                        DerivativeExchangeConnector::getExchange,
-                        DerivativeExchangeConnector::getFundingInfoTracker
+                        DerivativeExchangeRuntime::getExchange,
+                        DerivativeExchangeRuntime::getFundingInfoTracker
                 ));
         FundingGapHistoryService service = new FundingGapHistoryService(
                 trackers,
                 connectors.stream()
-                        .map(DerivativeExchangeConnector::getEventSubscriber)
+                        .map(DerivativeExchangeRuntime::getEventSubscriber)
                         .toList(),
                 markets(connectors),
                 new TimeWeightedMovingAverage(),
@@ -47,9 +47,9 @@ public class FundingHistoryConfig {
         return service;
     }
 
-    private List<FundingGapMarket> markets(List<DerivativeExchangeConnector> connectors) {
+    private List<FundingGapMarket> markets(List<DerivativeExchangeRuntime> connectors) {
         Map<String, Map<Exchange, String>> pairsByBaseAsset = new HashMap<>();
-        for (DerivativeExchangeConnector connector : connectors) {
+        for (DerivativeExchangeRuntime connector : connectors) {
             for (String tradingPair : connector.getFundingInfoTracker().getTradingPairs()) {
                 String baseAsset = baseAsset(tradingPair);
                 pairsByBaseAsset.computeIfAbsent(baseAsset, ignored -> new HashMap<>())

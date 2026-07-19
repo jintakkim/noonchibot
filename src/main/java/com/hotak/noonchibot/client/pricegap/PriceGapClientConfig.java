@@ -1,6 +1,6 @@
 package com.hotak.noonchibot.client.pricegap;
 
-import com.hotak.noonchibot.connector.ExchangeConnector;
+import com.hotak.noonchibot.core.ExchangeRuntime;
 import com.hotak.noonchibot.connector.PriceCandleDataSource;
 import com.hotak.noonchibot.connector.binance.BinanceConfig;
 import com.hotak.noonchibot.connector.hyperliquid.HyperliquidConfig;
@@ -59,12 +59,12 @@ public class PriceGapClientConfig {
             PriceGapSnapshotPublisher snapshotPublisher,
             RealtimeClock realtimeClock,
             HyperliquidConfig.Properties hyperliquidProperties,
-            List<ExchangeConnector> exchangeConnectors,
+            List<ExchangeRuntime> exchangeRuntimes,
             @Qualifier(FEED_DEFINITIONS) List<PriceGapFeedDefinition> definitions
     ) {
-        Map<Exchange, ExchangeConnector> connectors = exchangeConnectors.stream()
+        Map<Exchange, ExchangeRuntime> connectors = exchangeRuntimes.stream()
                 .collect(Collectors.toUnmodifiableMap(
-                        ExchangeConnector::getExchange,
+                        ExchangeRuntime::getExchange,
                         Function.identity()
                 ));
         PriceGapSnapshotProducer producer = new PriceGapSnapshotProducer(
@@ -101,16 +101,16 @@ public class PriceGapClientConfig {
     @Profile("!test")
     public PriceGapHistoryTracker priceGapHistoryTracker(
             @Qualifier(FEED_DEFINITIONS) List<PriceGapFeedDefinition> definitions,
-            List<ExchangeConnector> exchangeConnectors,
+            List<ExchangeRuntime> exchangeRuntimes,
             TaskScheduler taskScheduler,
             IoExecutor ioExecutor,
             BootStrap bootStrap
     ) {
-        Map<Exchange, PriceCandleDataSource> dataSources = exchangeConnectors.stream()
+        Map<Exchange, PriceCandleDataSource> dataSources = exchangeRuntimes.stream()
                 .filter(connector -> connector.getPriceCandleDataSource() != null)
                 .collect(Collectors.toUnmodifiableMap(
-                        ExchangeConnector::getExchange,
-                        ExchangeConnector::getPriceCandleDataSource
+                        ExchangeRuntime::getExchange,
+                        ExchangeRuntime::getPriceCandleDataSource
                 ));
         PriceGapHistoryTracker tracker = new PriceGapHistoryTracker(
                 definitions,
@@ -122,11 +122,11 @@ public class PriceGapClientConfig {
         return tracker;
     }
 
-    private ExchangeConnector requiredConnector(
-            Map<Exchange, ExchangeConnector> connectors,
+    private ExchangeRuntime requiredConnector(
+            Map<Exchange, ExchangeRuntime> connectors,
             Exchange exchange
     ) {
-        ExchangeConnector connector = connectors.get(exchange);
+        ExchangeRuntime connector = connectors.get(exchange);
         if (connector == null) {
             throw new IllegalStateException("Exchange connector not found: " + exchange);
         }

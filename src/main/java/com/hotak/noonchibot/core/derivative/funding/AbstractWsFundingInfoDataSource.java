@@ -2,7 +2,6 @@ package com.hotak.noonchibot.core.derivative.funding;
 
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.AbstractWebsocketDataSource;
-import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.EventPublisher;
 import com.hotak.noonchibot.core.event.internal.derivative.FundingInfoEvent;
@@ -18,7 +17,7 @@ import java.util.List;
 import java.util.Set;
 
 @Slf4j
-public abstract class AbstractWsFundingInfoDataSource extends AbstractWebsocketDataSource implements LifecycleAware {
+public abstract class AbstractWsFundingInfoDataSource extends AbstractWebsocketDataSource {
     private final EventPublisher eventPublisher;
     final List<String> pairsToSubscribe;
 
@@ -71,7 +70,7 @@ public abstract class AbstractWsFundingInfoDataSource extends AbstractWebsocketD
     protected abstract FundingInfoMessage parseFundingInfoMessage(JsonNode msg);
 
     @Override
-    public int phase() {
+    public int getPhase() {
         return Phases.FUNDING_INFO_DATASOURCE_SETUP;
     }
 }

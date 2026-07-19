@@ -1,37 +1,39 @@
 package com.hotak.noonchibot.connector;
 
 import com.hotak.noonchibot.core.IoExecutor;
-import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.trade.TradeFeeSchema;
 import com.hotak.noonchibot.core.trade.TradeFeeSchemaLoader;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.SmartLifecycle;
 import tools.jackson.databind.JsonNode;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
-public abstract class AbstractTradeFeeSchemaLoader implements TradeFeeSchemaLoader, LifecycleAware {
+public abstract class AbstractTradeFeeSchemaLoader implements TradeFeeSchemaLoader, SmartLifecycle {
     private final IoExecutor ioExecutor;
     protected final TradingPairSymbolRegistry tradingPairSymbolRegistry;
+    private volatile boolean running = false;
 
-    private final Map<String, TradeFeeSchema> pairFeeSchemaCache = new HashMap<>();
+    private volatile Map<String, TradeFeeSchema> pairFeeSchemaSnapshot = Map.of();
 
     @Override
     public TradeFeeSchema get(String tradingPair) {
-        TradeFeeSchema schema = pairFeeSchemaCache.get(tradingPair);
-        if(schema == null) {
+        TradeFeeSchema schema = pairFeeSchemaSnapshot.get(tradingPair);
+        if (schema == null) {
             throw new IllegalArgumentException("Unknown trading pair: " + tradingPair);
         }
         return schema;
     }
 
     private void prepare() {
-        Map<String, TradeFeeSchema> schemas = loadPairFeeSchema(tradingPairSymbolRegistry.getAllTradingPairs());
-        pairFeeSchemaCache.putAll(schemas);
+        Map<String, TradeFeeSchema> loaded = loadPairFeeSchema(
+                tradingPairSymbolRegistry.getAllTradingPairs()
+        );
+        pairFeeSchemaSnapshot = Map.copyOf(loaded);
     }
 
     /**
@@ -59,19 +61,19 @@ public abstract class AbstractTradeFeeSchemaLoader implements TradeFeeSchemaLoad
     protected abstract TradeFeeSchema parseSchema(JsonNode schema);
 
     @Override
-    public void onStart() {
-        prepare();
-    }
-
     public void start() {
-        onStart();
+        prepare();
+        running = true;
     }
 
     @Override
-    public void onShutdown() {
+    public void stop() {
+        running = false;
+
     }
 
-    public void shutdown() {
-        onShutdown();
+    @Override
+    public boolean isRunning() {
+        return running;
     }
 }

@@ -2,9 +2,12 @@ package com.hotak.noonchibot.core;
 
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.core.datatype.WebsocketStatus;
-import com.hotak.noonchibot.core.event.internal.WebsocketUnavailableEvent;
+import com.hotak.noonchibot.core.runtime.ExchangeRuntimeFailureReporter;
+import com.hotak.noonchibot.core.runtime.ExchangeRuntimeFailure;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.CloseStatus;
 import tools.jackson.databind.ObjectMapper;
@@ -15,7 +18,8 @@ import java.time.Instant;
 import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
-public abstract class AbstractWebsocketDataSource implements LifecycleAware, WebsocketStatus, WsConnectionListener {
+@RequiredArgsConstructor(access = AccessLevel.PROTECTED)
+public abstract class AbstractWebsocketDataSource implements SmartLifecycle, WebsocketStatus, WsConnectionListener {
     private static final int MAX_CONSECUTIVE_FAILURES = 5;
     private static final Duration INITIAL_RETRY_DELAY = Duration.ofSeconds(1);
     private static final Duration MAX_RETRY_DELAY = Duration.ofSeconds(30);
@@ -23,25 +27,13 @@ public abstract class AbstractWebsocketDataSource implements LifecycleAware, Web
     private final WsAssistant wsAssistant;
     protected final ObjectMapper objectMapper;
     private final TaskScheduler taskScheduler;
-    private final ApplicationEventPublisher applicationEventPublisher;
+    private final ExchangeRuntimeFailureReporter failureReporter;
     private volatile boolean running;
     private int consecutiveFailures;
     private volatile ScheduledFuture<?> reconnectTask;
     private volatile ScheduledFuture<?> heartbeatTask;
     private volatile Instant lastRecvTime;
     protected volatile WsConnection wsConnection;
-
-    protected AbstractWebsocketDataSource(
-            WsAssistant wsAssistant,
-            ObjectMapper objectMapper,
-            TaskScheduler taskScheduler,
-            ApplicationEventPublisher applicationEventPublisher
-    ) {
-        this.wsAssistant = wsAssistant;
-        this.objectMapper = objectMapper;
-        this.taskScheduler = taskScheduler;
-        this.applicationEventPublisher = applicationEventPublisher;
-    }
 
     @Override
     public final void onConnected(WsConnection connection) {
@@ -88,13 +80,21 @@ public abstract class AbstractWebsocketDataSource implements LifecycleAware, Web
      */
     private void scheduleReconnect(CloseStatus status) {
         if (!running) return;
-
         int failureCount = ++consecutiveFailures;
         if (failureCount >= MAX_CONSECUTIVE_FAILURES) {
-            running = false;
+            stop();
             log.error("WebSocket stopped: source={}, endpoint={}, consecutiveFailures={}",
                     getClass().getName(), endpoint(), failureCount);
-            applicationEventPublisher.publishEvent(new WebsocketUnavailableEvent());
+            failureReporter.report(new ExchangeRuntimeFailure(
+                    exchange,
+                    getClass().getName(),
+                    new WebsocketUnavailableException(
+                            endpoint(),
+                            status,
+                            failureCount
+                    ),
+                    Instant.now()
+            ));
             return;
         }
         Duration delay = INITIAL_RETRY_DELAY.multipliedBy(1L << (failureCount - 1));
@@ -147,7 +147,7 @@ public abstract class AbstractWebsocketDataSource implements LifecycleAware, Web
     protected abstract WebsocketMessageResult processMessage(WsResponse wsResponse);
 
     @Override
-    public Instant getLastRecvTime() {
+    public final Instant getLastRecvTime() {
         return lastRecvTime;
     }
 
@@ -158,19 +158,40 @@ public abstract class AbstractWebsocketDataSource implements LifecycleAware, Web
     }
 
     @Override
-    public void onStart() {
+    public final void start() {
+        if (running) {
+            return;
+        }
+        consecutiveFailures = 0;
         running = true;
+        doStart();
+    }
+
+    protected void doStart() {
         wsAssistant.connect(connectionUri(), this);
     }
 
     @Override
-    public void onShutdown() {
+    public final void stop() {
+        if (!running) {
+            return;
+        }
         running = false;
+        doStop();
+    }
+
+    protected void doStop() {
         stopHeartbeat();
         ScheduledFuture<?> task = reconnectTask;
         reconnectTask = null;
         if (task != null) task.cancel(false);
         WsConnection connection = wsConnection;
+        wsConnection = null;
         if (connection != null) connection.disconnect(CloseStatus.NORMAL);
+    }
+
+    @Override
+    public final boolean isRunning() {
+        return running;
     }
 }

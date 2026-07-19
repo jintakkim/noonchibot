@@ -1,7 +1,6 @@
 package com.hotak.noonchibot.connector.binance.derivative;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.hotak.noonchibot.core.LifecycleAware;
 import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.config.Phases;
 import com.hotak.noonchibot.core.event.EventPublisher;
@@ -12,13 +11,14 @@ import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
 import com.hotak.noonchibot.core.order.InFlightOrder;
 import com.hotak.noonchibot.core.order.OrderTracker;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Duration;
 import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
-class TradePoller implements LifecycleAware {
+class TradePoller implements SmartLifecycle {
     private static final Duration TRADE_POLLING_INTERVAL = Duration.ofMinutes(1);
 
     private final EventPublisher eventPublisher;
@@ -26,6 +26,7 @@ class TradePoller implements LifecycleAware {
     private final TaskScheduler taskScheduler;
     private final OrderTracker orderTracker;
     private volatile ScheduledFuture<?> scheduledFuture;
+    private volatile boolean running = false;
     private Subscription subscription;
 
     public TradePoller(
@@ -38,36 +39,6 @@ class TradePoller implements LifecycleAware {
         this.eventSubscriber = eventSubscriber;
         this.taskScheduler = taskScheduler;
         this.orderTracker = orderTracker;
-    }
-
-    @Override
-    public void onStart() {
-        subscription = eventSubscriber.subscribe(
-                TradeEvent.PollingRequested.class,
-                this::poll,
-                ExecutionPolicy.sequential()
-        );
-        scheduledFuture = taskScheduler.scheduleWithFixedDelay(
-                () -> eventPublisher.publish(new TradeEvent.PollingRequested(Exchange.BINANCE_DERIVATIVE)),
-                TRADE_POLLING_INTERVAL
-        );
-    }
-
-    @Override
-    public void onShutdown() {
-        if (subscription != null) {
-            subscription.close();
-            subscription = null;
-        }
-        if (scheduledFuture != null) {
-            scheduledFuture.cancel(true);
-            scheduledFuture = null;
-        }
-    }
-
-    @Override
-    public int phase() {
-        return Phases.TRADE_POLLING;
     }
 
     @VisibleForTesting
@@ -83,5 +54,45 @@ class TradePoller implements LifecycleAware {
 
     private void poll(TradeEvent.PollingRequested event) {
         if (event.exchange() == Exchange.BINANCE_DERIVATIVE) poll();
+    }
+
+    @Override
+    public void start() {
+        if (running) {
+            return;
+        }
+        subscription = eventSubscriber.subscribe(
+                TradeEvent.PollingRequested.class,
+                this::poll,
+                ExecutionPolicy.sequential()
+        );
+        scheduledFuture = taskScheduler.scheduleWithFixedDelay(
+                () -> eventPublisher.publish(new TradeEvent.PollingRequested(Exchange.BINANCE_DERIVATIVE)),
+                TRADE_POLLING_INTERVAL
+        );
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+        if (subscription != null) {
+            subscription.close();
+            subscription = null;
+        }
+        if (scheduledFuture != null) {
+            scheduledFuture.cancel(true);
+            scheduledFuture = null;
+        }
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return Phases.TRADE_POLLING;
     }
 }

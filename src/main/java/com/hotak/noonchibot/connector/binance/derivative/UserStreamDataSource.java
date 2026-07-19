@@ -13,6 +13,7 @@ import com.hotak.noonchibot.core.event.internal.derivative.FundingPaymentEvent;
 import com.hotak.noonchibot.core.event.internal.derivative.PositionEvent;
 import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.event.internal.trade.TradeEvent;
+import com.hotak.noonchibot.core.runtime.ExchangeRuntimeFailureReporter;
 import com.hotak.noonchibot.core.trade.TokenAmount;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -30,7 +31,7 @@ import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
-class UserStreamDataSource extends AbstractWebsocketDataSource implements LifecycleAware {
+class UserStreamDataSource extends AbstractWebsocketDataSource {
     private static final Duration LISTEN_KEY_KEEP_ALIVE_INTERVAL = Duration.ofMinutes(45);
 
     private final RestAssistant restAssistant;
@@ -48,10 +49,10 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
             ObjectMapper objectMapper,
             TradingPairSymbolRegistry tradingPairSymbolRegistry,
             EventPublisher eventPublisher,
-            ApplicationEventPublisher applicationEventPublisher,
+            ExchangeRuntimeFailureReporter exchangeRuntimeFailureReporter,
             String websocketUrl
     ) {
-        super(wsAssistant, objectMapper, taskScheduler, applicationEventPublisher);
+        super(wsAssistant, objectMapper, taskScheduler, exchangeRuntimeFailureReporter);
         this.restAssistant = restAssistant;
         this.taskScheduler = taskScheduler;
         this.tradingPairSymbolRegistry = tradingPairSymbolRegistry;
@@ -232,8 +233,8 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
     }
 
     @Override
-    public void onStart() {
-        super.onStart();
+    protected void doStart() {
+        super.doStart();
         listenKeyKeepAliveTask = taskScheduler.scheduleWithFixedDelay(
                 this::renewListenKey,
                 Instant.now().plus(LISTEN_KEY_KEEP_ALIVE_INTERVAL),
@@ -242,8 +243,8 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
     }
 
     @Override
-    public void onShutdown() {
-        super.onShutdown();
+    public void doStop() {
+        super.doStop();
         if (listenKeyKeepAliveTask != null) {
             listenKeyKeepAliveTask.cancel(true);
             listenKeyKeepAliveTask = null;
@@ -251,7 +252,7 @@ class UserStreamDataSource extends AbstractWebsocketDataSource implements Lifecy
     }
 
     @Override
-    public int phase() {
+    public int getPhase() {
         return Phases.USER_STREAM_DATASOURCE_SETUP;
     }
 

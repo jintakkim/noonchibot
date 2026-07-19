@@ -9,6 +9,7 @@ import com.hotak.noonchibot.core.event.*;
 import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -21,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
-public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataSource implements LifecycleAware {
+public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataSource implements SmartLifecycle {
     protected final TaskScheduler taskScheduler;
     private final EventPublisher eventPublisher;
     private final EventSubscriber eventSubscriber;
@@ -150,7 +151,7 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
     protected abstract OrderBookEvent.SnapshotReceived parseWsSnapshotMessage(JsonNode msg);
 
     @Override
-    public void onStart() {
+    public void start() {
         super.onStart();
         handlerSubscriptions.add(
                 eventSubscriber.subscribe(
@@ -176,7 +177,7 @@ public abstract class AbstractOrderBookDataSource extends AbstractWebsocketDataS
     }
 
     @Override
-    public void onShutdown() {
+    public void stop() {
         super.onShutdown();
         if(snapshotRefreshTask != null) {
             snapshotRefreshTask.cancel(true);
