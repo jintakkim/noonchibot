@@ -171,7 +171,7 @@ class OrderTrackerTest {
         }
 
         @Test
-        @DisplayName("terminal 상태가 되면 in-flight에서 제거하고 recent closed cache에서 조회된다")
+        @DisplayName("terminal 상태가 되면 in-flight에서 제거하고 settling cache에서 조회된다")
         void terminalStateMovesToRecentClosedOrders() {
             tracker.startTrackingOrder(order);
             tracker.processOrderUpdate(status(OrderState.OPEN));
@@ -291,6 +291,24 @@ class OrderTrackerTest {
 
             assertThat(eventPublisher.totalCount()).isZero();
             assertThat(tracker.getAllInFlightOrders()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("종료 상태 이후 늦게 도착한 체결도 settling 주문에 적용한다")
+        void lateTradeAfterTerminalStatusUpdatesSettlingOrder() {
+            tracker.startTrackingOrder(order);
+            tracker.processOrderUpdate(status(OrderState.OPEN));
+            tracker.processOrderUpdate(status(OrderState.FILLED));
+            eventPublisher.clear();
+
+            tracker.processTradeUpdate(tradeReceived(fill("T-1", "0.4", "20000", "0.05")));
+
+            assertThat(tracker.getInFlightOrderByClientId(CLIENT_ORDER_ID)).isNull();
+            assertThat(tracker.getOrderByClientId(CLIENT_ORDER_ID))
+                    .map(OrderView::executedBaseAmount)
+                    .hasValueSatisfying(amount -> assertThat(amount).isEqualByComparingTo("0.4"));
+            assertThat(eventPublisher.only(OrderEvent.SnapshotUpdateRequested.class)
+                    .order().executedBaseAmount()).isEqualByComparingTo("0.4");
         }
 
         @Test

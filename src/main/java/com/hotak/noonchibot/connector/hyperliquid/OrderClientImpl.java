@@ -2,7 +2,6 @@ package com.hotak.noonchibot.connector.hyperliquid;
 
 import com.hotak.noonchibot.connector.web.RestAssistant;
 import com.hotak.noonchibot.connector.web.RestRequest;
-import com.hotak.noonchibot.core.Exchange;
 import com.hotak.noonchibot.core.order.*;
 import com.hotak.noonchibot.core.trade.TradeType;
 import org.springframework.http.HttpMethod;
@@ -34,7 +33,7 @@ class OrderClientImpl implements OrderClient {
     }
 
     @Override
-    public OrderPlaceResult placeOrder(InFlightOrder order) {
+    public OrderPlaceSuccess placeOrder(InFlightOrder order) {
         HLTradingRuleRegistry.AssetMeta meta = tradingRuleRegistry.getAssetMeta(order.getTradingPair());
         Map<String, Object> orderPayload = new LinkedHashMap<>();
         orderPayload.put("a", meta.assetId());
@@ -63,16 +62,16 @@ class OrderClientImpl implements OrderClient {
             throw new IllegalStateException(status.get("error").asString());
         }
         if (status.has("resting")) {
-            return new OrderPlaceResult(String.valueOf(status.get("resting").get("oid").asLong()), OrderState.OPEN, Instant.now());
+            return new OrderPlaceSuccess(String.valueOf(status.get("resting").get("oid").asLong()), OrderState.OPEN, Instant.now());
         }
         if (status.has("filled")) {
-            return new OrderPlaceResult(String.valueOf(status.get("filled").get("oid").asLong()), OrderState.FILLED, Instant.now());
+            return new OrderPlaceSuccess(String.valueOf(status.get("filled").get("oid").asLong()), OrderState.FILLED, Instant.now());
         }
         throw new IllegalStateException("Unexpected hyperliquid order response: " + response);
     }
 
     @Override
-    public OrderCancelResult cancelOrder(String tradingPair, String clientOrderId) {
+    public OrderCancelSuccess cancelOrder(String tradingPair, String clientOrderId) {
         HLTradingRuleRegistry.AssetMeta meta = tradingRuleRegistry.getAssetMeta(tradingPair);
         JsonNode response = orderCancelRestAssistant.executeRequestAndGetJsonBody(RestRequest.builder()
                 .method(HttpMethod.POST)
@@ -91,7 +90,7 @@ class OrderClientImpl implements OrderClient {
 
         JsonNode status = response.path("response").path("data").path("statuses").get(0);
         if ("success".equals(status.asString())) {
-            return new OrderCancelResult(true, Instant.now());
+            return new OrderCancelSuccess(true, Instant.now());
         }
         if (status.has("error")) {
             throw new IllegalStateException(status.get("error").asString());

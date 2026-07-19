@@ -172,7 +172,7 @@ class ExchangeOrderExecutorTest {
         InFlightOrder order = inFlightOrder("cid-1", null);
         Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
         when(orderClient.placeOrder(order))
-                .thenReturn(new OrderPlaceResult("ex-1", OrderState.OPEN, timestamp));
+                .thenReturn(new OrderPlaceSuccess("ex-1", OrderState.OPEN, timestamp));
 
         executor.processExchangeCreateRequest(new OrderEvent.ExchangeCreateRequested(order));
 
@@ -244,7 +244,7 @@ class ExchangeOrderExecutorTest {
     void exchangeCancelRequested_whenCancelIsFinalized_publishesCanceledStatus() {
         Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
         when(orderClient.cancelOrder("BTC-USDT", "cid-1"))
-                .thenReturn(new OrderCancelResult(true, timestamp));
+                .thenReturn(new OrderCancelSuccess(true, timestamp));
 
         executor.processExchangeCancelRequest(new OrderEvent.ExchangeCancelRequested("BTC-USDT", "cid-1", "ex-1"));
 
@@ -257,7 +257,7 @@ class ExchangeOrderExecutorTest {
     @DisplayName("거래소 취소가 아직 확정되지 않았으면 PENDING_CANCEL 상태 수신 이벤트를 발행한다")
     void exchangeCancelRequested_whenCancelIsNotFinalized_publishesPendingCancelStatus() {
         when(orderClient.cancelOrder("BTC-USDT", "cid-1"))
-                .thenReturn(new OrderCancelResult(false, Instant.parse("2026-06-01T00:00:00Z")));
+                .thenReturn(new OrderCancelSuccess(false, Instant.parse("2026-06-01T00:00:00Z")));
 
         executor.processExchangeCancelRequest(new OrderEvent.ExchangeCancelRequested("BTC-USDT", "cid-1", "ex-1"));
 

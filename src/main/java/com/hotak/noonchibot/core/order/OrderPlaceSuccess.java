@@ -8,7 +8,7 @@ import java.time.Instant;
  * @param orderState exchangeOrderId가 null일때는 PENDING_CREATE로 전달된다.
  * @param timestamp
  */
-public record OrderPlaceResult(
+public record OrderPlaceSuccess(
         String exchangeOrderId,
         OrderState orderState,
         Instant timestamp

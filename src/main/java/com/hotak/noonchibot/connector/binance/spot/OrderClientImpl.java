@@ -48,7 +48,7 @@ class OrderClientImpl implements OrderClient {
     }
 
     @Override
-    public OrderPlaceResult placeOrder(InFlightOrder inFlightOrder) {
+    public OrderPlaceSuccess placeOrder(InFlightOrder inFlightOrder) {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(inFlightOrder.getTradingPair());
         String tradeTypeApiValue = inFlightOrder.getTradeType() == TradeType.BUY ? "BUY" : "SELL";
         String orderTypeApiValue = orderTypeToApiValue(inFlightOrder.getOrderType(), inFlightOrder.isPostOnly());
@@ -79,18 +79,18 @@ class OrderClientImpl implements OrderClient {
             String orderStatus = orderResult.path("status").asString();
             OrderState orderState = ApiSpec.ORDER_STATE.getOrDefault(orderStatus, OrderState.OPEN);
 
-            return new OrderPlaceResult(exchangeOrderId, orderState, transactTime);
+            return new OrderPlaceSuccess(exchangeOrderId, orderState, transactTime);
         } catch (ExchangeRestApiException e) {
             if (e.statusCode().isSameCodeAs(HttpStatusCode.valueOf(503))
                     && e.responseBody().contains("Unknown error, please check your request or try again later.")) {
-                return new OrderPlaceResult(null, OrderState.PENDING_CREATE, Instant.ofEpochMilli(timeSynchronizer.serverTime()));
+                return new OrderPlaceSuccess(null, OrderState.PENDING_CREATE, Instant.ofEpochMilli(timeSynchronizer.serverTime()));
             }
             throw e;
         }
     }
 
     @Override
-    public OrderCancelResult cancelOrder(String tradingPair, String clientOrderId) {
+    public OrderCancelSuccess cancelOrder(String tradingPair, String clientOrderId) {
         String symbol = tradingPairSymbolRegistry.convertTradingPairToExchangeSymbol(tradingPair);
         RestRequest request = RestRequest.builder()
                 .method(HttpMethod.DELETE)
@@ -100,7 +100,7 @@ class OrderClientImpl implements OrderClient {
                 .build();
 
         orderCancelRestAssistant.executeRequestAndGetResponse(request);
-        return new OrderCancelResult(true, Instant.ofEpochMilli(timeSynchronizer.serverTime()));
+        return new OrderCancelSuccess(true, Instant.ofEpochMilli(timeSynchronizer.serverTime()));
     }
 
     private static String orderTypeToApiValue(OrderType orderType, boolean postOnly) {

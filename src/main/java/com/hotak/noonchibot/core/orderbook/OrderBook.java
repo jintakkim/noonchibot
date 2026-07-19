@@ -1,6 +1,5 @@
 package com.hotak.noonchibot.core.orderbook;
 
-import com.hotak.noonchibot.core.event.internal.order.OrderEvent;
 import com.hotak.noonchibot.core.event.internal.orderbook.OrderBookEvent;
 import lombok.RequiredArgsConstructor;
 

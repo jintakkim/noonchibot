@@ -2,7 +2,7 @@ package com.hotak.noonchibot.core.order;
 
 import java.time.Instant;
 
-public record OrderCancelResult(
+public record OrderCancelSuccess(
         boolean cancelFinalized,
         Instant timestamp
 ) {

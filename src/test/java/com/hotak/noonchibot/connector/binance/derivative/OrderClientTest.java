@@ -5,10 +5,10 @@ import com.hotak.noonchibot.connector.binance.BinanceExchangeErrorClassifier;
 import com.hotak.noonchibot.connector.binance.OrderFixture;
 import com.hotak.noonchibot.connector.web.TimeSynchronizer;
 import com.hotak.noonchibot.connector.web.testutils.RestClientTest;
-import com.hotak.noonchibot.core.order.ExchangeRejectedException;
-import com.hotak.noonchibot.core.order.OrderCancelResult;
+import com.hotak.noonchibot.connector.web.ExchangeRejectedException;
+import com.hotak.noonchibot.core.order.OrderCancelSuccess;
 import com.hotak.noonchibot.core.order.OrderClient;
-import com.hotak.noonchibot.core.order.OrderPlaceResult;
+import com.hotak.noonchibot.core.order.OrderPlaceSuccess;
 import com.hotak.noonchibot.core.order.OrderState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,7 +48,7 @@ class OrderClientTest extends RestClientTest {
     void placeOrder_whenLimitOrderSucceeds_returnsOrderPlaceResult() {
 
         runWith(OrderFixture.btcUsdtLimitBuySuccess(), () -> {
-            OrderPlaceResult result = orderClient.placeOrder(OrderFixture.btcUsdtLimitBuyOrder());
+            OrderPlaceSuccess result = orderClient.placeOrder(OrderFixture.btcUsdtLimitBuyOrder());
             assertThat(result.exchangeOrderId()).isNotNull();
             assertThat(result.orderState()).isEqualTo(OrderState.OPEN);
             assertThat(result.timestamp()).isEqualTo(Instant.ofEpochMilli(1_780_302_734_417L));
@@ -79,7 +79,7 @@ class OrderClientTest extends RestClientTest {
     @DisplayName("바이낸스 503 Unknown error는 주문 생성 여부 미확정 상태로 반환한다")
     void placeOrder_whenBinanceUnknownExecution_returnsPendingCreateWithoutExchangeOrderId() {
         runWith(OrderFixture.btcUsdtLimitBuyUnknownError(), () -> {
-            OrderPlaceResult result = orderClient.placeOrder(OrderFixture.btcUsdtLimitBuyOrder());
+            OrderPlaceSuccess result = orderClient.placeOrder(OrderFixture.btcUsdtLimitBuyOrder());
             assertThat(result.exchangeOrderId()).isNull();
             assertThat(result.orderState()).isEqualTo(OrderState.PENDING_CREATE);
         });
@@ -99,7 +99,7 @@ class OrderClientTest extends RestClientTest {
     @DisplayName("취소 요청이 성공하면 취소 확정 결과를 반환한다")
     void cancelOrder_whenRequestSucceeds_returnsFinalizedCancelResult() {
         runWith(OrderFixture.btcUsdtCancelSuccess(), () -> {
-            OrderCancelResult result = orderClient.cancelOrder(
+            OrderCancelSuccess result = orderClient.cancelOrder(
                     OrderFixture.TRADING_PAIR,
                     OrderFixture.CLIENT_ORDER_ID
             );
