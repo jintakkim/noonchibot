@@ -1,11 +1,11 @@
 package com.hotak.noonchibot.core.strategy.engine;
 
+import com.hotak.noonchibot.core.runtime.ExchangeApiProvider;
 import com.hotak.noonchibot.core.strategy.api.StrategyAccountView;
 import com.hotak.noonchibot.core.strategy.api.StrategyContext;
 import com.hotak.noonchibot.core.strategy.api.StrategyMarketView;
 import com.hotak.noonchibot.core.strategy.api.StrategyOrderView;
 import com.hotak.noonchibot.core.strategy.api.StrategyPositionView;
-import com.hotak.noonchibot.core.strategy.safety.TradingStateView;
 import com.hotak.noonchibot.core.strategy.snapshot.StrategySnapshotSink;
 
 import java.time.Instant;
@@ -17,7 +17,7 @@ public class DefaultStrategyContextFactory implements StrategyContextFactory {
     private final StrategyOrderView orderView;
     private final StrategyPositionView positionView;
     private final StrategySnapshotSink snapshotSink;
-    private final TradingStateView tradingStateView;
+    private final ExchangeApiProvider exchangeApis;
 
     public DefaultStrategyContextFactory(
             StrategyMarketView marketView,
@@ -25,14 +25,14 @@ public class DefaultStrategyContextFactory implements StrategyContextFactory {
             StrategyOrderView orderView,
             StrategyPositionView positionView,
             StrategySnapshotSink snapshotSink,
-            TradingStateView tradingStateView
+            ExchangeApiProvider exchangeApis
     ) {
         this.marketView = Objects.requireNonNull(marketView, "marketView");
         this.accountView = Objects.requireNonNull(accountView, "accountView");
         this.orderView = Objects.requireNonNull(orderView, "orderView");
         this.positionView = Objects.requireNonNull(positionView, "positionView");
         this.snapshotSink = snapshotSink == null ? StrategySnapshotSink.NOOP : snapshotSink;
-        this.tradingStateView = tradingStateView == null ? TradingStateView.RUNNING : tradingStateView;
+        this.exchangeApis = Objects.requireNonNull(exchangeApis, "exchangeApis");
     }
 
     @Override
@@ -44,7 +44,7 @@ public class DefaultStrategyContextFactory implements StrategyContextFactory {
                 orderView,
                 positionView,
                 snapshotSink,
-                tradingStateView
+                exchangeApis
         );
     }
 }

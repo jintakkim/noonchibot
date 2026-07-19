@@ -1,7 +1,10 @@
 package com.hotak.noonchibot.core.strategy.api;
 
+import com.hotak.noonchibot.core.Exchange;
+import com.hotak.noonchibot.core.runtime.DerivativeExchangeApi;
+import com.hotak.noonchibot.core.runtime.ExchangeApi;
+import com.hotak.noonchibot.core.runtime.ExchangeApiProvider;
 import com.hotak.noonchibot.core.strategy.snapshot.StrategySnapshotSink;
-import com.hotak.noonchibot.core.strategy.safety.TradingStateView;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -13,8 +16,18 @@ public record StrategyContext(
         StrategyOrderView orderView,
         StrategyPositionView positionView,
         StrategySnapshotSink snapshotSink,
-        TradingStateView tradingStateView
+        ExchangeApiProvider exchangeApis
 ) {
+    public StrategyContext {
+        Objects.requireNonNull(now, "now");
+        Objects.requireNonNull(marketView, "marketView");
+        Objects.requireNonNull(accountView, "accountView");
+        Objects.requireNonNull(orderView, "orderView");
+        Objects.requireNonNull(positionView, "positionView");
+        snapshotSink = snapshotSink == null ? StrategySnapshotSink.NOOP : snapshotSink;
+        exchangeApis = exchangeApis == null ? ExchangeApiProvider.UNAVAILABLE : exchangeApis;
+    }
+
     public StrategyContext(
             Instant now,
             StrategyMarketView marketView,
@@ -30,29 +43,15 @@ public record StrategyContext(
                 orderView,
                 positionView,
                 snapshotSink,
-                TradingStateView.RUNNING
+                ExchangeApiProvider.UNAVAILABLE
         );
     }
 
-    public StrategyContext {
-        Objects.requireNonNull(now, "now");
-        Objects.requireNonNull(marketView, "marketView");
-        Objects.requireNonNull(accountView, "accountView");
-        Objects.requireNonNull(orderView, "orderView");
-        Objects.requireNonNull(positionView, "positionView");
-        snapshotSink = snapshotSink == null ? StrategySnapshotSink.NOOP : snapshotSink;
-        tradingStateView = tradingStateView == null ? TradingStateView.RUNNING : tradingStateView;
+    public ExchangeApi exchange(Exchange exchange) {
+        return exchangeApis.getExchange(exchange);
     }
 
-    public StrategyContext withTradingStateView(TradingStateView tradingStateView) {
-        return new StrategyContext(
-                now,
-                marketView,
-                accountView,
-                orderView,
-                positionView,
-                snapshotSink,
-                tradingStateView
-        );
+    public DerivativeExchangeApi derivativeExchange(Exchange exchange) {
+        return exchangeApis.getDerivativeExchange(exchange);
     }
 }

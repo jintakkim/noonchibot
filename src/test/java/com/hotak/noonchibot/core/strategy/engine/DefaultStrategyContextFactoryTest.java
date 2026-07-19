@@ -1,10 +1,10 @@
 package com.hotak.noonchibot.core.strategy.engine;
 
+import com.hotak.noonchibot.core.runtime.ExchangeApiProvider;
 import com.hotak.noonchibot.core.strategy.api.StrategyAccountView;
 import com.hotak.noonchibot.core.strategy.api.StrategyMarketView;
 import com.hotak.noonchibot.core.strategy.api.StrategyOrderView;
 import com.hotak.noonchibot.core.strategy.api.StrategyPositionView;
-import com.hotak.noonchibot.core.strategy.safety.TradingStateView;
 import com.hotak.noonchibot.core.strategy.snapshot.StrategySnapshotSink;
 import org.junit.jupiter.api.Test;
 
@@ -21,14 +21,13 @@ class DefaultStrategyContextFactoryTest {
         StrategyOrderView orderView = mock(StrategyOrderView.class);
         StrategyPositionView positionView = mock(StrategyPositionView.class);
         StrategySnapshotSink snapshotSink = mock(StrategySnapshotSink.class);
-        TradingStateView tradingStateView = TradingStateView.RUNNING;
         DefaultStrategyContextFactory factory = new DefaultStrategyContextFactory(
                 marketView,
                 accountView,
                 orderView,
                 positionView,
                 snapshotSink,
-                tradingStateView
+                ExchangeApiProvider.UNAVAILABLE
         );
         Instant timestamp = Instant.parse("2026-06-01T00:00:00Z");
 
@@ -40,6 +39,5 @@ class DefaultStrategyContextFactoryTest {
         assertThat(context.orderView()).isSameAs(orderView);
         assertThat(context.positionView()).isSameAs(positionView);
         assertThat(context.snapshotSink()).isSameAs(snapshotSink);
-        assertThat(context.tradingStateView()).isSameAs(tradingStateView);
     }
 }

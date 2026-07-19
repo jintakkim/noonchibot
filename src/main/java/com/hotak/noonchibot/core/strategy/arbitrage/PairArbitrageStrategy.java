@@ -87,10 +87,6 @@ public class PairArbitrageStrategy implements Strategy {
             return exitActions(pair, longExposure, shortExposure, context, "exit", false);
         }
 
-        if (context.tradingStateView().isPaused()) {
-            return invalidOrderActions(pair, longExposure, shortExposure, context);
-        }
-
         if (!orderValid) {
             return invalidOrderActions(pair, longExposure, shortExposure, context);
         }
@@ -426,8 +422,7 @@ public class PairArbitrageStrategy implements Strategy {
                         "targetBaseAmount", pair.totalBaseAmount(),
                         "sliceBaseAmount", pair.sliceBaseAmount(),
                         "entryMatched", entryMatched,
-                        "orderValid", orderValid,
-                        "tradingPaused", context.tradingStateView().isPaused()
+                        "orderValid", orderValid
                 )
         ));
     }

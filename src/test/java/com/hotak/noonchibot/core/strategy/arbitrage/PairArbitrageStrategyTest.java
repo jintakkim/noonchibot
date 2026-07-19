@@ -11,7 +11,6 @@ import com.hotak.noonchibot.core.strategy.api.StrategyContext;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionPlan;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionCommand;
 import com.hotak.noonchibot.core.strategy.execution.ExecutionUrgency;
-import com.hotak.noonchibot.core.strategy.safety.TradingStatus;
 import com.hotak.noonchibot.core.strategy.api.StrategyMarketView;
 import com.hotak.noonchibot.core.strategy.arbitrage.condition.PriceGapCondition;
 import com.hotak.noonchibot.core.strategy.arbitrage.fee.FeeRateSchedule;
@@ -215,33 +214,6 @@ class PairArbitrageStrategyTest {
             assertThat(command.candidate().getAmount()).isEqualByComparingTo("0.2");
             assertThat(command.candidate().getTradeType()).isEqualTo(TradeType.SELL);
             assertThat(command.candidate().getReduceOnly()).isFalse();
-        });
-    }
-
-    @Test
-    @DisplayName("거래 중지 상태에서 불균형이면 큰 leg를 reduce-only로 줄인다")
-    void onTick_whileTradingPaused_reducesLargerLeg() {
-        PairArbitrageStrategy strategy = new PairArbitrageStrategy(config("0.2"), new ExposureCalculator());
-        List<ExchangePosition> positions = List.of(
-                exchangePosition(Exchange.BINANCE_DERIVATIVE, "BTC-USDT", PositionSide.LONG, "0.5"),
-                exchangePosition(Exchange.HYPERLIQUID_DERIVATIVE, "BTC-USDC", PositionSide.SHORT, "0.2")
-        );
-        StrategyContext context = new StrategyContext(
-                NOW,
-                StrategyMarketView.UNAVAILABLE,
-                new StrategyAccountView() {},
-                () -> List.of(),
-                () -> positions,
-                StrategySnapshotSink.NOOP,
-                () -> TradingStatus.TRADING_PAUSED
-        );
-
-        ExecutionPlan plan = strategy.onTick(context);
-
-        assertThat(submitOrders(plan)).singleElement().satisfies(command -> {
-            assertThat(command.exchange()).isEqualTo(Exchange.BINANCE_DERIVATIVE);
-            assertThat(command.candidate().getTradeType()).isEqualTo(TradeType.SELL);
-            assertThat(command.candidate().getReduceOnly()).isTrue();
         });
     }
 
