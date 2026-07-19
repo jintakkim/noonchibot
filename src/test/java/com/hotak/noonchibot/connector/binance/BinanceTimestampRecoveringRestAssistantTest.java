@@ -89,7 +89,7 @@ class BinanceTimestampRecoveringRestAssistantTest {
                 .thenThrow(timestampException());
 
         assertThatThrownBy(() -> restAssistant.executeRequestAndGetResponse(request))
-                .isInstanceOf(TimeSynchronizationException.class)
+                .isInstanceOf(RequestNotExecutedException.class)
                 .hasCauseInstanceOf(ExchangeRestApiException.class);
         verify(timeSynchronizer).updateServerTimeOffset();
         verify(delegate, times(2)).executeRequestAndGetResponse(request);

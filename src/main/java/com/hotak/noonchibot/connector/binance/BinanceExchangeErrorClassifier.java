@@ -2,8 +2,8 @@ package com.hotak.noonchibot.connector.binance;
 
 import com.hotak.noonchibot.connector.web.*;
 import com.hotak.noonchibot.connector.ExchangeErrorClassifier;
-import com.hotak.noonchibot.core.order.ExchangeRejectedException;
-import com.hotak.noonchibot.core.order.InsufficientBalanceException;
+import com.hotak.noonchibot.connector.web.ExchangeRejectedException;
+import com.hotak.noonchibot.connector.web.InsufficientBalanceException;
 import com.hotak.noonchibot.core.order.InvalidOrderRejectedException;
 import com.hotak.noonchibot.core.utils.AsyncUtils;
 import lombok.RequiredArgsConstructor;

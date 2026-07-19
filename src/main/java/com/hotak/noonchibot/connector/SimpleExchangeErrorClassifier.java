@@ -3,7 +3,7 @@ package com.hotak.noonchibot.connector;
 import com.hotak.noonchibot.connector.web.ExchangeRateLimitedException;
 import com.hotak.noonchibot.connector.web.ExchangeRestApiException;
 import com.hotak.noonchibot.connector.web.ExchangeTransientException;
-import com.hotak.noonchibot.core.order.ExchangeRejectedException;
+import com.hotak.noonchibot.connector.web.ExchangeRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 

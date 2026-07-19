@@ -262,7 +262,7 @@ public class RestAssistantTest {
                                 .method(HttpMethod.GET)
                                 .build()
                 )
-        ).isInstanceOf(com.hotak.noonchibot.core.order.ExchangeRejectedException.class)
+        ).isInstanceOf(ExchangeRejectedException.class)
                 .satisfies(e -> {
                     ExchangeRestApiException ex = (ExchangeRestApiException) e.getCause();
                     assertThat(ex.statusCode()).isEqualTo(HttpStatusCode.valueOf(400));
@@ -348,7 +348,7 @@ public class RestAssistantTest {
                                 .method(HttpMethod.GET)
                                 .build()
                 ))
-                .isInstanceOf(com.hotak.noonchibot.core.order.ExchangeRejectedException.class);
+                .isInstanceOf(ExchangeRejectedException.class);
 
         assertThat(postProcessorCalled).isTrue();
     }

@@ -32,7 +32,7 @@ public class TimestampRecoveringRestAssistant implements RestAssistant {
         try {
             return delegate.executeRequestAndGetResponse(request);
         } catch (ExchangeTimestampException e) {
-            throw new TimeSynchronizationException(e);
+            throw new RequestNotExecutedException(e);
         }
     }
 }
